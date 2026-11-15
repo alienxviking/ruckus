@@ -1,0 +1,486 @@
+import type * as Party from "partykit/server";
+import type { GameCtx, GameDef } from "../shared/game";
+import {
+  AVATARS,
+  MAX_NAME,
+  MAX_PLAYERS,
+  PLAYER_COLORS,
+  type ChatMsg,
+  type ClientMsg,
+  type GameResult,
+  type Player,
+  type RoomView,
+  type ServerMsg,
+} from "../shared/types";
+import { CATALOG_BY_ID } from "../games/catalog";
+import { GAME_DEFS } from "../games/server-registry";
+
+const HOST_HANDOFF_MS = 8_000; // host must be gone this long before someone else takes over
+const REMOVE_AFTER_MS = 60_000; // disconnected lobby players disappear after this
+const EMPTY_ROOM_GRACE_MS = 30_000; // a running game survives everyone refreshing at once
+const CHAT_LIMIT = 80;
+const CHAT_BURST = 6; // chat messages allowed per window, per player
+const CHAT_WINDOW_MS = 5_000;
+const MSG_RATE = 60; // sustained messages/second per connection (drawing sends ~25/s)
+const MSG_BURST = 120;
+
+interface ActiveGame {
+  def: GameDef;
+  state: unknown;
+  ctx: GameCtx;
+  timer: ReturnType<typeof setInterval> | null;
+}
+
+/**
+ * Connection ids double as public player ids (everyone in the room sees them),
+ * so a connection only counts as that player once it proves it holds the
+ * player's secret key in "hello". Unverified sockets get nothing and can do nothing.
+ */
+type ConnState = { verified: true };
+type Conn = Party.Connection<ConnState>;
+
+export default class RuckusRoom implements Party.Server {
+  options: Party.ServerOptions = { hibernate: false };
+
+  players = new Map<string, Player>();
+  /** Secret key per player id, set by the first verified hello. */
+  keys = new Map<string, string>();
+  /** Open verified sockets per player id (a player can have two tabs open). */
+  sockets = new Map<string, number>();
+  disconnectedAt = new Map<string, number>();
+  hostId: string | null = null;
+  phase: RoomView["phase"] = "lobby";
+  gameId = "sketch";
+  participants: string[] = [];
+  chat: ChatMsg[] = [];
+  wins: Record<string, number> = {};
+  result: GameResult | null = null;
+  game: ActiveGame | null = null;
+  housekeeping: ReturnType<typeof setInterval> | null = null;
+  emptySince: number | null = null;
+  chatSeq = 0;
+  /** Increments on every game start so clients remount the game UI ("Play again"). */
+  gameSeq = 0;
+  /** Per-connection token buckets so one client can't flood the room. */
+  buckets = new Map<string, { tokens: number; at: number }>();
+  /** Recent chat timestamps per player for chat-specific throttling. */
+  chatTimes = new Map<string, number[]>();
+
+  constructor(readonly room: Party.Room) {}
+
+  // ---------- connection lifecycle ----------
+
+  onConnect() {
+    // Nothing is sent until the client verifies itself with "hello".
+    this.ensureHousekeeping();
+  }
+
+  onClose(conn: Conn) {
+    // Complete the closing handshake; the Workers runtime doesn't reply on its own,
+    // which otherwise leaves clients stuck in CLOSING.
+    try {
+      conn.close();
+    } catch {
+      /* already closed */
+    }
+    if (!conn.state?.verified) return;
+    const left = (this.sockets.get(conn.id) ?? 1) - 1;
+    if (left > 0) {
+      this.sockets.set(conn.id, left);
+      return;
+    }
+    this.sockets.delete(conn.id);
+    this.buckets.delete(conn.id);
+    if (this.sockets.size === 0) this.emptySince = Date.now();
+    const p = this.players.get(conn.id);
+    if (!p) return;
+    p.connected = false;
+    this.disconnectedAt.set(p.id, Date.now());
+    if (this.game && this.participants.includes(p.id)) {
+      try {
+        this.game.def.playerLeft?.(this.game.state, p.id, this.game.ctx);
+      } catch (err) {
+        console.error(`[${this.game.def.id}] playerLeft failed`, err);
+      }
+      this.broadcastGame();
+    }
+    this.broadcastRoom();
+  }
+
+  onMessage(raw: string | ArrayBuffer | ArrayBufferView, sender: Conn) {
+    if (typeof raw !== "string" || raw.length > 20_000) return;
+    if (!this.allowMessage(sender.id)) return;
+    let msg: ClientMsg;
+    try {
+      msg = JSON.parse(raw);
+    } catch {
+      return;
+    }
+    if (!msg || typeof msg !== "object") return;
+
+    if (msg.t === "hello") return this.handleHello(sender, msg);
+    if (!sender.state?.verified) return; // must say hello first
+
+    const player = this.players.get(sender.id);
+    if (!player) return;
+
+    switch (msg.t) {
+      case "chat":
+        return this.handleChat(player, msg.text);
+      case "pick":
+        return this.handlePick(player, msg.gameId);
+      case "start":
+        return this.handleStart(player, sender);
+      case "lobby":
+        return this.handleLobby(player);
+      case "act":
+        return this.handleAct(player, msg.a);
+    }
+  }
+
+  // ---------- handlers ----------
+
+  handleHello(conn: Conn, msg: Extract<ClientMsg, { t: "hello" }>) {
+    const key = typeof msg.key === "string" && msg.key.length >= 16 && msg.key.length <= 64 ? msg.key : null;
+    if (!key) return this.reject(conn, "Please refresh the page to join.");
+    const known = this.keys.get(conn.id);
+    if (known !== undefined && known !== key) {
+      return this.reject(conn, "That player is already in this room on another device.");
+    }
+
+    const name = cleanText(msg.name, MAX_NAME) || "Player";
+    const color = (PLAYER_COLORS as readonly string[]).includes(msg.color)
+      ? msg.color
+      : PLAYER_COLORS[this.players.size % PLAYER_COLORS.length];
+    const avatar = (AVATARS as readonly string[]).includes(msg.avatar) ? msg.avatar : AVATARS[0];
+
+    const existing = this.players.get(conn.id);
+    if (!existing && this.players.size >= MAX_PLAYERS) {
+      return this.reject(conn, `This room is full (${MAX_PLAYERS} players).`);
+    }
+
+    // Verify this socket (first hello on it).
+    if (!conn.state?.verified) {
+      conn.setState({ verified: true });
+      this.sockets.set(conn.id, (this.sockets.get(conn.id) ?? 0) + 1);
+      this.emptySince = null;
+    }
+    this.keys.set(conn.id, key);
+
+    if (existing) {
+      const wasAway = !existing.connected;
+      Object.assign(existing, { name, color, avatar, connected: true });
+      this.disconnectedAt.delete(conn.id);
+      if (wasAway && this.game && this.participants.includes(conn.id)) {
+        try {
+          this.game.def.playerReturned?.(this.game.state, conn.id, this.game.ctx);
+        } catch (err) {
+          console.error(`[${this.game.def.id}] playerReturned failed`, err);
+        }
+        this.broadcastGame();
+      }
+    } else {
+      this.players.set(conn.id, { id: conn.id, name, color, avatar, connected: true });
+      this.system(`${avatar} ${name} joined`);
+    }
+
+    if (!this.hostId || !this.players.get(this.hostId)) this.hostId = conn.id;
+    this.broadcastRoom();
+    // A (re)joining socket needs the current game state too.
+    if (this.game) this.sendTo(conn, { t: "game", view: this.viewFor(this.game, conn.id), now: Date.now() });
+  }
+
+  handleChat(player: Player, text: unknown) {
+    const clean = cleanText(text, 200);
+    if (!clean) return;
+    // At most CHAT_BURST messages per CHAT_WINDOW_MS per player.
+    const now = Date.now();
+    const recent = (this.chatTimes.get(player.id) ?? []).filter((t) => now - t < CHAT_WINDOW_MS);
+    if (recent.length >= CHAT_BURST) return;
+    recent.push(now);
+    this.chatTimes.set(player.id, recent);
+    this.pushChat({ id: `c${++this.chatSeq}`, from: player.id, text: clean, at: now });
+    this.broadcastRoom();
+  }
+
+  handlePick(player: Player, gameId: unknown) {
+    if (player.id !== this.hostId || this.phase !== "lobby") return;
+    if (typeof gameId !== "string" || !CATALOG_BY_ID[gameId] || !GAME_DEFS[gameId]) return;
+    this.gameId = gameId;
+    this.broadcastRoom();
+  }
+
+  handleStart(player: Player, conn: Conn) {
+    if (player.id !== this.hostId) return;
+    const meta = CATALOG_BY_ID[this.gameId];
+    const def = GAME_DEFS[this.gameId];
+    if (!meta || !def) return;
+
+    const ready = [...this.players.values()].filter((p) => p.connected);
+    if (ready.length < meta.minPlayers) {
+      this.sendTo(conn, {
+        t: "err",
+        msg: `${meta.name} needs at least ${meta.minPlayers} players.`,
+        now: Date.now(),
+      });
+      return;
+    }
+    this.stopGame();
+
+    this.participants = ready.slice(0, meta.maxPlayers).map((p) => p.id);
+    this.result = null;
+
+    const ctx = this.makeCtx();
+    let state: unknown;
+    try {
+      state = def.setup(ctx);
+    } catch (err) {
+      console.error(`[${def.id}] setup failed`, err);
+      this.participants = [];
+      this.phase = "lobby";
+      this.sendTo(conn, { t: "err", msg: `${meta.name} failed to start. Try another game.`, now: Date.now() });
+      this.broadcastRoom();
+      return;
+    }
+    this.phase = "playing";
+    this.gameSeq += 1;
+    const active: ActiveGame = { def, state, ctx, timer: null };
+    if (def.tick) {
+      active.timer = setInterval(() => {
+        if (this.game !== active) return;
+        let changed: boolean | void = false;
+        try {
+          changed = def.tick!(active.state, ctx);
+        } catch (err) {
+          console.error(`[${def.id}] tick failed`, err);
+        }
+        if (changed) this.broadcastGame();
+      }, def.tickMs ?? 250);
+    }
+    this.game = active;
+
+    const extra = ready.length - this.participants.length;
+    this.system(
+      `🎮 ${meta.name} started` + (extra > 0 ? ` (${extra} watching, max ${meta.maxPlayers})` : ""),
+    );
+    this.broadcastRoom();
+    this.broadcastGame();
+  }
+
+  handleLobby(player: Player) {
+    if (player.id !== this.hostId) return;
+    this.stopGame();
+    this.phase = "lobby";
+    this.result = null;
+    this.participants = [];
+    this.pruneDeparted();
+    this.broadcastRoom();
+  }
+
+  handleAct(player: Player, action: unknown) {
+    const game = this.game;
+    if (!game || !this.participants.includes(player.id)) return;
+    let changed: boolean | void;
+    try {
+      changed = game.def.action(game.state, player.id, action, game.ctx);
+    } catch (err) {
+      console.error(`[${game.def.id}] action failed`, err);
+      return;
+    }
+    if (changed !== false) this.broadcastGame();
+  }
+
+  // ---------- game plumbing ----------
+
+  makeCtx(): GameCtx {
+    const ctx: GameCtx = {
+      now: () => Date.now(),
+      players: this.participants.map((id) => ({ ...this.players.get(id)! })),
+      player: (id) => this.players.get(id),
+      random: Math.random,
+      emit: (event, opts) => {
+        const msg = JSON.stringify({ t: "ev", e: event, now: Date.now() } satisfies ServerMsg);
+        for (const c of this.verifiedConnections()) {
+          // A player may have several tabs open, so `to` matches every socket of that id.
+          if (opts?.to && c.id !== opts.to) continue;
+          if (opts?.except && c.id === opts.except) continue;
+          c.send(msg);
+        }
+      },
+      end: (result) => {
+        if (this.result || !this.game || this.game.ctx !== ctx) return;
+        this.result = result;
+        for (const id of result.winners) this.wins[id] = (this.wins[id] ?? 0) + 1;
+        this.system(`🏆 ${result.headline}`);
+        // Keep ticking briefly so final animations settle, then stop.
+        const g = this.game;
+        setTimeout(() => {
+          if (this.game === g && g.timer) {
+            clearInterval(g.timer);
+            g.timer = null;
+          }
+        }, 1500);
+        this.broadcastRoom();
+      },
+    };
+    return ctx;
+  }
+
+  stopGame() {
+    if (this.game?.timer) clearInterval(this.game.timer);
+    this.game = null;
+  }
+
+  viewFor(game: ActiveGame, viewerId: string): unknown {
+    try {
+      return game.def.view(game.state, viewerId, game.ctx);
+    } catch (err) {
+      console.error(`[${game.def.id}] view failed`, err);
+      return null;
+    }
+  }
+
+  broadcastGame() {
+    const game = this.game;
+    if (!game) return;
+    const now = Date.now();
+    // Views are per-player (secrets!), so serialise once per player id.
+    const cache = new Map<string, string>();
+    for (const conn of this.verifiedConnections()) {
+      let payload = cache.get(conn.id);
+      if (payload === undefined) {
+        payload = JSON.stringify({ t: "game", view: this.viewFor(game, conn.id), now } satisfies ServerMsg);
+        cache.set(conn.id, payload);
+      }
+      conn.send(payload);
+    }
+  }
+
+  broadcastRoom() {
+    const payload = JSON.stringify({ t: "room", room: this.roomView(), now: Date.now() } satisfies ServerMsg);
+    for (const conn of this.verifiedConnections()) conn.send(payload);
+  }
+
+  *verifiedConnections(): Generator<Conn> {
+    for (const conn of this.room.getConnections<ConnState>()) {
+      if (conn.state?.verified) yield conn;
+    }
+  }
+
+  roomView(): RoomView {
+    return {
+      code: this.room.id,
+      hostId: this.hostId,
+      players: [...this.players.values()],
+      phase: this.phase,
+      gameId: this.gameId,
+      participants: this.participants,
+      chat: this.chat,
+      wins: this.wins,
+      result: this.result,
+      gameSeq: this.gameSeq,
+    };
+  }
+
+  // ---------- housekeeping ----------
+
+  ensureHousekeeping() {
+    if (this.housekeeping) return;
+    this.housekeeping = setInterval(() => this.tidy(), 2_000);
+  }
+
+  tidy() {
+    let changed = false;
+    const now = Date.now();
+
+    // Hand host over if the host has been gone a while.
+    const host = this.hostId ? this.players.get(this.hostId) : undefined;
+    const hostAwayFor = host && !host.connected ? now - (this.disconnectedAt.get(host.id) ?? now) : 0;
+    if (!host || hostAwayFor > HOST_HANDOFF_MS) {
+      const next = [...this.players.values()].find((p) => p.connected);
+      if (next && next.id !== this.hostId) {
+        this.hostId = next.id;
+        this.system(`👑 ${next.name} is now the host`);
+        changed = true;
+      }
+    }
+
+    if (this.pruneDeparted()) changed = true;
+    if (changed) this.broadcastRoom();
+
+    // Everyone has been gone a while: stop the game and timers so the room can idle.
+    if (this.sockets.size === 0 && this.emptySince !== null && now - this.emptySince > EMPTY_ROOM_GRACE_MS) {
+      this.stopGame();
+      this.phase = "lobby";
+      this.participants = [];
+      this.result = null;
+      if (this.housekeeping) clearInterval(this.housekeeping);
+      this.housekeeping = null;
+    }
+  }
+
+  /** Remove players who've been gone long enough and aren't in a running game. */
+  pruneDeparted(): boolean {
+    let removed = false;
+    const now = Date.now();
+    for (const [id, since] of this.disconnectedAt) {
+      const inGame = this.game && this.participants.includes(id);
+      if (inGame || now - since < REMOVE_AFTER_MS) continue;
+      const p = this.players.get(id);
+      this.players.delete(id);
+      this.disconnectedAt.delete(id);
+      this.keys.delete(id);
+      this.chatTimes.delete(id);
+      delete this.wins[id];
+      if (p) this.system(`${p.avatar} ${p.name} left`);
+      removed = true;
+    }
+    if (removed && this.hostId && !this.players.has(this.hostId)) this.hostId = null;
+    return removed;
+  }
+
+  /** Token bucket per connection: MSG_RATE/s sustained, MSG_BURST burst. */
+  allowMessage(connId: string): boolean {
+    const now = Date.now();
+    const b = this.buckets.get(connId) ?? { tokens: MSG_BURST, at: now };
+    b.tokens = Math.min(MSG_BURST, b.tokens + ((now - b.at) / 1000) * MSG_RATE);
+    b.at = now;
+    this.buckets.set(connId, b);
+    if (b.tokens < 1) return false;
+    b.tokens -= 1;
+    return true;
+  }
+
+  reject(conn: Conn, msg: string) {
+    if (conn.state?.verified) {
+      // Already in the room (e.g. a profile update with a bad key): just complain.
+      this.sendTo(conn, { t: "err", msg, now: Date.now() });
+      return;
+    }
+    this.sendTo(conn, { t: "rejected", msg, now: Date.now() });
+    conn.close(4001, "rejected");
+  }
+
+  system(text: string) {
+    this.pushChat({ id: `c${++this.chatSeq}`, from: null, text, at: Date.now() });
+  }
+
+  pushChat(msg: ChatMsg) {
+    this.chat.push(msg);
+    if (this.chat.length > CHAT_LIMIT) this.chat.splice(0, this.chat.length - CHAT_LIMIT);
+  }
+
+  sendTo(conn: Conn, msg: ServerMsg) {
+    conn.send(JSON.stringify(msg));
+  }
+}
+
+function cleanText(input: unknown, max: number): string {
+  if (typeof input !== "string") return "";
+  // Collapse whitespace and strip control characters.
+  return input
+    .replace(/[\u0000-\u001f\u007f]/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, max);
+}
