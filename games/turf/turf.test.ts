@@ -266,6 +266,30 @@ for (const n of [2, 3, 4, 5, 6, 7, 8]) {
   check(events(t, "capture").length === 1, "no fill while out === 0");
 }
 
+// Clients interpolate between frames by movement step: the view carries the step number,
+// and capture/power events name the step that caused them (so pops can wait for it on screen).
+{
+  const { t, s } = playing(2);
+  const v0 = view(s, s.painters[0].id, t);
+  check(v0.tick === 0, "no steps yet when play begins");
+  clearBoard(s);
+  solo(s, 0);
+  own(s, 0, 5, 5, 7, 7);
+  place(s, 0, 7, 6, "right");
+  drive(t, s, 0, "RRDDLLL");
+  check(view(s, "spectator", t).tick === 7, "one step per tick");
+  drive(t, s, 0, "U"); // back onto own turf: fill
+  const cap = events(t, "capture").at(-1) as Extract<TurfEvent, { type: "capture" }> | undefined;
+  check(cap !== undefined && cap.tick === 8 && view(s, "spectator", t).tick === 8, "capture event names the step it happened on");
+  s.powers = [{ x: s.painters[0].x, y: s.painters[0].y - 1, kind: "dash" }];
+  drive(t, s, 0, "U");
+  const pw = events(t, "power").at(-1) as Extract<TurfEvent, { type: "power" }> | undefined;
+  check(pw !== undefined && pw.tick === 9, "power event names its step too");
+  const before = view(s, "spectator", t).tick;
+  tick(t, s, PLAY_MS);
+  check(s.phase === "over" && view(s, "spectator", t).tick === before, "the final whistle is not a movement step");
+}
+
 // A pocket that touches the board edge is not enclosed... until the edge row is yours too.
 {
   const { t, s } = playing(2);

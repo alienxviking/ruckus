@@ -109,15 +109,18 @@ export interface TurfView {
   /** The viewer's painter index, -1 for spectators. */
   you: number;
   seq: number;
+  /** Movement steps so far (clients interpolate between consecutive ones). */
+  tick: number;
   /** The game ends early at this time unless another painter reconnects. */
   abandonAt: number | null;
   winners: string[] | null;
   endReason: EndReason | null;
 }
 
+/** `tick` is the movement step that caused it, so clients can show it when that step is on screen. */
 export type TurfEvent =
-  | { type: "capture"; by: number; n: number; x: number; y: number }
-  | { type: "power"; by: number; kind: PowerKind; x: number; y: number; n: number };
+  | { type: "capture"; by: number; n: number; x: number; y: number; tick: number }
+  | { type: "power"; by: number; kind: PowerKind; x: number; y: number; n: number; tick: number };
 
 // ---------- board helpers (exported for tests) ----------
 
@@ -241,7 +244,7 @@ function joinNames(names: string[]) {
 function capture(s: TurfState, idx: number, ctx: GameCtx) {
   const got = fillEnclosed(s, idx);
   if (got) {
-    ctx.emit({ type: "capture", by: idx, n: got.n, x: round1(got.x), y: round1(got.y) } satisfies TurfEvent);
+    ctx.emit({ type: "capture", by: idx, n: got.n, x: round1(got.x), y: round1(got.y), tick: s.tick } satisfies TurfEvent);
   }
 }
 
@@ -269,7 +272,7 @@ function collect(s: TurfState, idx: number, pw: PowerUp, ctx: GameCtx, now: numb
     p.out = 0;
     capture(s, idx, ctx);
   }
-  ctx.emit({ type: "power", by: idx, kind: pw.kind, x: pw.x, y: pw.y, n } satisfies TurfEvent);
+  ctx.emit({ type: "power", by: idx, kind: pw.kind, x: pw.x, y: pw.y, n, tick: s.tick } satisfies TurfEvent);
 }
 
 /** Move one tile in the painter's direction. False when a wall is in the way. */
@@ -515,6 +518,7 @@ export const turf: GameDef<TurfState, TurfAction> = {
       powers: s.powers.map((q) => ({ x: q.x, y: q.y, kind: q.kind })),
       you: s.painters.findIndex((p) => p.id === viewerId),
       seq: s.seq,
+      tick: s.tick,
       abandonAt: s.aloneSince === null ? null : s.aloneSince + ABANDON_MS,
       winners: s.winners,
       endReason: s.endReason,

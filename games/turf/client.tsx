@@ -44,24 +44,48 @@ function useServerClock(serverNow: () => number, ms: number) {
   return now;
 }
 
+const toLinear = (c: number) => (c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4));
+/** sRGB hex -> OKLab, for judging how alike two turf colours look. */
+function oklab(hex: string): [number, number, number] {
+  const n = parseInt(hex.slice(1), 16);
+  const r = toLinear(((n >> 16) & 255) / 255);
+  const g = toLinear(((n >> 8) & 255) / 255);
+  const b = toLinear((n & 255) / 255);
+  const l = Math.cbrt(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b);
+  const m = Math.cbrt(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b);
+  const s = Math.cbrt(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b);
+  return [
+    0.2104542553 * l + 0.793617785 * m - 0.0040720468 * s,
+    1.9779984951 * l - 2.428592205 * m + 0.4505937099 * s,
+    0.0259040371 * l + 0.7827717662 * m - 0.808675766 * s,
+  ];
+}
+function colorDistance(a: string, b: string) {
+  const [x, y] = [oklab(a), oklab(b)];
+  return Math.hypot(x[0] - y[0], x[1] - y[1], x[2] - y[2]);
+}
+const PALETTE = PLAYER_COLORS.map((c) => c.toLowerCase());
+
 /**
- * Turf colour per painter. Players may pick the same colour in the lobby; on a
- * territory map that would be unreadable, so later duplicates get a free colour.
- * Deterministic, so every screen agrees.
+ * Turf colour per painter. Players may pick the same (or a look-alike) colour in the lobby;
+ * on a territory map that would be unreadable, so a colour too close to one taken earlier is
+ * swapped for the free palette colour that stands out most. Deterministic, so every screen
+ * agrees (and it matches Snake Brawl's rule).
  */
 function displayColors(ids: string[], byId: Record<string, Player>): string[] {
-  const chosen = ids.map((id) => byId[id]?.color ?? PLAYER_COLORS[0]);
-  const taken = new Set<string>();
-  return chosen.map((c) => {
-    let color = c;
-    if (taken.has(color)) {
-      color =
-        PLAYER_COLORS.find((pc) => !taken.has(pc) && !chosen.includes(pc)) ??
-        PLAYER_COLORS.find((pc) => !taken.has(pc)) ??
-        c;
+  const used: string[] = [];
+  return ids.map((id) => {
+    let c = (byId[id]?.color ?? "").toLowerCase();
+    if (!/^#[0-9a-f]{6}$/.test(c) || used.some((u) => colorDistance(u, c) < 0.12)) {
+      let best = -1;
+      for (const p of PALETTE) {
+        if (used.includes(p)) continue;
+        const d = Math.min(Infinity, ...used.map((u) => colorDistance(u, p)));
+        if (d > best) [best, c] = [d, p];
+      }
     }
-    taken.add(color);
-    return color;
+    used.push(c);
+    return c;
   });
 }
 
@@ -211,7 +235,6 @@ function TurfGame({ view, byId, isPlayer, act, serverNow, onEvent, accent }: Pro
 
       <TurfBoard
         view={view}
-        painters={painters}
         colors={colors}
         avatars={avatars}
         away={away}
@@ -420,8 +443,8 @@ function MyStats({
           >
             {pctText(painter.n, total)}%
           </div>
-          <div className="mt-1 text-xs leading-snug text-muted">
-            <span className="whitespace-nowrap">{place === 1 ? "🏆 1st" : `#${place} of ${of}`}</span> ·{" "}
+          <div className="mt-1 flex flex-wrap gap-x-1.5 text-xs leading-snug text-muted">
+            <span className="whitespace-nowrap">{place === 1 ? "🏆 1st" : `#${place} of ${of}`}</span>
             <span className="whitespace-nowrap">{painter.n} tiles</span>
           </div>
         </div>
