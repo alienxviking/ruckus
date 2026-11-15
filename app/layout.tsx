@@ -6,7 +6,14 @@ const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
 const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"] });
 const display = Bricolage_Grotesque({ variable: "--font-display-face", subsets: ["latin"] });
 
+// Absolute base for link-preview images: an explicit site URL, Vercel's production
+// domain when deployed there, or localhost in development.
+const siteUrl =
+  process.env.NEXT_PUBLIC_SITE_URL ||
+  (process.env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}` : "http://localhost:3000");
+
 export const metadata: Metadata = {
+  metadataBase: new URL(siteUrl),
   title: "Ruckus — games with friends",
   description: "Make a room, share the link, play real-time party games together. No sign-up.",
 };
