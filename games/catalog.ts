@@ -213,9 +213,9 @@ export const CATALOG: GameMeta[] = [
     emoji: "🔴",
     accent: "#ef4444",
     how: [
-      "Take turns dropping a disc into a column.",
-      "First to line up four (across, down or diagonal) wins.",
-      "Extra players in the room watch and cheer.",
+      "Drop discs into the 7 columns. Four in a row across, down or diagonally wins the game.",
+      "First to 2 game wins takes the match. Draws don't count, 5 games max. Starter swaps each game.",
+      "30s per move or a random disc drops for you. Keys 1–7 work too. Extra players watch.",
     ],
   },
   {

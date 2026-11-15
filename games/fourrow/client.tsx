@@ -59,6 +59,8 @@ function Match({ view, byId, isPlayer, act, serverNow, onEvent, accent }: Props 
   const playing = view.phase === "turn";
   const myTurn = playing && you !== null && view.turn === you;
   const away = (seat: Seat) => view.forfeitAt[seat] !== null;
+  // Both players gone: the server freezes the turn (nobody is waiting) until someone returns.
+  const frozen = playing && away(0) && away(1);
   const lastGame = view.results.length ? view.results[view.results.length - 1] : undefined;
 
   // Where the mover is pointing: our own hover, or the opponent's (relayed by the server).
@@ -69,6 +71,7 @@ function Match({ view, byId, isPlayer, act, serverNow, onEvent, accent }: Props 
   } else if (
     playing &&
     !myTurn &&
+    !away(view.turn) &&
     remote &&
     remote.seq === view.seq &&
     remote.seat === view.turn &&
@@ -135,7 +138,16 @@ function Match({ view, byId, isPlayer, act, serverNow, onEvent, accent }: Props 
   if (view.phase === "turn") {
     const mover = people[view.turn].name;
     statusKey = `turn-${view.seq}`;
-    if (myTurn) {
+    if (frozen) {
+      headline = <>Both players are away</>;
+      sub = (
+        <>
+          Paused until someone returns · <AbandonIn at={Math.max(view.forfeitAt[0]!, view.forfeitAt[1]!)} serverNow={serverNow} />
+        </>
+      );
+      said = "Both players are away. The game is paused until someone returns.";
+      statusKey = `frozen-${view.seq}`;
+    } else if (myTurn) {
       headline = (
         <span className="inline-flex items-center gap-2">
           <DiscSwatch seat={view.turn} color={colors[view.turn]} size={22} /> Your move
@@ -258,7 +270,14 @@ function Match({ view, byId, isPlayer, act, serverNow, onEvent, accent }: Props 
       {/* Fixed-height timer row so the board never jumps */}
       {view.phase !== "over" && (
         <div className="flex h-4 items-center gap-2">
-          {view.phase === "turn" ? (
+          {frozen ? (
+            <>
+              <div className="h-2 flex-1 rounded-full bg-panel-2" aria-hidden />
+              <span className="w-8 text-right text-xs text-muted" aria-hidden>
+                ⏸
+              </span>
+            </>
+          ) : view.phase === "turn" ? (
             <>
               <div className="flex-1">
                 <TimerBar endsAt={view.endsAt} total={view.timerMs} serverNow={serverNow} color={colors[view.turn]} />
@@ -334,6 +353,11 @@ function Seconds({
 function ForfeitIn({ at, serverNow }: { at: number; serverNow: () => number }) {
   const s = useSecondsLeft(at, serverNow);
   return <>forfeits in {s}s</>;
+}
+
+function AbandonIn({ at, serverNow }: { at: number; serverNow: () => number }) {
+  const s = useSecondsLeft(at, serverNow);
+  return <>ends in {s}s</>;
 }
 
 function SeatCard({

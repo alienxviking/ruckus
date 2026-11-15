@@ -597,7 +597,9 @@ function drawGame(s: FourState, t: Harness) {
   }
   check(t.result && ends() === 1 && t.result!.winners.length === 0, "abandoned, nobody wins");
   check(t.result!.headline.includes("abandoned"), `headline: ${t.result!.headline}`);
-  check(t.ctx.now() - 1_700_000_000_000 <= FORFEIT_MS + 400, "ends right after the first minute");
+  const elapsed = t.ctx.now() - 1_700_000_000_000;
+  check(elapsed >= 3000 + FORFEIT_MS && elapsed <= 3000 + FORFEIT_MS + 400, "ends once both have been gone a minute");
+  check(s.moves === 0, "no discs were dropped for two absent players");
 }
 {
   // Disconnect / reconnect after the end is ignored.
@@ -609,6 +611,160 @@ function drawGame(s: FourState, t: Harness) {
   setConnected(s, t, "p1", false);
   setConnected(s, t, "p1", true);
   check(snap(s) === done, "hooks after the end are no-ops");
+}
+
+// ---------- both players away: nothing is played for them ----------
+const MID_GAME = [3, 3, 2, 4, 4, 2, 5, 1, 1, 5]; // no four yet; lots of threats
+{
+  const { t, s, ends } = start(2, 70);
+  play(s, t, MID_GAME);
+  const board = JSON.stringify(s.board);
+  const seq = s.seq;
+  const moverSeat = s.turn;
+  setConnected(s, t, "p0", false);
+  setConnected(s, t, "p1", false);
+  for (let ms = 0; ms < FORFEIT_MS - 1000; ms += 200) {
+    t.advance(200);
+    tick(s, t);
+  }
+  check(s.seq === seq && JSON.stringify(s.board) === board, "no random discs while both are away");
+  check(!t.result && ends() === 0 && s.phase === "turn", "nothing decided while both are away");
+  check(s.score[0] === 0 && s.score[1] === 0 && s.results.length === 0, "score untouched");
+  // The mover comes back first: a fresh full clock, not an expired one.
+  setConnected(s, t, s.seats[moverSeat], true);
+  check(s.turnStartedAt === t.ctx.now() && s.endsAt === t.ctx.now() + TURN_MS, "returning mover gets a fresh 30s");
+  check(!tick(s, t) && s.seq === seq, "no instant auto-drop on return");
+}
+{
+  // The waiting player comes back first: the still-away mover gets a fresh 5s, then auto-drops.
+  const { t, s } = start(2, 71);
+  play(s, t, MID_GAME);
+  const seq = s.seq;
+  const waiting = other(s.turn);
+  setConnected(s, t, "p0", false);
+  setConnected(s, t, "p1", false);
+  t.advance(20_000);
+  check(!tick(s, t) && s.seq === seq, "frozen");
+  setConnected(s, t, s.seats[waiting], true);
+  check(s.endsAt === t.ctx.now() + AWAY_MS && s.timerMs === AWAY_MS, "away mover gets a fresh 5s");
+  t.advance(AWAY_MS - 1);
+  check(!tick(s, t) && s.seq === seq, "not yet");
+  t.advance(1);
+  check(tick(s, t) === true && s.seq === seq + 1 && s.last?.auto, "auto-drop resumes with someone to wait on");
+}
+{
+  // Hooks missed: tick() notices both are away, freezes, and restarts the turn on return.
+  const { t, s } = start(2, 72);
+  play(s, t, MID_GAME);
+  const seq = s.seq;
+  const moverSeat = s.turn;
+  setConnected(s, t, "p0", false, false);
+  setConnected(s, t, "p1", false, false);
+  for (let ms = 0; ms < 30_000; ms += 200) {
+    t.advance(200);
+    tick(s, t);
+  }
+  check(s.seq === seq, "frozen without hooks too");
+  setConnected(s, t, s.seats[moverSeat], true, false);
+  check(tick(s, t) === true && s.endsAt === t.ctx.now() + TURN_MS, "fresh clock after tick sees the return");
+}
+
+// ---------- forfeit vs. a blip by the player who stayed ----------
+{
+  // The stayer drops just before the leaver's minute is up, then comes straight back: they still win.
+  const { t, s, ends } = start(2, 73);
+  const quitter = other(s.turn);
+  const stayer = other(quitter);
+  setConnected(s, t, s.seats[quitter], false);
+  t.advance(FORFEIT_MS - 300);
+  tick(s, t);
+  setConnected(s, t, s.seats[stayer], false);
+  t.advance(400);
+  check(!tick(s, t) && !t.result, "no instant 'abandoned' while the stayer is only briefly away");
+  t.advance(2000);
+  check(!tick(s, t) && !t.result, "still waiting for the stayer");
+  setConnected(s, t, s.seats[stayer], true);
+  check(t.result && ends() === 1, "match ends as soon as the stayer returns");
+  check(s.ending === "forfeit" && s.quitter === quitter, "it's a forfeit");
+  check(t.result!.winners.length === 1 && t.result!.winners[0] === s.seats[stayer], "the stayer wins");
+  check(view(s, t, "spectator").forfeitAt[stayer] === null, "no countdown once over");
+}
+{
+  // The leaver comes back after their minute while the stayer is briefly away: still the leaver's forfeit.
+  for (const hooks of [true, false]) {
+    const { t, s, ends } = start(2, 78);
+    const quitter = other(s.turn);
+    const stayer = other(quitter);
+    setConnected(s, t, s.seats[quitter], false, hooks);
+    tick(s, t);
+    t.advance(FORFEIT_MS - 300);
+    tick(s, t);
+    setConnected(s, t, s.seats[stayer], false, hooks);
+    tick(s, t);
+    t.advance(1000);
+    check(!tick(s, t) && !t.result, `waiting for the stayer (hooks: ${hooks})`);
+    setConnected(s, t, s.seats[quitter], true, hooks);
+    tick(s, t);
+    check(t.result && ends() === 1 && s.ending === "forfeit" && s.quitter === quitter, `leaver can't undo the forfeit (hooks: ${hooks})`);
+    check(t.result!.winners.join() === s.seats[stayer], `the stayer wins (hooks: ${hooks})`);
+  }
+}
+{
+  // Back within their own minute (the other player is away too): play resumes, nobody forfeits yet.
+  const { t, s } = start(2, 79);
+  setConnected(s, t, "p0", false);
+  t.advance(30_000);
+  setConnected(s, t, "p1", false);
+  t.advance(10_000);
+  tick(s, t);
+  setConnected(s, t, "p0", true);
+  check(!t.result && s.phase === "turn" && s.awaySince[0] === null, "p0 is back in the game");
+  t.advance(FORFEIT_MS - 10_000);
+  tick(s, t);
+  check(t.result && s.ending === "forfeit" && s.quitter === 1, "p1 forfeits after their own minute");
+}
+{
+  // If the stayer doesn't come back either, the match is abandoned once they've been gone a minute too.
+  const { t, s, ends } = start(2, 74);
+  const quitter = other(s.turn);
+  const stayer = other(quitter);
+  setConnected(s, t, s.seats[quitter], false);
+  t.advance(FORFEIT_MS - 10_000);
+  tick(s, t);
+  setConnected(s, t, s.seats[stayer], false);
+  const stayerLeft = t.ctx.now();
+  while (!t.result && t.ctx.now() - stayerLeft < FORFEIT_MS + 1000) {
+    t.advance(200);
+    tick(s, t);
+  }
+  check(t.result && ends() === 1 && s.ending === "abandoned", "abandoned");
+  check(t.result!.winners.length === 0, "nobody wins");
+  check(t.ctx.now() - stayerLeft >= FORFEIT_MS && t.ctx.now() - stayerLeft <= FORFEIT_MS + 200, "after both were gone a minute");
+}
+
+// ---------- hover cleared when the mover leaves; per-turn hover budget ----------
+{
+  const { t, s } = start(2, 75);
+  const me = mover(s);
+  act(s, t, me, { type: "hover", col: 2 });
+  const before = t.events.length;
+  setConnected(s, t, me, false);
+  const ev = t.events[t.events.length - 1];
+  check(t.events.length === before + 1, "leaving emits one event");
+  const h = ev.event as HoverEvent;
+  check(h.type === "hover" && h.col === null && h.seat === s.turn && h.seq === s.seq, "hover cleared for everyone");
+  // The waiting player leaving doesn't emit anything.
+  const { t: t2, s: s2 } = start(2, 76);
+  setConnected(s2, t2, s2.seats[other(s2.turn)], false);
+  check(t2.events.length === 0, "no hover event when the waiting player leaves");
+}
+{
+  const { t, s } = start(2, 77);
+  for (let i = 0; i < 40; i++) act(s, t, mover(s), { type: "hover", col: i % COLS });
+  play(s, t, [3]);
+  const n = t.events.length;
+  act(s, t, mover(s), { type: "hover", col: 1 });
+  check(t.events.length === n + 1, "next mover's hovers aren't blocked by the previous mover's spam");
 }
 
 // ---------- hover events ----------
@@ -713,7 +869,8 @@ function drawGame(s: FourState, t: Harness) {
       else if (c !== null) b++;
       check(a - b === 0 || a - b === 1, `fuzz ${seed}: turns alternate (${a} vs ${b})`);
       check(s.score[0] + s.score[1] <= s.results.length && s.results.length <= MAX_GAMES, `fuzz ${seed}: results`);
-      check(s.phase !== "turn" || s.endsAt > t.ctx.now() - 9000, `fuzz ${seed}: deadline sane`);
+      const frozen = s.awaySince[0] !== null && s.awaySince[1] !== null; // turn clock stops when both are gone
+      check(s.phase !== "turn" || frozen || s.endsAt > t.ctx.now() - 9000, `fuzz ${seed}: deadline sane`);
       check(Math.max(...s.score) <= TARGET_WINS, `fuzz ${seed}: score capped`);
     }
     check(t.result, `fuzz ${seed}: match finished`);

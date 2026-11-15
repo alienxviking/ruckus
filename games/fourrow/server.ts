@@ -15,8 +15,9 @@ import {
 // count, the match stops after 5 games). Everything is public, so the view only
 // adds the viewer's seat. Timers live in state as absolute deadlines (endsAt)
 // and tick() moves things along: turn timeouts drop a random legal disc, a
-// disconnected mover gets auto-dropped after 5s, and someone gone for a full
-// minute forfeits so the match always finishes.
+// disconnected mover gets auto-dropped after 5s (unless both players are gone:
+// then nobody is waiting, so the turn freezes), and someone gone for a full
+// minute forfeits so the match always finishes (both gone a minute: abandoned).
 
 export type Seat = 0 | 1;
 export type Disc = Seat | null;
@@ -133,6 +134,8 @@ const DIRECTIONS: readonly [number, number][] = [
 const HOVER_BURST = 24;
 
 const other = (seat: Seat): Seat => (seat === 0 ? 1 : 0);
+/** Both players disconnected: nobody is waiting, so no discs are dropped for them. */
+const bothAway = (s: FourState) => s.awaySince[0] !== null && s.awaySince[1] !== null;
 
 function emptyBoard(): Disc[][] {
   return Array.from({ length: ROWS }, () => Array<Disc>(COLS).fill(null));
@@ -218,7 +221,66 @@ function beginTurn(s: FourState, seat: Seat, ctx: GameCtx) {
   s.phase = "turn";
   s.turn = seat;
   s.turnStartedAt = ctx.now();
+  s.hoverWindow = s.turnStartedAt;
+  s.hoverCount = 0;
   setTurnClock(s);
+}
+
+/** A seat disconnected: shorten their turn clock and clear their hover preview. */
+function seatLeft(s: FourState, seat: Seat, ctx: GameCtx) {
+  if (s.phase === "over" || s.awaySince[seat] !== null) return;
+  s.awaySince[seat] = ctx.now();
+  if (s.phase === "turn" && s.turn === seat) {
+    setTurnClock(s);
+    // Nobody should keep seeing a column the auto-drop will ignore.
+    const ev: HoverEvent = { type: "hover", seat, col: null, seq: s.seq };
+    ctx.emit(ev, { except: s.seats[seat] });
+  }
+}
+
+/** A seat reconnected: settle a pending forfeit, or restore / restart the turn clock. */
+function seatReturned(s: FourState, seat: Seat, ctx: GameCtx) {
+  const since = s.awaySince[seat];
+  if (s.phase === "over" || since === null) return;
+  const now = ctx.now();
+  // Already gone a full minute: coming back (say, while the other player is
+  // briefly away) doesn't undo the forfeit.
+  if (now - since >= FORFEIT_MS) {
+    const otherSince = s.awaySince[other(seat)];
+    if (otherSince !== null && now - otherSince >= FORFEIT_MS) endMatch(s, [], "abandoned", ctx);
+    else endMatch(s, [other(seat)], "forfeit", ctx, seat);
+    return;
+  }
+  const wasFrozen = bothAway(s);
+  s.awaySince[seat] = null;
+  if (checkForfeit(s, ctx, now)) return; // the other player's minute already ran out: we win
+  if (s.phase !== "turn") return;
+  // After a both-away freeze the old deadline is stale: start the turn afresh.
+  if (wasFrozen) beginTurn(s, s.turn, ctx);
+  else setTurnClock(s);
+}
+
+/**
+ * A seat away for FORFEIT_MS forfeits. If the other seat is away too, they get
+ * their own full minute to come back and claim the win; only when both have
+ * been gone that long is the match abandoned. Returns true when it ended.
+ */
+function checkForfeit(s: FourState, ctx: GameCtx, now: number): boolean {
+  if (s.phase === "over") return false;
+  for (const seat of SEATS) {
+    const since = s.awaySince[seat];
+    if (since === null || now - since < FORFEIT_MS) continue;
+    const otherSince = s.awaySince[other(seat)];
+    if (otherSince === null) {
+      endMatch(s, [other(seat)], "forfeit", ctx, seat);
+      return true;
+    }
+    if (now - otherSince >= FORFEIT_MS) {
+      endMatch(s, [], "abandoned", ctx);
+      return true;
+    }
+  }
+  return false;
 }
 
 function endMatch(s: FourState, winners: Seat[], ending: Ending, ctx: GameCtx, quitter: Seat | null = null) {
@@ -308,20 +370,16 @@ function nextGame(s: FourState, ctx: GameCtx) {
 }
 
 /** Reconcile awaySince with the room's connection flags (in case a hook was missed). */
-function syncPresence(s: FourState, ctx: GameCtx, now: number): boolean {
+function syncPresence(s: FourState, ctx: GameCtx): boolean {
   let changed = false;
   for (const seat of SEATS) {
     const p = ctx.player(s.seats[seat]);
     const away = !p || !p.connected;
-    if (away && s.awaySince[seat] === null) {
-      s.awaySince[seat] = now;
-      changed = true;
-    } else if (!away && s.awaySince[seat] !== null) {
-      s.awaySince[seat] = null;
-      changed = true;
-    }
+    if (away === (s.awaySince[seat] !== null)) continue;
+    changed = true;
+    if (away) seatLeft(s, seat, ctx);
+    else seatReturned(s, seat, ctx);
   }
-  if (changed && s.phase === "turn") setTurnClock(s);
   return changed;
 }
 
@@ -393,21 +451,15 @@ export const fourrow: GameDef<FourState, FourAction> = {
       return true;
     }
     const now = ctx.now();
-    const changed = syncPresence(s, ctx, now);
-
-    for (const seat of SEATS) {
-      const since = s.awaySince[seat];
-      if (since === null || now - since < FORFEIT_MS) continue;
-      if (s.awaySince[other(seat)] !== null) endMatch(s, [], "abandoned", ctx);
-      else endMatch(s, [other(seat)], "forfeit", ctx, seat);
-      return true;
-    }
+    const changed = syncPresence(s, ctx);
+    if (s.ending !== null) return true; // a return noticed by syncPresence settled a forfeit
+    if (checkForfeit(s, ctx, now)) return true;
 
     if (s.phase === "between" && now >= s.endsAt) {
       nextGame(s, ctx);
       return true;
     }
-    if (s.phase === "turn" && now >= s.endsAt) {
+    if (s.phase === "turn" && now >= s.endsAt && !bothAway(s)) {
       autoDrop(s, ctx);
       return true;
     }
@@ -447,16 +499,12 @@ export const fourrow: GameDef<FourState, FourAction> = {
 
   playerLeft(s, playerId, ctx) {
     const seat = seatOf(s, playerId);
-    if (seat === null || s.phase === "over") return;
-    if (s.awaySince[seat] === null) s.awaySince[seat] = ctx.now();
-    if (s.phase === "turn" && s.turn === seat) setTurnClock(s);
+    if (seat !== null) seatLeft(s, seat, ctx);
   },
 
-  playerReturned(s, playerId) {
+  playerReturned(s, playerId, ctx) {
     const seat = seatOf(s, playerId);
-    if (seat === null || s.phase === "over") return;
-    s.awaySince[seat] = null;
-    if (s.phase === "turn" && s.turn === seat) setTurnClock(s);
+    if (seat !== null) seatReturned(s, seat, ctx);
   },
 };
 
