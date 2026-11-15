@@ -417,7 +417,7 @@ export const CATALOG: GameMeta[] = [
   {
     id: "potato",
     name: "Hot Potato",
-    tagline: "Solve it, throw it, pray it doesn't blow.",
+    tagline: "Solve it, throw it, pray it doesn't blow up on you.",
     category: "party",
     minPlayers: 3,
     maxPlayers: 12,
@@ -427,9 +427,9 @@ export const CATALOG: GameMeta[] = [
     isNew: true,
     original: true,
     how: [
-      "The potato has a hidden fuse. Holding it? Solve a tiny puzzle to earn a throw.",
-      "Throw it at anyone (but not straight back). It goes off at a random moment.",
-      "Caught holding it when it blows and you lose a life. Last one standing wins.",
+      "The potato has a hidden fuse. Holding it? Solve a tiny puzzle, then tap a player to throw it.",
+      "No throwing straight back. If it blows mid-air, the thrower pays. Don't hold it too long!",
+      "Holding it when it goes BOOM costs a life (1 life at 9+ players). Last one standing wins.",
     ],
   },
   {
