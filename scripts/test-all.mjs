@@ -11,11 +11,8 @@ const ids = readdirSync(join(root, "games"), { withFileTypes: true })
 
 const failed = [];
 for (const id of ids) {
-  const r = spawnSync("npx", ["tsx", `games/${id}/${id}.test.ts`], {
-    cwd: root,
-    encoding: "utf8",
-    shell: process.platform === "win32",
-  });
+  // Run tsx through node directly (no shell): `node --import tsx file.ts`.
+  const r = spawnSync(process.execPath, ["--import", "tsx", `games/${id}/${id}.test.ts`], { cwd: root, encoding: "utf8" });
   const ok = r.status === 0;
   if (!ok) failed.push(id);
   console.log(`${ok ? "✓" : "✗"} ${id}`);

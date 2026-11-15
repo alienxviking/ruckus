@@ -30,18 +30,19 @@ writeFileSync(
   ),
 );
 
+// Tools run through node directly (no shell), e.g. node <tsc> -p cfg / node --import tsx file.
 const run = (label, cmd, args) => {
   process.stdout.write(`\n── ${label} ──\n`);
-  const r = spawnSync(cmd, args, { cwd: root, stdio: "inherit", shell: process.platform === "win32" });
+  const r = spawnSync(process.execPath, [cmd, ...args], { cwd: root, stdio: "inherit" });
   return r.status === 0;
 };
 
 const results = {
-  typecheck: run("typecheck", "npx", ["tsc", "-p", cfgPath]),
-  lint: run("lint", "npx", ["eslint", "--max-warnings=0", `games/${id}`]),
+  typecheck: run("typecheck", join(root, "node_modules/typescript/bin/tsc"), ["-p", cfgPath]),
+  lint: run("lint", join(root, "node_modules/eslint/bin/eslint.js"), ["--max-warnings=0", `games/${id}`]),
 };
 const testFile = `games/${id}/${id}.test.ts`;
-results.test = existsSync(join(root, testFile)) ? run("tests", "npx", ["tsx", testFile]) : false;
+results.test = existsSync(join(root, testFile)) ? run("tests", "--import", ["tsx", testFile]) : false;
 if (!existsSync(join(root, testFile))) console.log(`(missing ${testFile})`);
 
 console.log("\n" + Object.entries(results).map(([k, ok]) => `${ok ? "✓" : "✗"} ${k}`).join("   "));
