@@ -62,16 +62,34 @@ export function TimerBar({
   serverNow: () => number;
   color?: string;
 }) {
-  useTicker(100);
-  const left = endsAt ? Math.max(0, endsAt - serverNow()) : 0;
-  const pct = total > 0 ? Math.min(100, (left / total) * 100) : 0;
   return (
-    <div className="h-2 w-full overflow-hidden rounded-full bg-panel-2" role="progressbar" aria-valuenow={Math.ceil(left / 1000)}>
-      <div
-        className="h-full rounded-full transition-[width] duration-100 ease-linear"
-        style={{ width: `${pct}%`, background: color }}
-      />
+    <div className="h-2 w-full overflow-hidden rounded-full bg-panel-2" role="progressbar" aria-label="Time left">
+      {endsAt && total > 0 ? (
+        // Re-keyed per deadline: one compositor animation per phase, no per-tick renders.
+        <TimerFill key={endsAt} endsAt={endsAt} total={total} serverNow={serverNow} color={color} />
+      ) : null}
     </div>
+  );
+}
+
+function TimerFill({ endsAt, total, serverNow, color }: { endsAt: number; total: number; serverNow: () => number; color: string }) {
+  // Measured once when this deadline appears; the browser animates the rest.
+  const [start] = useState(() => {
+    const left = Math.max(0, endsAt - serverNow());
+    return { left, from: Math.min(1, left / total) };
+  });
+  return (
+    <div
+      className={`h-full w-full origin-left rounded-full ${start.left > 0 ? "timer-fill" : ""}`}
+      style={
+        {
+          background: color,
+          transform: `scaleX(${start.left > 0 ? start.from : 0})`,
+          animationDuration: `${start.left}ms`,
+          "--from": start.from,
+        } as React.CSSProperties
+      }
+    />
   );
 }
 

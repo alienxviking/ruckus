@@ -11,7 +11,7 @@ export function Confetti({ pieces = 30 }: { pieces?: number }) {
         return (
           <span
             key={i}
-            className="absolute top-0 block rounded-[2px]"
+            className="confetti-piece absolute top-0 block rounded-[2px]"
             style={
               {
                 left: `${4 + r(1) * 92}%`,
@@ -20,7 +20,8 @@ export function Confetti({ pieces = 30 }: { pieces?: number }) {
                 background: COLORS[i % COLORS.length],
                 "--drift": `${(r(4) - 0.5) * 160}px`,
                 "--spin": `${360 + r(5) * 540}deg`,
-                animation: `confetti-fall ${1.6 + r(6) * 1.4}s cubic-bezier(0.2, 0.6, 0.4, 1) ${r(7) * 0.5}s both`,
+                animationDuration: `${1.6 + r(6) * 1.4}s`,
+                animationDelay: `${r(7) * 0.5}s`,
               } as React.CSSProperties
             }
           />
