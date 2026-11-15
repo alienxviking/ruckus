@@ -172,7 +172,7 @@ export const CATALOG: GameMeta[] = [
   {
     id: "dial",
     name: "On the Dial",
-    tagline: "One clue, a hidden target, everyone drags a live dial.",
+    tagline: "One clue, a hidden target, everyone else drags a live dial.",
     category: "party",
     minPlayers: 2,
     maxPlayers: 12,
@@ -181,9 +181,9 @@ export const CATALOG: GameMeta[] = [
     accent: "#22d3ee",
     original: true,
     how: [
-      "The clue-giver sees a hidden target on a scale like Cold ↔ Hot.",
-      "They give a clue that sits at that spot on the scale.",
-      "Everyone drags their dial live. The closer you are, the more you score.",
+      "Take turns as clue-giver: only you see a hidden target on a scale like Cold ↔ Hot, and give a clue that sits there.",
+      "Everyone else drags a needle live. Closest scores most (up to 4); the clue-giver earns the average.",
+      "With 2 players you are a team: score 8 of 16 together to win.",
     ],
   },
   {

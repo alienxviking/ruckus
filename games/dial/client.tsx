@@ -14,8 +14,8 @@ import {
 import type { GameClientProps } from "@/shared/client-game";
 import type { Player } from "@/shared/types";
 import { Note, PlayerChip, Scoreboard, StatusBanner, TimerBar, useSecondsLeft } from "@/components/game-ui";
-import type { DialAction, DialRecap, DialReveal, DialRow, DialSeat, DialView } from "./server";
-import { CLUE_MAX, DIAL_START, cleanClue, clueProblem, isDialEvent } from "./shared";
+import type { DialAction, DialRecap, DialReveal, DialRow, DialSeat, DialTeam, DialView } from "./server";
+import { CLUE_MAX, DIAL_START, cleanClue, clueProblem, isDialEvent, teamVerdict } from "./shared";
 import { BAND_COLOR, Burst, CX, CY, DialStyles, Gauge, LEFT_COLOR, RIGHT_COLOR, type GaugeNeedle } from "./gauge";
 
 type Props = GameClientProps<DialView, DialAction>;
@@ -283,7 +283,7 @@ function Board({ view, me, byId, isPlayer, act, serverNow, onEvent, accent }: Pr
         />
       )}
       {view.phase === "reveal" && view.reveal && (
-        <RevealList reveal={view.reveal} giver={view.giver} who={who} me={me} />
+        <RevealList reveal={view.reveal} giver={view.giver} who={who} me={me} coop={view.team !== null} />
       )}
 
       <PlayerStrip view={view} who={who} me={me} moved={moved} />
@@ -324,7 +324,7 @@ function Headline({
       >
         <div className="text-sm font-semibold text-muted">{line}</div>
         <div
-          className={`animate-pop mt-1 font-display leading-tight font-extrabold [overflow-wrap:anywhere] ${
+          className={`animate-pop mt-1 overflow-hidden py-1 font-display leading-tight font-extrabold [overflow-wrap:anywhere] ${
             (view.clue?.length ?? 0) > 24 ? "text-2xl @lg:text-3xl" : "text-3xl @lg:text-4xl"
           }`}
         >
@@ -421,10 +421,23 @@ function Meta({ view, who, serverNow, accent }: { view: DialView; who: Who; serv
             <span className="sr-only">is the clue-giver</span>
           </PlayerChip>
         )}
+        {view.team && <TeamPill team={view.team} />}
         <SecondsLeft endsAt={view.endsAt} serverNow={serverNow} />
       </div>
       <TimerBar endsAt={view.endsAt} total={view.phaseMs} serverNow={serverNow} color={accent} />
     </div>
+  );
+}
+
+function TeamPill({ team }: { team: DialTeam }) {
+  const reached = team.score >= team.goal;
+  return (
+    <span
+      className={`rounded-full border px-2 py-0.5 text-xs font-semibold ${reached ? "border-emerald-400/60 text-emerald-300" : "border-line text-muted"}`}
+    >
+      <span aria-hidden>🤝 </span>Team <b className="font-mono text-text tabular-nums">{team.score}</b>/{team.max}
+      <span className="text-muted"> · {reached ? "goal reached!" : `${team.goal} to win`}</span>
+    </span>
   );
 }
 
@@ -674,7 +687,7 @@ function ClueForm({ view, act, accent }: { view: DialView; act: Props["act"]; ac
       </div>
       <div className="flex items-start justify-between gap-3 text-xs">
         <span id={hintId} className={error ? "font-semibold text-brand" : "text-muted"} role={error ? "alert" : undefined}>
-          {error ?? "A word, a thing, a phrase. No numbers!"}
+          {error ?? "A word, a thing, a phrase. Not just a number!"}
         </span>
         <span className="shrink-0 font-mono text-muted tabular-nums">
           {clean.length}/{CLUE_MAX}
@@ -759,7 +772,19 @@ function GuessControls({
 
 // ---------- reveal & standings ----------
 
-function RevealList({ reveal, giver, who, me }: { reveal: DialReveal; giver: string; who: Who; me: string }) {
+function RevealList({
+  reveal,
+  giver,
+  who,
+  me,
+  coop,
+}: {
+  reveal: DialReveal;
+  giver: string;
+  who: Who;
+  me: string;
+  coop: boolean;
+}) {
   const detail = (r: DialRow) =>
     r.v === null ? "didn't guess" : r.dist === 0 ? `at ${r.v} · exact!` : `at ${r.v} · ${r.dist} off`;
   return (
@@ -793,7 +818,9 @@ function RevealList({ reveal, giver, who, me }: { reveal: DialReveal; giver: str
           🎙️
         </span>
         <PlayerChip player={who(giver)} size="sm" />
-        <span className="min-w-0 truncate text-xs text-muted @md:text-sm">clue-giver · avg of guesses</span>
+        <span className="min-w-0 truncate text-xs text-muted @md:text-sm">
+          {coop ? "clue-giver · same points (team)" : "clue-giver · avg of guesses"}
+        </span>
         <span className="ml-auto shrink-0 font-mono text-base font-extrabold tabular-nums">+{reveal.giverPts}</span>
       </li>
     </ol>
@@ -861,13 +888,17 @@ function Final({ view, who, byId, me }: { view: DialView; who: Who; byId: Record
   return (
     <div className="flex animate-rise flex-col gap-3">
       {view.abandoned && <Note>The game ended early: not enough players were left.</Note>}
-      <Scoreboard
-        scores={scores}
-        byId={byId}
-        order={view.seats.map((s) => s.id)}
-        highlight={me}
-        title="Final standings"
-      />
+      {view.team ? (
+        <TeamResult team={view.team} ids={view.seats.map((s) => s.id)} who={who} />
+      ) : (
+        <Scoreboard
+          scores={scores}
+          byId={byId}
+          order={view.seats.map((s) => s.id)}
+          highlight={me}
+          title="Final standings"
+        />
+      )}
       {(sharpest || bestClue) && (
         <div className="grid gap-2 @lg:grid-cols-2">
           {sharpest?.best && (
@@ -903,6 +934,42 @@ function Final({ view, who, byId, me }: { view: DialView; who: Who; byId: Record
           </ol>
         </div>
       )}
+    </div>
+  );
+}
+
+function TeamResult({ team, ids, who }: { team: DialTeam; ids: string[]; who: Who }) {
+  const verdict = teamVerdict(team.score, team.goal, team.max);
+  const pct = Math.round((team.score / Math.max(1, team.max)) * 100);
+  const goalPct = Math.round((team.goal / Math.max(1, team.max)) * 100);
+  return (
+    <div className="card animate-pop flex flex-col items-center gap-2 p-4 text-center">
+      <div className="label">Team score</div>
+      <div className="font-display text-4xl font-extrabold tabular-nums">
+        {team.score}
+        <span className="text-xl text-muted">/{team.max}</span>
+      </div>
+      <div className={`text-lg font-bold ${verdict.won ? "text-emerald-300" : "text-muted"}`}>
+        <span aria-hidden>{verdict.won ? "🤝 " : "📻 "}</span>
+        {verdict.title}
+      </div>
+      <div
+        className="relative h-2.5 w-full max-w-xs overflow-hidden rounded-full bg-panel-2"
+        role="img"
+        aria-label={`${team.score} of ${team.max} points, ${team.goal} needed to win`}
+      >
+        <div className="h-full rounded-full bg-emerald-400/80" style={{ width: `${pct}%` }} />
+        <div className="absolute inset-y-0 w-0.5 bg-white/70" style={{ left: `${goalPct}%` }} />
+      </div>
+      <p className="text-sm text-muted">
+        {ids.map((id, i) => (
+          <span key={id}>
+            {i > 0 && " & "}
+            <b style={{ color: who(id).color }}>{who(id).name}</b>
+          </span>
+        ))}{" "}
+        played as a team · {team.goal} needed to win
+      </p>
     </div>
   );
 }

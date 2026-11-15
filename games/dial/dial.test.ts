@@ -15,6 +15,7 @@ import {
   TARGET_MIN,
   cleanClue,
   clueProblem,
+  isBareDialNumber,
   isDialEvent,
   pointsFor,
 } from "./shared";
@@ -110,6 +111,29 @@ function playRound(s: DialState, t: T, offsets: number[], clue = "a fine clue") 
     assert(!seen.has(key), `duplicate spectrum ${l} / ${r}`);
     seen.add(key);
   }
+  // Scales that measure the same thing with synonym ends feel like a repeat in one
+  // game: at most one from each group.
+  const sameAxis: string[][] = [
+    ["Fragile", "Delicate"],
+    ["Gone in a second", "Temporary"],
+    ["Tastes like nothing", "Bland"],
+    ["Introvert activity", "Solo activity"],
+    ["Unpopular opinion", "Lukewarm take"],
+    ["For kids", "Childish"],
+    ["Rare", "Easy to find"],
+    ["Feels like Monday", "Weekday", "Ordinary day"],
+    ["Not scary at all", "Harmless monster"],
+    ["Simple", "Common sense"],
+  ];
+  const ends = new Set(SPECTRUMS.flatMap(([l, r]) => [l, r]));
+  for (const group of sameAxis) {
+    const present = group.filter((x) => ends.has(x));
+    assert(present.length <= 1, `same-axis spectrums: ${present.join(", ")}`);
+  }
+  // Every scale needs two ends of one quantity (these didn't).
+  for (const bad of ["Needs batteries", "Sounds fake", "Fun to watch", "Healthy snack"]) {
+    assert(!ends.has(bad), `ill-formed spectrum end: ${bad}`);
+  }
 }
 
 {
@@ -127,6 +151,28 @@ function playRound(s: DialState, t: T, offsets: number[], clue = "a fine clue") 
   assert(clueProblem("62") !== null && clueProblem("6 2%") !== null && clueProblem("#62/100") !== null, "numbers rejected");
   assert(clueProblem("90s music") === null && clueProblem("🔥🔥") === null, "normal clues ok");
   assert(clueProblem("x".repeat(CLUE_MAX)) === null && clueProblem("x".repeat(CLUE_MAX + 1)) !== null, "length limit");
+
+  // Only a bare dial position (0-100) is refused, in any digit form; titles and other numbers are clues.
+  const bare = ["62", "6 2", "62%", "#62/100", "0", "100", "62.5", "62,5", "\uff16\uff12", "\u0666\u0662", "6\ufe0f\u20e32\ufe0f\u20e3", "(62)!"];
+  for (const n of bare) {
+    assert(isBareDialNumber(n) && clueProblem(cleanClue(n)) !== null, `bare number refused: ${n}`);
+  }
+  for (const ok of ["1917", "1984", "300", "2012", "911", "101", "24/7", "007", "1,000", "Area 51", "90s", "7 dwarfs", "9 to 5"]) {
+    assert(!isBareDialNumber(ok) && clueProblem(cleanClue(ok)) === null, `number-ish clue allowed: ${ok}`);
+  }
+
+  // Blank-looking clues: invisible "letters" and lone joiners/selectors are stripped or refused.
+  const blanks = ["\u3164", "\u115f", "\uffa0", "\u2800", "\u200d", "\u200c", "\ufe0f", "\u034f", "\u061c", "\u180e", "\u{e0041}\u{e0042}", "\u3164 \u2800"];
+  for (const blank of blanks) {
+    assert(clueProblem(cleanClue(blank)) !== null, `blank clue refused: ${JSON.stringify(blank)}`);
+  }
+  assert(cleanClue("hot\u3164dog") === "hotdog" && cleanClue("a\u2060b\u00adc") === "abc", "fillers and Cf stripped");
+  const flag = "\u{1f3f4}\u{e0067}\u{e0062}\u{e0073}\u{e0063}\u{e0074}\u{e007f}"; // Scotland: black flag + tags
+  assert(cleanClue("\u2764\ufe0f love") === "\u2764\ufe0f love" && cleanClue(flag + " pride") === flag + " pride", "emoji presentation and flag tags kept");
+  // Zalgo: at most three combining marks per character survive; normal accents are untouched.
+  const zalgo = cleanClue("W" + "\u0301".repeat(39));
+  assert([...zalgo].length <= 4 && clueProblem(zalgo) === null, `mark pile trimmed (${zalgo.length})`);
+  assert(cleanClue("cafe\u0301") === "caf\u00e9" && cleanClue("Pok\u00e9mon") === "Pok\u00e9mon", "accents kept");
 }
 
 // ---------- setup: order, targets, timers ----------
@@ -536,15 +582,86 @@ for (const n of [2, 3, 4, 7, 12]) {
 }
 
 {
-  // A giver who left long before their turn is skipped right away.
+  // A giver who left long before their turn still gets the grace period on their own turn,
+  // with a visible countdown, and keeps the turn if they come back in time.
   const { t, s } = harness(4, 18);
   const nextGiver = s.ids[s.order[1]];
   disconnect(s, t, nextGiver);
   tick(s, t, 30_000);
   tick(s, t, CLUE_MS); // round 0 times out -> round 1 (the absent giver)
   assert(s.round === 1, "on to round 1");
+  const turnStart = t.ctx.now();
+  assert(view(s, t.ids[0], t).skipAt === turnStart + AWAY_GRACE_MS, "countdown starts with their turn");
   tick(s, t, 250);
-  assert(s.round === 2 && view(s, t.ids[0], t).notice?.id === nextGiver, "absent giver skipped immediately");
+  assert(s.round === 1, "not skipped on the first tick of their turn");
+  tick(s, t, AWAY_GRACE_MS - 500);
+  assert(s.round === 1, "still within the grace");
+  reconnect(s, t, nextGiver);
+  tick(s, t, 5_000);
+  assert(s.round === 1 && view(s, t.ids[0], t).skipAt === null, "came back in time: keeps the turn");
+  assert(act(s, t, nextGiver, { type: "clue", text: "phew" }) === true, "and gives the clue");
+}
+
+{
+  // Still absent when their grace runs out: skipped, and the next giver starts fresh.
+  const { t, s } = harness(4, 18);
+  const nextGiver = s.ids[s.order[1]];
+  disconnect(s, t, nextGiver);
+  tick(s, t, CLUE_MS);
+  assert(s.round === 1, "absent giver's turn");
+  tick(s, t, AWAY_GRACE_MS - 1);
+  assert(s.round === 1, "grace holds");
+  tick(s, t, 1);
+  assert(s.round === 2 && view(s, t.ids[0], t).notice?.id === nextGiver, "skipped after the grace");
+}
+
+for (const where of ["clue", "guess", "reveal"] as const) {
+  // Everyone drops at once (shared Wi-Fi blip): no turns are burned. The game waits for the
+  // abandonment timer and ends abandoned, not as a normal finish full of skipped rounds.
+  const { t, s, calls } = harness(4, 40);
+  if (where !== "clue") act(s, t, giverId(s), { type: "clue", text: "together" });
+  if (where === "reveal") guessersOf(s).forEach((id) => act(s, t, id, { type: "lock", v: 50 }));
+  assert(phaseOf(s) === where, `in ${where}`);
+  const start = t.ctx.now();
+  for (const id of s.ids) disconnect(s, t, id);
+  let guard = 0;
+  while (phaseOf(s) !== "final" && guard++ < 400) tick(s, t, 250);
+  assert(calls.length === 1 && s.abandoned, `${where}: ended as abandoned`);
+  assert(t.ctx.now() - start >= ABANDON_MS, `${where}: not before the ${ABANDON_MS}ms countdown`);
+  assert(s.recap.every((r) => !r.skipped), `${where}: no turns burned`);
+  assert(/not enough players/i.test(calls[0].headline), `${where}: headline explains why`);
+}
+
+{
+  // Everyone drops for 12s and comes back: same round, same phase, nobody lost a turn.
+  const { t, s, calls } = harness(4, 41);
+  tick(s, t, 3_000);
+  const round = s.round;
+  for (const id of s.ids) disconnect(s, t, id);
+  for (let k = 0; k < 48; k++) tick(s, t, 250);
+  for (const id of s.ids) reconnect(s, t, id);
+  tick(s, t, 250);
+  assert(calls.length === 0 && phaseOf(s) === "clue" && s.round === round, "resumed where it was");
+  assert(act(s, t, giverId(s), { type: "clue", text: "we're back" }) === true, "giver kept the turn");
+}
+
+{
+  // 2 players, one refreshes (3s): no "game ends" warning flashes. A real drop shows it after the grace.
+  const { t, s } = harness(2, 42);
+  const [a, b] = s.ids;
+  disconnect(s, t, a);
+  for (let k = 0; k < 12; k++) {
+    tick(s, t, 250);
+    assert(view(s, b, t).endingAt === null, "no warning during a refresh");
+  }
+  reconnect(s, t, a);
+  tick(s, t, 250);
+  const left = t.ctx.now();
+  disconnect(s, t, a);
+  tick(s, t, AWAY_GRACE_MS - 250);
+  assert(view(s, b, t).endingAt === null, "still nothing just before the grace");
+  tick(s, t, 250);
+  assert(view(s, b, t).endingAt === left + ABANDON_MS, "warning once they've been gone a while");
 }
 
 {
@@ -589,9 +706,12 @@ for (const n of [2, 3, 4, 7, 12]) {
   act(s, t, giverId(s), { type: "clue", text: "lonely" });
   const stay = giverId(s);
   for (const id of s.ids) if (id !== stay) disconnect(s, t, id);
+  const left = t.ctx.now();
   tick(s, t, 250);
+  assert(view(s, stay, t).endingAt === null, "no warning for what may be a refresh");
+  tick(s, t, AWAY_GRACE_MS);
   const v = view(s, stay, t);
-  assert(v.endingAt !== null && v.endingAt > t.ctx.now(), "ending countdown shown");
+  assert(v.endingAt === left + ABANDON_MS && v.endingAt > t.ctx.now(), "ending countdown shown after the grace");
   // One comes back in time: cancelled.
   const back = s.ids.find((id) => id !== stay)!;
   tick(s, t, 5_000);
@@ -639,18 +759,67 @@ for (const n of [2, 3, 4, 7, 12]) {
 // ---------- ties and player counts ----------
 
 {
-  // 2 players: each gives two clues; perfect guesses everywhere -> exact tie.
+  // 2 players: competitive scores would always tie (the clue-giver gets the only guess's
+  // points), so the pair plays co-op for one team score out of 16; 8 or more wins.
   const { t, s, calls } = harness(2, 24);
   assert(s.order.length === 4, "2 players -> 4 rounds");
-  while (s.phase !== "final") {
+  const v0 = view(s, t.ids[0], t);
+  assert(deepEqual(v0.team, { score: 0, goal: 8, max: 16 }), "co-op team in the view");
+  assert(deepEqual(view(s, "spectator", t).team, v0.team), "spectators see the team score too");
+  while (phaseOf(s) !== "final") {
     playRound(s, t, [0]);
+    assert(view(s, t.ids[1], t).team!.score === 4 * (s.round + 1), "team score grows each reveal");
     tick(s, t, REVEAL_MS);
   }
   assert(calls.length === 1, "one end");
   const r = calls[0];
-  assert(r.winners.length === 2, "tie -> both win");
-  assert(r.scores![t.ids[0]] === 16 && r.scores![t.ids[1]] === 16, "16 each");
-  assert(/tie/i.test(r.headline) && r.headline.includes("Player0") && r.headline.includes("Player1"), "tie headline");
+  assert(r.winners.length === 2, "team goal reached -> both win");
+  assert(/perfect sync/i.test(r.headline) && /16\/16/.test(r.headline), `team headline: ${r.headline}`);
+  assert(r.headline.includes("Player0") && r.headline.includes("Player1") && !/tie/i.test(r.headline), "names the team, no tie");
+  assert(view(s, t.ids[0], t).team!.score === 16, "final view keeps the team score");
+}
+
+{
+  // Exactly the goal wins; below it, nobody wins.
+  const a = harness(2, 25);
+  while (phaseOf(a.s) !== "final") {
+    a.s.target = 50;
+    playRound(a.s, a.t, [9]); // 9 off -> 2 points a round
+    tick(a.s, a.t, REVEAL_MS);
+  }
+  assert(view(a.s, a.t.ids[0], a.t).team!.score === 8 && a.calls[0].winners.length === 2, "8/16 reaches the goal");
+  assert(/^In sync!/.test(a.calls[0].headline), `goal headline: ${a.calls[0].headline}`);
+  const b = harness(2, 26);
+  while (phaseOf(b.s) !== "final") {
+    b.s.target = 50;
+    playRound(b.s, b.t, [15]); // 15 off -> 1 point a round
+    tick(b.s, b.t, REVEAL_MS);
+  }
+  assert(view(b.s, b.t.ids[0], b.t).team!.score === 4, "4/16");
+  assert(
+    b.calls[0].winners.length === 0 && /out of tune/i.test(b.calls[0].headline) && /8 needed/.test(b.calls[0].headline),
+    `short of the goal: ${b.calls[0].headline}`,
+  );
+}
+
+{
+  // Many random 2-player games: always a team result, never a fake "tie for the win".
+  for (let seed = 1; seed <= 60; seed++) {
+    const { t, s, calls } = harness(2, seed);
+    let guard = 0;
+    while (phaseOf(s) !== "final" && guard++ < 50) {
+      if (phaseOf(s) === "clue") act(s, t, giverId(s), { type: "clue", text: "some clue" });
+      if (phaseOf(s) === "guess") act(s, t, guessersOf(s)[0], { type: "lock", v: Math.floor(t.ctx.random() * 101) });
+      tick(s, t, REVEAL_MS);
+    }
+    const r = calls[0];
+    const team = view(s, t.ids[0], t).team!;
+    assert(calls.length === 1 && !/tie/i.test(r.headline), "no tie headline in co-op");
+    assert(r.winners.length === (team.score >= team.goal ? 2 : 0), "both win or neither, by the team goal");
+  }
+  // 3+ players stay competitive.
+  const three = harness(3, 1);
+  assert(view(three.s, three.t.ids[0], three.t).team === null, "no team mode with 3 players");
 }
 
 {

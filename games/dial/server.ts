@@ -11,10 +11,13 @@ import {
   REVEAL_MS,
   TARGET_MAX,
   TARGET_MIN,
+  TEAM_PLAYERS,
+  BANDS,
   cleanClue,
   clueProblem,
   isDialValue,
   pointsFor,
+  teamVerdict,
   type DialEvent,
 } from "./shared";
 
@@ -25,6 +28,10 @@ import {
 // guesser locked) -> reveal (7s). After the last round: final (ctx.end).
 // Per-player data lives in arrays indexed by seat, so player ids never become
 // object keys on the server.
+//
+// Two players: the clue-giver gets the only guesser's points, so scores would
+// always tie. A two-player game is therefore co-op: one team score (the points
+// guessed across all rounds), and the pair wins together with half the maximum.
 
 export type DialPhase = "clue" | "guess" | "reveal" | "final";
 
@@ -79,6 +86,8 @@ export interface DialState {
   spec: number;
   rerolled: boolean;
   target: number;
+  /** When the current clue turn began (an absent clue-giver gets a grace period from here). */
+  turnAt: number;
   clue: string | null;
   needle: (number | null)[];
   locked: boolean[];
@@ -93,6 +102,11 @@ export interface DialState {
   notice: DialNotice | null;
   /** Since when fewer than two participants are connected. */
   lowSince: number | null;
+  /**
+   * When the game ends unless players come back. Only set (and shown) once the
+   * shortage has lasted AWAY_GRACE_MS, so an ordinary refresh doesn't flash a warning.
+   */
+  endingAt: number | null;
   abandoned: boolean;
 }
 
@@ -134,6 +148,14 @@ export interface DialView {
   endingAt: number | null;
   role: "giver" | "guesser" | "spectator";
   abandoned: boolean;
+  /** Two-player co-op: the shared team score so far, and what it takes to win. Null otherwise. */
+  team: DialTeam | null;
+}
+
+export interface DialTeam {
+  score: number;
+  goal: number;
+  max: number;
 }
 
 const PHASE_MS: Record<DialPhase, number> = { clue: CLUE_MS, guess: GUESS_MS, reveal: REVEAL_MS, final: 0 };
@@ -142,6 +164,20 @@ const isHere = (ctx: GameCtx, id: string) => ctx.player(id)?.connected !== false
 
 function giverSeat(s: DialState): number {
   return s.order[s.round] ?? 0;
+}
+
+function team(s: DialState): DialTeam | null {
+  if (s.ids.length !== TEAM_PLAYERS) return null;
+  const max = s.order.length * BANDS[0].pts;
+  // With one guesser the clue-giver's points are exactly the guesser's points.
+  return { score: s.recap.reduce((n, r) => n + r.giverPts, 0), goal: Math.ceil(max / 2), max };
+}
+
+/** When an absent clue-giver's turn gets skipped: AWAY_GRACE_MS after they left or their turn began. */
+function skipTime(s: DialState): number | null {
+  const away = s.away[giverSeat(s)];
+  if (s.phase !== "clue" || away === null || s.lowSince !== null) return null;
+  return Math.max(away, s.turnAt) + AWAY_GRACE_MS;
 }
 
 function drawSpectrum(s: DialState, ctx: GameCtx): number {
@@ -158,6 +194,7 @@ function startClue(s: DialState, ctx: GameCtx) {
   s.phase = "clue";
   s.spec = drawSpectrum(s, ctx);
   s.rerolled = false;
+  s.turnAt = ctx.now();
   const span = TARGET_MAX - TARGET_MIN + 1;
   s.target = Math.min(TARGET_MAX, TARGET_MIN + Math.floor(ctx.random() * span));
   s.clue = null;
@@ -278,9 +315,21 @@ function finish(s: DialState, ctx: GameCtx, abandoned: boolean) {
   s.endsAt = 0;
   s.reveal = null;
   s.lowSince = null;
+  s.endingAt = null;
   const scores = Object.fromEntries(s.ids.map((id, i) => [id, s.score[i]]));
-  const winners = topScorers(scores);
   const name = (id: string) => ctx.player(id)?.name ?? "Someone";
+  const t = team(s);
+  if (t) {
+    const verdict = teamVerdict(t.score, t.goal, t.max);
+    const pair = joinNames(s.ids.map(name));
+    let line = verdict.won
+      ? `${verdict.title} ${pair} scored ${t.score}/${t.max} as a team`
+      : `${verdict.title}: ${pair} scored ${t.score}/${t.max}, ${t.goal} needed to win`;
+    if (abandoned) line = `Not enough players left. ${line}`;
+    ctx.end({ winners: verdict.won ? [...s.ids] : [], headline: line, scores });
+    return;
+  }
+  const winners = topScorers(scores);
   const best = winners.length ? s.score[s.ids.indexOf(winners[0])] : 0;
   const pts = `${best} ${best === 1 ? "point" : "points"}`;
   let headline: string;
@@ -338,6 +387,7 @@ export const dial: GameDef<DialState, DialAction> = {
       spec: 0,
       rerolled: false,
       target: DIAL_START,
+      turnAt: ctx.now(),
       clue: null,
       needle: ids.map(() => null),
       locked: ids.map(() => false),
@@ -349,6 +399,7 @@ export const dial: GameDef<DialState, DialAction> = {
       recap: [],
       notice: null,
       lowSince: null,
+      endingAt: null,
       abandoned: false,
     };
     startClue(s, ctx);
@@ -422,8 +473,13 @@ export const dial: GameDef<DialState, DialAction> = {
         finish(s, ctx, true);
         return true;
       }
+      if (s.endingAt === null && now - s.lowSince >= AWAY_GRACE_MS) {
+        s.endingAt = s.lowSince + ABANDON_MS;
+        changed = true;
+      }
     } else if (s.lowSince !== null) {
       s.lowSince = null;
+      s.endingAt = null;
       changed = true;
     }
 
@@ -433,8 +489,11 @@ export const dial: GameDef<DialState, DialAction> = {
           skipRound(s, ctx, "timeout");
           return true;
         }
-        const away = s.away[giverSeat(s)];
-        if (away !== null && now - away >= AWAY_GRACE_MS) {
+        // An absent clue-giver gets a grace period from the start of their own turn.
+        // Not while fewer than two are connected: then the abandonment timer decides,
+        // so a shared outage doesn't burn through everyone's turns.
+        const skipAt = skipTime(s);
+        if (skipAt !== null && now >= skipAt) {
           skipRound(s, ctx, "away");
           return true;
         }
@@ -464,7 +523,6 @@ export const dial: GameDef<DialState, DialAction> = {
     const live = s.phase === "clue" || s.phase === "guess";
     const role = seat < 0 ? "spectator" : seat === giver && s.phase !== "final" ? "giver" : "guesser";
     const [left, right] = SPECTRUMS[s.spec] ?? ["", ""];
-    const giverAway = s.away[giver];
     return {
       game: s.startedAt,
       phase: s.phase,
@@ -490,10 +548,11 @@ export const dial: GameDef<DialState, DialAction> = {
       reveal: s.phase === "reveal" ? s.reveal : null,
       recap: s.phase === "final" ? s.recap : [],
       notice: s.phase === "clue" ? s.notice : null,
-      skipAt: s.phase === "clue" && giverAway !== null ? giverAway + AWAY_GRACE_MS : null,
-      endingAt: s.lowSince !== null && s.phase !== "final" ? s.lowSince + ABANDON_MS : null,
+      skipAt: skipTime(s),
+      endingAt: s.phase !== "final" ? s.endingAt : null,
       role,
       abandoned: s.abandoned,
+      team: team(s),
     };
   },
 
@@ -501,13 +560,17 @@ export const dial: GameDef<DialState, DialAction> = {
     const seat = s.ids.indexOf(playerId);
     if (seat < 0 || s.phase === "final") return;
     if (s.away[seat] === null) s.away[seat] = ctx.now();
+    if (s.lowSince === null && s.ids.filter((id) => isHere(ctx, id)).length < 2) s.lowSince = ctx.now();
   },
 
   playerReturned(s, playerId, ctx) {
     const seat = s.ids.indexOf(playerId);
     if (seat < 0) return;
     s.away[seat] = null;
-    if (s.lowSince !== null && s.ids.filter((id) => isHere(ctx, id)).length >= 2) s.lowSince = null;
+    if (s.lowSince !== null && s.ids.filter((id) => isHere(ctx, id)).length >= 2) {
+      s.lowSince = null;
+      s.endingAt = null;
+    }
   },
 };
 

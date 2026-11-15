@@ -34,29 +34,85 @@ export function pointsFor(dist: number): number {
   return 0;
 }
 
+/**
+ * Two players can't compete fairly: the clue-giver scores what the only guesser
+ * scores, so every game would tie (and any uneven split would reward sabotage).
+ * So a two-player game is co-op: the pair plays for one team score.
+ */
+export const TEAM_PLAYERS = 2;
+
+/** How a two-player team did: half the maximum (or better) wins. */
+export function teamVerdict(score: number, goal: number, max: number): { won: boolean; title: string } {
+  if (score >= max) return { won: true, title: "Perfect sync!" };
+  if (score >= goal + (max - goal) / 2) return { won: true, title: "Mind readers!" };
+  if (score >= goal) return { won: true, title: "In sync!" };
+  return { won: false, title: "Out of tune" };
+}
+
 /** A valid dial position: an integer from 0 to 100. */
 export function isDialValue(v: unknown): v is number {
   return typeof v === "number" && Number.isInteger(v) && v >= 0 && v <= 100;
 }
 
-// Control characters plus invisible formatting characters that can be abused to
-// hide text or flip its direction (zero-width space, bidi overrides, BOM...).
-// Zero-width joiners stay: emoji sequences need them.
-const INVISIBLE = /[\u0000-\u001f\u007f-\u009f­​‎‏‪-‮⁠-⁤⁦-⁩﻿]/g;
+// Characters a clue may not carry: control characters, invisible formatting
+// characters that can hide text or flip its direction (zero-width space, bidi
+// overrides, BOM...), and blank "letters" that render as nothing (Hangul fillers,
+// the Braille blank, the combining grapheme joiner). Zero-width (non-)joiners and
+// tag characters stay: emoji sequences, flags and some scripts need them.
+const INVISIBLE = /[\p{Cc}\u034f\u115f\u1160\u3164\uffa0\u2800]|(?![\u200c\u200d\u{e0020}-\u{e007f}])\p{Cf}/gu;
+/** Combining marks beyond three on one character are glitch text ("Zalgo"): trimmed. */
+const MARK_PILE = /(\p{M}{3})\p{M}+/gu;
+/** Something that actually shows up on screen: a letter, number, symbol/emoji or punctuation. */
+const VISIBLE = /[\p{L}\p{N}\p{S}\p{P}]/u;
 
-/** Normalise a clue: whitespace collapsed, invisible characters stripped, trimmed. */
+/** Normalise a clue: whitespace collapsed, invisible characters stripped, mark piles trimmed. */
 export function cleanClue(raw: string): string {
-  return raw.replace(/\s+/g, " ").replace(INVISIBLE, "").replace(/\s+/g, " ").trim();
+  return raw
+    .normalize("NFC")
+    .replace(/\s+/g, " ")
+    .replace(INVISIBLE, "")
+    .replace(MARK_PILE, "$1")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
-// "62", "6 2", "62%", "#62", "62/100"... a clue has to be more than a number.
-const NUMBER_ONLY = /^[\d\s.,:;%#+\-–—~/()'"!?°]*\d[\d\s.,:;%#+\-–—~/()'"!?°]*$/;
+const NUMERIC = /^[\p{Nd}\s.,:;%#+\-–—~/()'"!?°]+$/u;
+
+/** Value of any Unicode decimal digit (they come in runs of ten, 0 to 9). */
+function digitValue(d: string): number {
+  let cp = d.codePointAt(0) ?? 0;
+  let steps = 0;
+  while (steps < 60 && /\p{Nd}/u.test(String.fromCodePoint(cp - 1))) {
+    cp -= 1;
+    steps += 1;
+  }
+  return steps % 10;
+}
+
+/**
+ * True when the clue is nothing but one dial position, 0 to 100: "62", "6 2", "62%",
+ * "#62/100", "62.5", "６２", "٦٢", "6️⃣2️⃣". Real titles and numbers outside the dial
+ * ("1917", "1984", "300", "911", "24/7", "007") are fine clues.
+ */
+export function isBareDialNumber(text: string): boolean {
+  let t = text.normalize("NFKC").replace(/[\ufe0f\u20e3]/gu, "");
+  if (!/\p{Nd}/u.test(t) || !NUMERIC.test(t)) return false;
+  t = t.replace(/\p{Nd}/gu, (d) => String(digitValue(d)));
+  t = t.replace(/\/\s*100\s*$/, ""); // "62/100"
+  const core = t
+    .replace(/[^\d.,]/g, "")
+    .replace(/,(\d{3})(?!\d)/g, "$1") // thousands separator: "1,000"
+    .replace(/^[.,]+|[.,]+$/g, "");
+  if (!/^(?:0|[1-9]\d{0,2})(?:[.,]\d+)?$/.test(core)) return false;
+  return Number.parseFloat(core.replace(",", ".")) <= 100;
+}
 
 /** Why a (cleaned) clue can't be sent, or null when it's fine. */
 export function clueProblem(text: string): string | null {
   if (!text) return "Type a clue first.";
   if (text.length > CLUE_MAX) return `Keep it to ${CLUE_MAX} characters.`;
-  if (NUMBER_ONLY.test(text)) return "Use words, not a number!";
+  if (!VISIBLE.test(text)) return "Use at least one letter, number or emoji.";
+  if (isBareDialNumber(text)) return "Not just a number: use words!";
   return null;
 }
 
