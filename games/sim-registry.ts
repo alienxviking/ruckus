@@ -30,4 +30,11 @@ export const SIM_LOADERS: Record<string, () => Promise<Loaded>> = {
   blitz: () => Promise.all([import("./blitz/server"), import("./blitz/client")]),
   sumo: () => Promise.all([import("./sumo/server"), import("./sumo/client")]),
   warlords: () => Promise.all([import("./warlords/server"), import("./warlords/client")]),
+  incognito: () => Promise.all([import("./incognito/server"), import("./incognito/client")]),
+  minerush: () => Promise.all([import("./minerush/server"), import("./minerush/client")]),
+  auction: () => Promise.all([import("./auction/server"), import("./auction/client")]),
+  potato: () => Promise.all([import("./potato/server"), import("./potato/client")]),
+  putt: () => Promise.all([import("./putt/server"), import("./putt/client")]),
+  pixels: () => Promise.all([import("./pixels/server"), import("./pixels/client")]),
+  doublecross: () => Promise.all([import("./doublecross/server"), import("./doublecross/client")]),
 };

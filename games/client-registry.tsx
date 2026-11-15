@@ -42,4 +42,11 @@ export const GAME_CLIENTS: Record<string, AnyGameClient> = {
   blitz: dynamic(() => import("./blitz/client"), { ssr: false, loading: Loading }),
   sumo: dynamic(() => import("./sumo/client"), { ssr: false, loading: Loading }),
   warlords: dynamic(() => import("./warlords/client"), { ssr: false, loading: Loading }),
+  incognito: dynamic(() => import("./incognito/client"), { ssr: false, loading: Loading }),
+  minerush: dynamic(() => import("./minerush/client"), { ssr: false, loading: Loading }),
+  auction: dynamic(() => import("./auction/client"), { ssr: false, loading: Loading }),
+  potato: dynamic(() => import("./potato/client"), { ssr: false, loading: Loading }),
+  putt: dynamic(() => import("./putt/client"), { ssr: false, loading: Loading }),
+  pixels: dynamic(() => import("./pixels/client"), { ssr: false, loading: Loading }),
+  doublecross: dynamic(() => import("./doublecross/client"), { ssr: false, loading: Loading }),
 };

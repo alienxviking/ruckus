@@ -20,6 +20,13 @@ import barrage from "./barrage/server";
 import blitz from "./blitz/server";
 import sumo from "./sumo/server";
 import warlords from "./warlords/server";
+import incognito from "./incognito/server";
+import minerush from "./minerush/server";
+import auction from "./auction/server";
+import potato from "./potato/server";
+import putt from "./putt/server";
+import pixels from "./pixels/server";
+import doublecross from "./doublecross/server";
 
 export const GAME_DEFS: Record<string, GameDef> = {
   sketch,
@@ -42,4 +49,11 @@ export const GAME_DEFS: Record<string, GameDef> = {
   blitz,
   sumo,
   warlords,
+  incognito,
+  minerush,
+  auction,
+  potato,
+  putt,
+  pixels,
+  doublecross,
 };
