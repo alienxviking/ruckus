@@ -26,6 +26,8 @@ export function Room({
   const r = useRoom(code, identity);
   const [editing, setEditing] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
+  // Last chat line seen with the drawer open/closed, for the phone's unread dot.
+  const [seenChat, setSeenChat] = useState<string | undefined>(undefined);
 
   const byId = useMemo(() => {
     const map: Record<string, Player> = {};
@@ -36,6 +38,21 @@ export function Room({
   const room = r.room;
   const isHost = room?.hostId === r.me;
   const gameId = room?.gameId;
+  // Unread = a message from another player (not system lines) since the drawer was last toggled.
+  const chat = room?.chat ?? [];
+  let lastFromOthers: string | undefined;
+  for (let i = chat.length - 1; i >= 0; i--) {
+    if (chat[i].from && chat[i].from !== r.me) {
+      lastFromOthers = chat[i].id;
+      break;
+    }
+  }
+  const unread = !chatOpen && lastFromOthers !== undefined && lastFromOthers !== seenChat;
+  const toggleChat = () => {
+    setSeenChat(lastFromOthers);
+    setChatOpen((v) => !v);
+  };
+  const playing = room?.phase === "playing";
 
   // Fetch the picked game's code while everyone is still in the lobby, so Start is instant.
   useEffect(() => {
@@ -99,7 +116,28 @@ export function Room({
               <Lobby room={room} isHost={isHost} send={r.send} />
             ) : (
               <div className="animate-rise">
-                <GameStage room={room} view={r.view} me={r.me} isHost={isHost} byId={byId} r={r} />
+                <GameStage
+                  room={room}
+                  view={r.view}
+                  me={r.me}
+                  isHost={isHost}
+                  byId={byId}
+                  r={r}
+                  headerExtra={
+                    // On phones the chat toggle lives here during a game, so nothing floats over game controls.
+                    <button
+                      className="btn relative px-3 py-1.5 text-sm lg:hidden"
+                      onClick={toggleChat}
+                      aria-expanded={chatOpen}
+                      aria-label={chatOpen ? "Close chat" : unread ? "Chat (new messages)" : "Chat"}
+                    >
+                      <span aria-hidden>💬</span>
+                      {unread && (
+                        <span aria-hidden className="absolute -top-1 -right-1 size-2.5 rounded-full bg-brand ring-2 ring-ink" />
+                      )}
+                    </button>
+                  }
+                />
               </div>
             )}
           </section>
@@ -116,16 +154,31 @@ export function Room({
       {/* Mobile chat drawer */}
       {room && (
         <div className="lg:hidden">
-          <button
-            className="btn btn-primary fixed right-4 bottom-4 z-30 rounded-full shadow-lg shadow-black/40"
-            onClick={() => setChatOpen((v) => !v)}
-            aria-expanded={chatOpen}
-          >
-            💬 {chatOpen ? "Close" : "Chat"}
-          </button>
+          {/* In the lobby the chat button floats; during a game it sits in the game header instead. */}
+          {!playing && (
+            <button
+              className="btn btn-primary fixed right-4 bottom-4 z-30 rounded-full shadow-lg shadow-black/40"
+              onClick={toggleChat}
+              aria-expanded={chatOpen}
+            >
+              💬 {chatOpen ? "Close" : "Chat"}
+              {unread && <span aria-hidden className="ml-1 size-2 rounded-full bg-ink" />}
+            </button>
+          )}
           {chatOpen && (
-            <div className="fixed inset-x-3 bottom-18 z-30 animate-rise">
-              <Chat room={room} byId={byId} me={r.me} send={r.send} compact />
+            <div className={`fixed inset-x-3 z-30 animate-rise ${playing ? "bottom-3" : "bottom-18"}`}>
+              <div className="relative">
+                <Chat room={room} byId={byId} me={r.me} send={r.send} compact />
+                {playing && (
+                  <button
+                    className="btn absolute top-2 right-2 px-2.5 py-1 text-xs"
+                    onClick={toggleChat}
+                    aria-label="Close chat"
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
             </div>
           )}
         </div>

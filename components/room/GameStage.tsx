@@ -15,6 +15,7 @@ export function GameStage({
   isHost,
   byId,
   r,
+  headerExtra,
 }: {
   room: RoomView;
   view: unknown;
@@ -22,6 +23,8 @@ export function GameStage({
   isHost: boolean;
   byId: Record<string, Player>;
   r: ReturnType<typeof useRoom>;
+  /** Extra controls on the right of the game header (the phone chat toggle). */
+  headerExtra?: ReactNode;
 }) {
   const meta = CATALOG_BY_ID[room.gameId];
   const GameClient = GAME_CLIENTS[room.gameId];
@@ -37,14 +40,17 @@ export function GameStage({
           <span aria-hidden>{meta?.emoji}</span> {meta?.name}
           {!isPlayer && <span className="rounded-full bg-panel-2 px-2 py-0.5 text-xs font-medium text-muted">watching</span>}
         </h1>
-        {isHost && !room.result && (
-          <button
-            className="btn px-3 py-1.5 text-sm"
-            onClick={() => confirm("End this game for everyone?") && r.send({ t: "lobby" })}
-          >
-            End game
-          </button>
-        )}
+        <div className="flex shrink-0 items-center gap-2">
+          {isHost && !room.result && (
+            <button
+              className="btn px-3 py-1.5 text-sm"
+              onClick={() => confirm("End this game for everyone?") && r.send({ t: "lobby" })}
+            >
+              End game
+            </button>
+          )}
+          {headerExtra}
+        </div>
       </div>
 
       {room.result && <ResultBanner room={room} byId={byId} me={me} isHost={isHost} r={r} accent={meta?.accent} />}

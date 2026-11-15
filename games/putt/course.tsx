@@ -149,9 +149,33 @@ interface Surface {
   /** Ball radius on screen (device px): never smaller than ~4.5 css px. */
   br: number;
   narrow: boolean;
+  /**
+   * Portrait: the course is turned 90 degrees so its long axis runs down the screen (tee at the
+   * bottom, world +x pointing up). Geometry is drawn through a rotated transform; text never rotates.
+   */
+  portrait: boolean;
+  /** The static course, always rendered landscape (W x H world units at u). */
   base: HTMLCanvasElement;
   baseKey: string;
 }
+
+/** Screen position (device px) of a world point. */
+const SX = (s: Surface, wx: number, wy: number) => (s.portrait ? wy * s.u : wx * s.u);
+const SY = (s: Surface, wx: number, wy: number) => (s.portrait ? (W - wx) * s.u : wy * s.u);
+
+/** Draw in world units x u (landscape orientation); in portrait the context turns it upright. */
+function worldT(g: CanvasRenderingContext2D, s: Surface) {
+  if (s.portrait) g.setTransform(0, -1, 1, 0, 0, s.H);
+  else g.setTransform(1, 0, 0, 1, 0, 0);
+}
+/** Draw in plain screen pixels (text, labels, anything that must stay upright). */
+function screenT(g: CanvasRenderingContext2D) {
+  g.setTransform(1, 0, 0, 1, 0, 0);
+}
+
+/** A screen-space drag vector (css px) as a world direction. */
+export const screenToWorldDir = (portrait: boolean, vx: number, vy: number): [number, number] =>
+  portrait ? [-vy, vx] : [vx, vy];
 
 function renderBase(s: Surface, hole: Hole) {
   const c = s.base;
@@ -652,12 +676,24 @@ export interface CourseProps {
   serverNow: () => number;
   label: string;
   ring: string;
+  /** Turn the course upright for tall, narrow screens. */
+  portrait: boolean;
 }
 
 const fullPull = (css: number) => clamp(css * 0.3, 96, 220);
 
+/**
+ * Keep the whole course and the controls under it on screen: ~62% of the height landscape. Portrait
+ * takes up to 60% of the visible height, less on short screens (about 300px goes to the room header,
+ * status, timer and the control bar).
+ */
+export const courseMaxWidth = (portrait: boolean) =>
+  portrait
+    ? `min(100%, calc(max(240px, min(60svh, 100svh - 300px)) * ${H} / ${W}))`
+    : `calc(62vh * ${W} / ${H})`;
+
 export function Course(props: CourseProps) {
-  const { aiming, onAim, label, ring } = props;
+  const { aiming, onAim, label, ring, portrait } = props;
   const holderRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const surface = useRef<Surface | null>(null);
@@ -674,10 +710,10 @@ export function Course(props: CourseProps) {
       const Wp = Math.round(r.width * dpr);
       const Hp = Math.round(r.height * dpr);
       const cur = surface.current;
-      if (cur && cur.W === Wp && cur.H === Hp && cur.dpr === dpr) return;
+      if (cur && cur.W === Wp && cur.H === Hp && cur.dpr === dpr && cur.portrait === portrait) return;
       canvas.width = Wp;
       canvas.height = Hp;
-      const u = Wp / W;
+      const u = portrait ? Hp / W : Wp / W;
       surface.current = {
         W: Wp,
         H: Hp,
@@ -686,7 +722,8 @@ export function Course(props: CourseProps) {
         css: r.width,
         br: Math.max(BALL_R * u, 4.6 * dpr),
         narrow: r.width < 520,
-        base: makeCanvas(Wp, Hp),
+        portrait,
+        base: makeCanvas(W * u, H * u),
         baseKey: "",
       };
     };
@@ -698,7 +735,7 @@ export function Course(props: CourseProps) {
       ro.disconnect();
       window.removeEventListener("resize", fit);
     };
-  }, []);
+  }, [portrait]);
 
   const paint = useEffectEvent((now: number) => {
     const canvas = canvasRef.current;
@@ -733,10 +770,10 @@ export function Course(props: CourseProps) {
     return [e.clientX - r.left, e.clientY - r.top] as const;
   };
   const aimFrom = (d: Drag, width: number): [number, number] | null => {
-    const vx = d.ax - d.px;
-    const vy = d.ay - d.py;
-    const len = Math.hypot(vx, vy);
+    const len = Math.hypot(d.ax - d.px, d.ay - d.py);
     if (len < 6) return null;
+    // Pull back on screen and the ball goes the other way on screen, whichever way the course is turned.
+    const [vx, vy] = screenToWorldDir(portrait, d.ax - d.px, d.ay - d.py);
     let a = Math.round((Math.atan2(vy, vx) * 1800) / Math.PI);
     if (a < 0) a += 3600;
     const p = clamp(Math.round((Math.min(len, fullPull(width)) / fullPull(width)) * MAX_POWER), 1, MAX_POWER);
@@ -776,8 +813,8 @@ export function Course(props: CourseProps) {
       ref={holderRef}
       className="relative mx-auto w-full overflow-hidden rounded-xl ring-2 transition-[box-shadow] duration-300 select-none"
       style={{
-        aspectRatio: `${W} / ${H}`,
-        maxWidth: `calc(62vh * ${W} / ${H})`,
+        aspectRatio: portrait ? `${H} / ${W}` : `${W} / ${H}`,
+        maxWidth: courseMaxWidth(portrait),
         touchAction: aiming ? "none" : "auto",
         cursor: aiming ? "crosshair" : "default",
         ["--tw-ring-color" as string]: ring,
@@ -814,7 +851,7 @@ function draw(g: CanvasRenderingContext2D, s: Surface, sc: Scene, p: CourseProps
     sc.fx = effectsFor(rp, hole, view, colors);
     sc.fxKey = `${rp.key}|${hole.id}`;
   }
-  g.setTransform(1, 0, 0, 1, 0, 0);
+  worldT(g, s);
   g.drawImage(s.base, 0, 0);
 
   // ----- living water -----
@@ -892,11 +929,14 @@ function draw(g: CanvasRenderingContext2D, s: Surface, sc: Scene, p: CourseProps
         g.arc(x * u, y * u, r, spin + k * 1.3, spin + k * 1.3 + Math.PI * 1.25);
         g.stroke();
       }
+      g.save();
+      screenT(g);
       g.fillStyle = "rgba(255,255,255,0.9)";
       g.font = `700 ${Math.max(8 * dpr, 9 * u)}px ${SANS}`;
       g.textAlign = "center";
       g.textBaseline = "middle";
-      g.fillText(PORTAL_GLYPHS[i % PORTAL_GLYPHS.length], x * u, y * u + 0.5);
+      g.fillText(PORTAL_GLYPHS[i % PORTAL_GLYPHS.length], SX(s, x, y), SY(s, x, y) + 0.5);
+      g.restore();
     }
   });
 
@@ -950,7 +990,7 @@ function draw(g: CanvasRenderingContext2D, s: Surface, sc: Scene, p: CourseProps
   }
   const mySlot = view.balls.findIndex((b) => b.id === me);
   const myPose = poses.find((q) => q.slot === mySlot) ?? null;
-  sc.my = myPose ? { x: (myPose.x * u) / dpr, y: (myPose.y * u) / dpr } : null;
+  sc.my = myPose ? { x: SX(s, myPose.x, myPose.y) / dpr, y: SY(s, myPose.x, myPose.y) / dpr } : null;
 
   // Trails while rolling.
   if (rp && e > REVEAL_MS) {
@@ -988,12 +1028,14 @@ function draw(g: CanvasRenderingContext2D, s: Surface, sc: Scene, p: CourseProps
       if (!shot) continue;
       const color = colors[view.balls[q.slot].id] ?? "#ffffff";
       if (shot[1] <= 0) {
+        g.save();
+        screenT(g);
         g.globalAlpha = fade;
         g.font = `${Math.round(Math.max(12 * dpr, 18 * u))}px ${EMOJI}`;
         g.textAlign = "center";
         g.textBaseline = "middle";
-        g.fillText("💤", q.x * u + br * 1.6, q.y * u - br * 1.8);
-        g.globalAlpha = 1;
+        g.fillText("💤", SX(s, q.x, q.y) + br * 1.6, SY(s, q.x, q.y) - br * 1.8);
+        g.restore();
         continue;
       }
       const len = Math.min(170, 30 + shot[1] * 1.4) * f;
@@ -1057,25 +1099,33 @@ function draw(g: CanvasRenderingContext2D, s: Surface, sc: Scene, p: CourseProps
     const pc = aim.p < 50 ? "#4ade80" : aim.p < 80 ? "#facc15" : "#f87171";
     g.strokeStyle = pc;
     g.beginPath();
-    g.arc(myPose.x * u, myPose.y * u, pr, -Math.PI / 2, -Math.PI / 2 + (aim.p / MAX_POWER) * TAU);
+    // The ring fills clockwise from the top of the screen.
+    const top = s.portrait ? 0 : -Math.PI / 2;
+    g.arc(myPose.x * u, myPose.y * u, pr, top, top + (aim.p / MAX_POWER) * TAU);
     g.stroke();
     if (sc.drag) {
+      g.save();
+      screenT(g);
       g.font = `800 ${Math.round(12 * dpr)}px ${SANS}`;
       g.textAlign = "center";
       g.textBaseline = "middle";
-      const tx = myPose.x * u - dx * (back + 18 * dpr);
-      const ty = myPose.y * u - dy * (back + 18 * dpr);
+      const off = (back + 18 * dpr) / u;
+      const tx = SX(s, myPose.x - dx * off, myPose.y - dy * off);
+      const ty = SY(s, myPose.x - dx * off, myPose.y - dy * off);
       g.lineWidth = 3 * dpr;
       g.strokeStyle = "rgba(0,0,0,0.6)";
       g.strokeText(`${aim.p}%`, tx, ty);
       g.fillStyle = pc;
       g.fillText(`${aim.p}%`, tx, ty);
+      g.restore();
     }
   }
 
   // The drag band (relative drag: where you pressed → where your finger is).
   if (sc.drag && aiming) {
     const d = sc.drag;
+    g.save();
+    screenT(g);
     g.strokeStyle = "rgba(255,255,255,0.35)";
     g.lineWidth = 2 * dpr;
     g.setLineDash([4 * dpr, 5 * dpr]);
@@ -1092,6 +1142,7 @@ function draw(g: CanvasRenderingContext2D, s: Surface, sc: Scene, p: CourseProps
     g.beginPath();
     g.arc(d.px * dpr, d.py * dpr, 4 * dpr, 0, TAU);
     g.fill();
+    g.restore();
   }
 
   // The flag stands in the cup; it jiggles when someone holes out.
@@ -1103,7 +1154,12 @@ function draw(g: CanvasRenderingContext2D, s: Surface, sc: Scene, p: CourseProps
     const b = view.balls[q.slot];
     const color = colors[b.id] ?? "#ffffff";
     drawBall(g, q.x * u, q.y * u, br * q.scale, color, q.alpha);
-    if (!rp && view.phase === "aim" && b.locked) drawCheck(g, q.x * u + br * 0.9, q.y * u - br * 0.9, dpr);
+    if (!rp && view.phase === "aim" && b.locked) {
+      g.save();
+      screenT(g);
+      drawCheck(g, SX(s, q.x, q.y) + br * 0.9, SY(s, q.x, q.y) - br * 0.9, dpr);
+      g.restore();
+    }
   }
   if (myPose && (view.phase === "aim" || view.phase === "roll")) {
     const pulse = reduced ? 0.5 : (Math.sin(now / 260) + 1) / 2;
@@ -1120,6 +1176,8 @@ function draw(g: CanvasRenderingContext2D, s: Surface, sc: Scene, p: CourseProps
   for (const m of hole.mills ?? []) drawMill(g, s, m, clock);
 
   // Avatars next to the balls (yours first), placed where they cover no other ball or label.
+  g.save();
+  screenT(g);
   sc.labels.length = 0;
   const fs = Math.round(Math.max(11 * dpr, 15 * u));
   g.font = `${fs}px ${EMOJI}`;
@@ -1138,8 +1196,8 @@ function draw(g: CanvasRenderingContext2D, s: Surface, sc: Scene, p: CourseProps
   for (const q of [...poses].reverse()) {
     if (q.alpha < 0.6) continue;
     const pl = byId[view.balls[q.slot].id];
-    const bx = q.x * u;
-    const by = q.y * u;
+    const bx = SX(s, q.x, q.y);
+    const by = SY(s, q.x, q.y);
     let placed: number[] | null = null;
     for (const [ox, oy] of spots) {
       const x = bx + ox;
@@ -1149,9 +1207,11 @@ function draw(g: CanvasRenderingContext2D, s: Surface, sc: Scene, p: CourseProps
       if (sc.labels.some((l) => l[0] < box[2] && l[2] > box[0] && l[1] < box[3] && l[3] > box[1])) continue;
       const hitsBall = poses.some((o) => {
         if (o === q) return false;
-        const cx = clamp(o.x * u, box[0], box[2]);
-        const cy = clamp(o.y * u, box[1], box[3]);
-        return Math.hypot(cx - o.x * u, cy - o.y * u) < br + 1.5 * dpr;
+        const ox2 = SX(s, o.x, o.y);
+        const oy2 = SY(s, o.x, o.y);
+        const cx = clamp(ox2, box[0], box[2]);
+        const cy = clamp(oy2, box[1], box[3]);
+        return Math.hypot(cx - ox2, cy - oy2) < br + 1.5 * dpr;
       });
       if (hitsBall) continue;
       placed = box;
@@ -1163,12 +1223,14 @@ function draw(g: CanvasRenderingContext2D, s: Surface, sc: Scene, p: CourseProps
     g.fillText(pl?.avatar ?? "🙂", (placed[0] + placed[2]) / 2, (placed[1] + placed[3]) / 2);
     g.globalAlpha = 1;
   }
+  g.restore();
 
   // Effects.
   if (rp) drawEffects(g, s, hole, sc.fx, e, reduced);
 
   // First-shot hint.
   if (p.hint && aiming && !sc.drag) {
+    screenT(g);
     const text = s.narrow ? "Drag back anywhere to aim" : "Drag back anywhere on the course to aim, like a slingshot";
     g.font = `700 ${Math.round(12.5 * dpr)}px ${SANS}`;
     const tw = g.measureText(text).width + 22 * dpr;
@@ -1346,17 +1408,22 @@ function drawFlag(g: CanvasRenderingContext2D, s: Surface, hole: Hole, rp: Repla
   }
   const lean = reduced ? 0 : Math.sin(clock * 22) * jig * 0.25;
   const pole = Math.max(30 * dpr, 46 * u);
-  const top = [cx * u + Math.sin(0.35 + lean) * pole, cy * u - Math.cos(0.35 + lean) * pole];
+  // Upright on screen whichever way the course is turned.
+  const bx = SX(s, cx, cy);
+  const by = SY(s, cx, cy);
+  g.save();
+  screenT(g);
+  const top = [bx + Math.sin(0.35 + lean) * pole, by - Math.cos(0.35 + lean) * pole];
   g.strokeStyle = "rgba(0,0,0,0.3)";
   g.lineWidth = Math.max(1.5, 2.2 * u);
   g.beginPath();
-  g.moveTo(cx * u, cy * u);
+  g.moveTo(bx, by);
   g.lineTo(top[0] + pole * 0.5, top[1] + pole * 0.85);
   g.stroke();
   g.strokeStyle = "#f8fafc";
   g.lineWidth = Math.max(1.5, 2.4 * u);
   g.beginPath();
-  g.moveTo(cx * u, cy * u);
+  g.moveTo(bx, by);
   g.lineTo(top[0], top[1]);
   g.stroke();
   const wave = reduced ? 0 : Math.sin(clock * 5) * 3 * u;
@@ -1376,16 +1443,20 @@ function drawFlag(g: CanvasRenderingContext2D, s: Surface, hole: Hole, rp: Repla
   g.lineTo(top[0], top[1] + fh * 0.45);
   g.closePath();
   g.fill();
+  g.restore();
 }
 
 function drawEffects(g: CanvasRenderingContext2D, s: Surface, hole: Hole, fx: Fx[], e: number, reduced: boolean) {
   const { u, dpr } = s;
+  // Effects live in screen space so spray rises, confetti falls and words read upright.
+  g.save();
+  screenT(g);
   for (const f of fx) {
     const age = e - f.ms;
     if (age < 0 || age > 1300) continue;
     const t = age / 1000;
-    const x = f.x * u;
-    const y = f.y * u;
+    const x = SX(s, f.x, f.y);
+    const y = SY(s, f.x, f.y);
     if (f.kind === "knock") {
       if (age < 260) {
         const k = age / 260;
@@ -1408,9 +1479,11 @@ function drawEffects(g: CanvasRenderingContext2D, s: Surface, hole: Hole, fx: Fx
     } else if (f.kind === "water") {
       // Ripples stay on the water; the spray flies wherever.
       g.save();
+      worldT(g, s);
       g.beginPath();
       for (const wt of hole.water ?? []) addShape(g, wt, u);
       g.clip();
+      screenT(g);
       for (let k = 0; k < 3; k++) {
         const tt = age - k * 120;
         if (tt < 0 || tt > 900) continue;
@@ -1468,11 +1541,11 @@ function drawEffects(g: CanvasRenderingContext2D, s: Surface, hole: Hole, fx: Fx
           g.strokeStyle = rgba(f.color, 0.95 * (1 - k));
           g.lineWidth = Math.max(2, 3.5 * u);
           g.beginPath();
-          g.arc(px * u, py * u, (PORTAL_R + k * 26) * u, 0, TAU);
+          g.arc(SX(s, px, py), SY(s, px, py), (PORTAL_R + k * 26) * u, 0, TAU);
           g.stroke();
           g.fillStyle = rgba("#ffffff", 0.5 * (1 - k));
           g.beginPath();
-          g.arc(px * u, py * u, PORTAL_R * u * (1 - k * 0.5), 0, TAU);
+          g.arc(SX(s, px, py), SY(s, px, py), PORTAL_R * u * (1 - k * 0.5), 0, TAU);
           g.fill();
         }
       }
@@ -1498,4 +1571,5 @@ function drawEffects(g: CanvasRenderingContext2D, s: Surface, hole: Hole, fx: Fx
       g.globalAlpha = 1;
     }
   }
+  g.restore();
 }

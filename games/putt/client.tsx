@@ -15,9 +15,9 @@ import { PLAYER_COLORS, type Player } from "@/shared/types";
 import { Note, StatusBanner, TimerBar, useSecondsLeft } from "@/components/game-ui";
 import type { BallView, PuttAction, PuttEvent, PuttView } from "./server";
 import { HOLE_BY_ID, HOLES } from "./holes";
-import { H, MAX_POWER, MAX_STROKES, PICKUP_SCORE, W, clamp, scoreName, type Hole } from "./shared";
+import { MAX_POWER, MAX_STROKES, PICKUP_SCORE, clamp, scoreName, type Hole } from "./shared";
 import { buildReplay, strokesAt, sunkBy, type Replay } from "./replay";
-import { Course } from "./course";
+import { Course, courseMaxWidth } from "./course";
 
 type Props = GameClientProps<PuttView, PuttAction>;
 
@@ -160,6 +160,21 @@ function Game({ view: raw, me, players, byId, isPlayer, act, serverNow, onEvent,
     };
   }, [raw, heard]);
   const e = useElapsed(rp ? rp.r.at : null, serverNow);
+
+  // Narrow columns (phones) turn the course upright so it can be ~1.5x bigger.
+  const rootRef = useRef<HTMLDivElement>(null);
+  const [rootW, setRootW] = useState(0);
+  useEffect(() => {
+    const el = rootRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver((entries) => {
+      const w = entries[0]?.contentRect.width ?? 0;
+      setRootW((cur) => (Math.abs(cur - w) < 1 ? cur : w));
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  const portrait = rootW > 0 && rootW < 560;
   const secs = useSecondsLeft(view.phase === "aim" || view.phase === "card" ? view.endsAt : null, serverNow);
   const awaySecs = useSecondsLeft(view.awayAt, serverNow);
   const hole = holeAt(view, view.hole);
@@ -326,7 +341,7 @@ function Game({ view: raw, me, players, byId, isPlayer, act, serverNow, onEvent,
     ".";
 
   return (
-    <div className="@container mx-auto flex w-full max-w-4xl flex-col gap-3 pb-16 @3xl:pb-2">
+    <div ref={rootRef} className="@container mx-auto flex w-full max-w-4xl flex-col gap-3 pb-16 @3xl:pb-2">
       <style href="ruckus-putt" precedence="default">
         {CSS}
       </style>
@@ -373,7 +388,7 @@ function Game({ view: raw, me, players, byId, isPlayer, act, serverNow, onEvent,
         </p>
       )}
 
-      <div className="relative mx-auto w-full" style={{ maxWidth: `calc(62vh * ${W} / ${H})` }}>
+      <div className="relative mx-auto w-full" style={{ maxWidth: courseMaxWidth(portrait) }}>
         <Course
           view={view}
           hole={hole}
@@ -390,11 +405,21 @@ function Game({ view: raw, me, players, byId, isPlayer, act, serverNow, onEvent,
           serverNow={serverNow}
           label={label}
           ring={ring}
+          portrait={portrait}
         />
         {view.phase === "aim" && view.shot === 1 && <HoleIntro key={view.hole} hole={hole} n={view.hole + 1} total={view.course.length} />}
       </div>
 
-      {aiming ? (
+      {aiming && portrait ? (
+        <CompactControls
+          a={shown.a}
+          p={shown.p}
+          color={colors[me] ?? accent}
+          hurry={hurry}
+          onChange={(a, p) => update(a, p, "soon")}
+          onPutt={putt}
+        />
+      ) : aiming ? (
         <Controls
           a={shown.a}
           p={shown.p}
@@ -495,6 +520,57 @@ function HoleIntro({ hole, n, total }: { hole: Hole; n: number; total: number })
 }
 
 // ---------- controls ----------
+
+/** One row for phones: turn, power and putt, so the upright course and the controls fit on screen together. */
+function CompactControls({
+  a,
+  p,
+  color,
+  hurry,
+  onChange,
+  onPutt,
+}: {
+  a: number;
+  p: number;
+  color: string;
+  hurry: boolean;
+  onChange: (a: number, p: number) => void;
+  onPutt: () => void;
+}) {
+  const btn = "btn size-10 shrink-0 p-0 text-lg";
+  const pw = p > 0 ? p : 30;
+  return (
+    <section aria-label="Your putt" className="card putt-in p-2" style={{ borderColor: color + "55" }}>
+      <div className="flex items-center gap-1.5">
+        <button type="button" className={btn} aria-label="Turn left" onClick={() => onChange(a - 10, pw)}>
+          ↺
+        </button>
+        <button type="button" className={btn} aria-label="Turn right" onClick={() => onChange(a + 10, pw)}>
+          ↻
+        </button>
+        <span className="mx-0.5 h-6 w-px shrink-0 bg-line" aria-hidden />
+        <button type="button" className={btn} aria-label="Less power" onClick={() => onChange(a, Math.max(1, pw - 2))}>
+          −
+        </button>
+        <output aria-label="Power" className="w-10 shrink-0 text-center font-mono text-sm font-bold tabular-nums">
+          {p > 0 ? `${p}%` : "–"}
+        </output>
+        <button type="button" className={btn} aria-label="More power" onClick={() => onChange(a, Math.min(MAX_POWER, pw + 2))}>
+          +
+        </button>
+        <button
+          type="button"
+          onClick={onPutt}
+          disabled={p < 1}
+          aria-keyshortcuts="Space"
+          className={`btn btn-primary min-h-10 min-w-0 flex-1 px-2 font-display text-base font-extrabold disabled:opacity-50 ${hurry && p >= 1 ? "putt-hurry" : ""}`}
+        >
+          Putt!
+        </button>
+      </div>
+    </section>
+  );
+}
 
 function Controls({
   a,
