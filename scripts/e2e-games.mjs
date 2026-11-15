@@ -103,7 +103,8 @@ for (const g of games) {
     for (const c of clients) await c.until(() => c.room?.phase === "playing" && c.view !== null, 6000, "game view");
     const seq = host.room.gameSeq;
 
-    // Measure natural traffic for 3s (ticks, timers).
+    // Measure natural traffic for 3s (ticks, timers), after any start countdown.
+    await sleep(3500);
     for (const c of clients) c.stats = { game: 0, bytes: 0, maxMsg: 0, ev: 0 };
     await sleep(3000);
     const idle = { ...clients[1].stats };
