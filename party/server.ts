@@ -9,7 +9,7 @@ import {
   type ClientMsg,
   type GameResult,
   type Player,
-  type RoomView,
+  type RoomWire,
   type ServerMsg,
 } from "../shared/types";
 import { CATALOG_BY_ID } from "../games/catalog";
@@ -49,7 +49,7 @@ export default class RuckusRoom implements Party.Server {
   sockets = new Map<string, number>();
   disconnectedAt = new Map<string, number>();
   hostId: string | null = null;
-  phase: RoomView["phase"] = "lobby";
+  phase: RoomWire["phase"] = "lobby";
   gameId = "sketch";
   participants: string[] = [];
   chat: ChatMsg[] = [];
@@ -65,6 +65,8 @@ export default class RuckusRoom implements Party.Server {
   buckets = new Map<string, { tokens: number; at: number }>();
   /** Recent chat timestamps per player for chat-specific throttling. */
   chatTimes = new Map<string, number[]>();
+  /** Last game view JSON sent to each player id: unchanged views aren't re-sent. */
+  lastView = new Map<string, string>();
 
   constructor(readonly room: Party.Room) {}
 
@@ -83,7 +85,10 @@ export default class RuckusRoom implements Party.Server {
     } catch {
       /* already closed */
     }
-    if (!conn.state?.verified) return;
+    if (!conn.state?.verified) {
+      if (this.sockets.size === 0 && this.emptySince === null) this.emptySince = Date.now();
+      return;
+    }
     const left = (this.sockets.get(conn.id) ?? 1) - 1;
     if (left > 0) {
       this.sockets.set(conn.id, left);
@@ -120,6 +125,11 @@ export default class RuckusRoom implements Party.Server {
 
     if (msg.t === "hello") return this.handleHello(sender, msg);
     if (!sender.state?.verified) return; // must say hello first
+    if (msg.t === "ping") {
+      // Answer immediately: the client measures the round trip and syncs its clock.
+      if (typeof msg.c === "number" && Number.isFinite(msg.c)) this.sendTo(sender, { t: "pong", c: msg.c, now: Date.now() });
+      return;
+    }
 
     const player = this.players.get(sender.id);
     if (!player) return;
@@ -186,8 +196,13 @@ export default class RuckusRoom implements Party.Server {
 
     if (!this.hostId || !this.players.get(this.hostId)) this.hostId = conn.id;
     this.broadcastRoom();
-    // A (re)joining socket needs the current game state too.
-    if (this.game) this.sendTo(conn, { t: "game", view: this.viewFor(this.game, conn.id), now: Date.now() });
+    // The (re)joining socket gets a full sync: the chat history and the current game view.
+    this.sendTo(conn, { t: "room", room: this.roomView(true), now: Date.now() });
+    if (this.game) {
+      const view = JSON.stringify(this.viewFor(this.game, conn.id) ?? null);
+      this.lastView.set(conn.id, view);
+      conn.send(gamePayload(view, Date.now()));
+    }
   }
 
   handleChat(player: Player, text: unknown) {
@@ -200,7 +215,6 @@ export default class RuckusRoom implements Party.Server {
     recent.push(now);
     this.chatTimes.set(player.id, recent);
     this.pushChat({ id: `c${++this.chatSeq}`, from: player.id, text: clean, at: now });
-    this.broadcastRoom();
   }
 
   handlePick(player: Player, gameId: unknown) {
@@ -244,6 +258,7 @@ export default class RuckusRoom implements Party.Server {
     }
     this.phase = "playing";
     this.gameSeq += 1;
+    this.lastView.clear();
     const active: ActiveGame = { def, state, ctx, timer: null };
     if (def.tick) {
       active.timer = setInterval(() => {
@@ -333,6 +348,7 @@ export default class RuckusRoom implements Party.Server {
   stopGame() {
     if (this.game?.timer) clearInterval(this.game.timer);
     this.game = null;
+    this.lastView.clear();
   }
 
   viewFor(game: ActiveGame, viewerId: string): unknown {
@@ -348,20 +364,27 @@ export default class RuckusRoom implements Party.Server {
     const game = this.game;
     if (!game) return;
     const now = Date.now();
-    // Views are per-player (secrets!), so serialise once per player id.
-    const cache = new Map<string, string>();
+    // Views are per-player (secrets!), so serialise once per player id, and skip
+    // players whose view didn't change since the last send.
+    const payloads = new Map<string, string | null>();
     for (const conn of this.verifiedConnections()) {
-      let payload = cache.get(conn.id);
+      let payload = payloads.get(conn.id);
       if (payload === undefined) {
-        payload = JSON.stringify({ t: "game", view: this.viewFor(game, conn.id), now } satisfies ServerMsg);
-        cache.set(conn.id, payload);
+        const view = JSON.stringify(this.viewFor(game, conn.id) ?? null);
+        if (this.lastView.get(conn.id) === view) payload = null;
+        else {
+          this.lastView.set(conn.id, view);
+          payload = gamePayload(view, now);
+        }
+        payloads.set(conn.id, payload);
       }
-      conn.send(payload);
+      if (payload !== null) conn.send(payload);
     }
   }
 
+  /** Room state for everyone (without the chat history, which travels as "chat" deltas). */
   broadcastRoom() {
-    const payload = JSON.stringify({ t: "room", room: this.roomView(), now: Date.now() } satisfies ServerMsg);
+    const payload = JSON.stringify({ t: "room", room: this.roomView(false), now: Date.now() } satisfies ServerMsg);
     for (const conn of this.verifiedConnections()) conn.send(payload);
   }
 
@@ -371,7 +394,7 @@ export default class RuckusRoom implements Party.Server {
     }
   }
 
-  roomView(): RoomView {
+  roomView(withChat: boolean): RoomWire {
     return {
       code: this.room.id,
       hostId: this.hostId,
@@ -379,7 +402,7 @@ export default class RuckusRoom implements Party.Server {
       phase: this.phase,
       gameId: this.gameId,
       participants: this.participants,
-      chat: this.chat,
+      ...(withChat ? { chat: this.chat } : {}),
       wins: this.wins,
       result: this.result,
       gameSeq: this.gameSeq,
@@ -412,7 +435,9 @@ export default class RuckusRoom implements Party.Server {
     if (this.pruneDeparted()) changed = true;
     if (changed) this.broadcastRoom();
 
-    // Everyone has been gone a while: stop the game and timers so the room can idle.
+    // Everyone has been gone a while: stop the game and timers so the room can idle
+    // (a room that only ever saw unverified sockets counts as empty too).
+    if (this.sockets.size === 0 && this.emptySince === null) this.emptySince = now;
     if (this.sockets.size === 0 && this.emptySince !== null && now - this.emptySince > EMPTY_ROOM_GRACE_MS) {
       this.stopGame();
       this.phase = "lobby";
@@ -472,11 +497,18 @@ export default class RuckusRoom implements Party.Server {
   pushChat(msg: ChatMsg) {
     this.chat.push(msg);
     if (this.chat.length > CHAT_LIMIT) this.chat.splice(0, this.chat.length - CHAT_LIMIT);
+    const payload = JSON.stringify({ t: "chat", msg, now: msg.at } satisfies ServerMsg);
+    for (const conn of this.verifiedConnections()) conn.send(payload);
   }
 
   sendTo(conn: Conn, msg: ServerMsg) {
     conn.send(JSON.stringify(msg));
   }
+}
+
+/** A "game" message around an already-serialised view (no second JSON.stringify). */
+function gamePayload(viewJson: string, now: number): string {
+  return `{"t":"game","now":${now},"view":${viewJson}}`;
 }
 
 function cleanText(input: unknown, max: number): string {

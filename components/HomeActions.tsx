@@ -1,13 +1,19 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { newRoomCode, normalizeCode } from "@/lib/identity";
 
 export function HomeActions() {
   const router = useRouter();
   const [code, setCode] = useState("");
   const clean = normalizeCode(code);
+
+  // Every room link is served by the same static page: fetch its code now so
+  // "Create a room" and "Join" open instantly.
+  useEffect(() => {
+    router.prefetch("/r/warmup");
+  }, [router]);
 
   return (
     <div className="card space-y-5 p-5 sm:p-6">

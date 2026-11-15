@@ -34,6 +34,8 @@ export interface RoomView {
   gameId: string;
   /** Players taking part in the current game (others spectate). */
   participants: string[];
+  /** Recent chat. On the wire it is only sent in full when a socket joins; after that
+   * new lines arrive as small "chat" messages and the client keeps the list. */
   chat: ChatMsg[];
   /** Wins this session, keyed by player id. */
   wins: Record<string, number>;
@@ -50,10 +52,18 @@ export type ClientMsg =
   | { t: "pick"; gameId: string }
   | { t: "start" }
   | { t: "lobby" }
-  | { t: "act"; a: unknown };
+  | { t: "act"; a: unknown }
+  /** Clock sync / latency probe; the server answers with "pong" right away. */
+  | { t: "ping"; c: number };
+
+/** The room as sent over the wire: `chat` only on a socket's first sync. */
+export type RoomWire = Omit<RoomView, "chat"> & { chat?: ChatMsg[] };
 
 export type ServerMsg =
-  | { t: "room"; room: RoomView; now: number }
+  | { t: "room"; room: RoomWire; now: number }
+  | { t: "chat"; msg: ChatMsg; now: number }
+  /** Reply to "ping": `c` is the client's send time, `now` the server time. */
+  | { t: "pong"; c: number; now: number }
   | { t: "game"; view: unknown; now: number }
   | { t: "ev"; e: unknown; now: number }
   | { t: "err"; msg: string; now: number }

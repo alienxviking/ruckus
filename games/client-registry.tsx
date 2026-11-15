@@ -21,32 +21,46 @@ function Loading() {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyGameClient = ComponentType<GameClientProps<any, any>>;
 
-export const GAME_CLIENTS: Record<string, AnyGameClient> = {
-  sketch: dynamic(() => import("./sketch/client"), { ssr: false, loading: Loading }),
-  trivia: dynamic(() => import("./trivia/client"), { ssr: false, loading: Loading }),
-  letters: dynamic(() => import("./letters/client"), { ssr: false, loading: Loading }),
-  snakes: dynamic(() => import("./snakes/client"), { ssr: false, loading: Loading }),
-  turf: dynamic(() => import("./turf/client"), { ssr: false, loading: Loading }),
-  reflex: dynamic(() => import("./reflex/client"), { ssr: false, loading: Loading }),
-  impostor: dynamic(() => import("./impostor/client"), { ssr: false, loading: Loading }),
-  fib: dynamic(() => import("./fib/client"), { ssr: false, loading: Loading }),
-  mindmeld: dynamic(() => import("./mindmeld/client"), { ssr: false, loading: Loading }),
-  dial: dynamic(() => import("./dial/client"), { ssr: false, loading: Loading }),
-  dots: dynamic(() => import("./dots/client"), { ssr: false, loading: Loading }),
-  fourrow: dynamic(() => import("./fourrow/client"), { ssr: false, loading: Loading }),
-  tictactoe: dynamic(() => import("./tictactoe/client"), { ssr: false, loading: Loading }),
-  garble: dynamic(() => import("./garble/client"), { ssr: false, loading: Loading }),
-  liars: dynamic(() => import("./liars/client"), { ssr: false, loading: Loading }),
-  market: dynamic(() => import("./market/client"), { ssr: false, loading: Loading }),
-  barrage: dynamic(() => import("./barrage/client"), { ssr: false, loading: Loading }),
-  blitz: dynamic(() => import("./blitz/client"), { ssr: false, loading: Loading }),
-  sumo: dynamic(() => import("./sumo/client"), { ssr: false, loading: Loading }),
-  warlords: dynamic(() => import("./warlords/client"), { ssr: false, loading: Loading }),
-  incognito: dynamic(() => import("./incognito/client"), { ssr: false, loading: Loading }),
-  minerush: dynamic(() => import("./minerush/client"), { ssr: false, loading: Loading }),
-  auction: dynamic(() => import("./auction/client"), { ssr: false, loading: Loading }),
-  potato: dynamic(() => import("./potato/client"), { ssr: false, loading: Loading }),
-  putt: dynamic(() => import("./putt/client"), { ssr: false, loading: Loading }),
-  pixels: dynamic(() => import("./pixels/client"), { ssr: false, loading: Loading }),
-  doublecross: dynamic(() => import("./doublecross/client"), { ssr: false, loading: Loading }),
+/** Loaders for each game's client chunk (also used to preload it before the game starts). */
+const LOADERS: Record<string, () => Promise<{ default: AnyGameClient }>> = {
+  sketch: () => import("./sketch/client"),
+  trivia: () => import("./trivia/client"),
+  letters: () => import("./letters/client"),
+  snakes: () => import("./snakes/client"),
+  turf: () => import("./turf/client"),
+  reflex: () => import("./reflex/client"),
+  impostor: () => import("./impostor/client"),
+  fib: () => import("./fib/client"),
+  mindmeld: () => import("./mindmeld/client"),
+  dial: () => import("./dial/client"),
+  dots: () => import("./dots/client"),
+  fourrow: () => import("./fourrow/client"),
+  tictactoe: () => import("./tictactoe/client"),
+  garble: () => import("./garble/client"),
+  liars: () => import("./liars/client"),
+  market: () => import("./market/client"),
+  barrage: () => import("./barrage/client"),
+  blitz: () => import("./blitz/client"),
+  sumo: () => import("./sumo/client"),
+  warlords: () => import("./warlords/client"),
+  incognito: () => import("./incognito/client"),
+  minerush: () => import("./minerush/client"),
+  auction: () => import("./auction/client"),
+  potato: () => import("./potato/client"),
+  putt: () => import("./putt/client"),
+  pixels: () => import("./pixels/client"),
+  doublecross: () => import("./doublecross/client"),
 };
+
+export const GAME_CLIENTS: Record<string, AnyGameClient> = Object.fromEntries(
+  Object.entries(LOADERS).map(([id, load]) => [id, dynamic(load, { ssr: false, loading: Loading })]),
+);
+
+const preloaded = new Set<string>();
+/** Start downloading a game's code early (e.g. as soon as the host picks it). */
+export function preloadGame(id: string) {
+  const load = LOADERS[id];
+  if (!load || preloaded.has(id)) return;
+  preloaded.add(id);
+  load().catch(() => preloaded.delete(id));
+}

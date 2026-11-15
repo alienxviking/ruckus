@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Bricolage_Grotesque, Geist, Geist_Mono } from "next/font/google";
+import { preconnect, prefetchDNS } from "react-dom";
 import "./globals.css";
 
 const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
@@ -22,7 +23,14 @@ export const viewport: Viewport = {
   themeColor: "#0e0c1d",
 };
 
+// The deployed game server: start DNS + TLS early so the room's WebSocket opens faster.
+const partyHost = process.env.NEXT_PUBLIC_PARTYKIT_HOST;
+
 export default function RootLayout({ children }: LayoutProps<"/">) {
+  if (partyHost) {
+    prefetchDNS(`https://${partyHost}`);
+    preconnect(`https://${partyHost}`);
+  }
   return (
     <html
       lang="en"

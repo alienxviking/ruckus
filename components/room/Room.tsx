@@ -1,9 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { preloadGame } from "@/games/client-registry";
 import type { Identity } from "@/lib/identity";
-import { useRoom } from "@/lib/useRoom";
+import { useRoom, type PingStore } from "@/lib/useRoom";
 import type { Player } from "@/shared/types";
 import { Logo } from "../Logo";
 import { Chat } from "./Chat";
@@ -34,13 +35,19 @@ export function Room({
 
   const room = r.room;
   const isHost = room?.hostId === r.me;
+  const gameId = room?.gameId;
+
+  // Fetch the picked game's code while everyone is still in the lobby, so Start is instant.
+  useEffect(() => {
+    if (gameId) preloadGame(gameId);
+  }, [gameId]);
 
   return (
     <div className="mx-auto flex w-full max-w-7xl flex-1 flex-col px-3 sm:px-5">
       <header className="flex items-center justify-between gap-3 py-3">
         <Logo small />
         <div className="flex items-center gap-2">
-          <ConnDot status={r.status} />
+          <ConnDot status={r.status} ping={r.ping} />
           <InviteButton code={code} />
           <button
             className="btn px-2.5 py-1.5"
@@ -146,13 +153,30 @@ export function Room({
   );
 }
 
-function ConnDot({ status }: { status: string }) {
-  const color = status === "open" ? "bg-green-400" : status === "connecting" ? "bg-yellow-400" : "bg-red-500";
-  const label = status === "open" ? "Connected" : status === "connecting" ? "Connecting" : "Reconnecting";
+const noPing = () => null;
+
+function ConnDot({ status, ping }: { status: string; ping: PingStore }) {
+  const rtt = useSyncExternalStore(ping.subscribe, ping.get, noPing);
+  const open = status === "open";
+  // Round trip to the game server: green is great, yellow is fine, orange is laggy.
+  const color = !open
+    ? status === "connecting"
+      ? "bg-yellow-400"
+      : "bg-red-500"
+    : rtt === null || rtt < 90
+      ? "bg-green-400"
+      : rtt < 180
+        ? "bg-yellow-400"
+        : "bg-orange-500";
+  const label = open ? "Connected" : status === "connecting" ? "Connecting" : "Reconnecting";
+  const detail = open && rtt !== null ? `${rtt} ms` : null;
   return (
-    <span className="flex items-center gap-1.5 text-xs text-muted" title={label}>
-      <span className={`size-2 rounded-full ${color} ${status !== "open" ? "animate-pulse" : ""}`} />
-      <span className="sr-only sm:not-sr-only">{label}</span>
+    <span
+      className="flex items-center gap-1.5 text-xs text-muted tabular-nums"
+      title={detail ? `${label} · ${detail} round trip to the game server` : label}
+    >
+      <span className={`size-2 rounded-full transition-colors duration-500 ${color} ${!open ? "animate-pulse" : ""}`} />
+      <span className="sr-only sm:not-sr-only">{detail ?? label}</span>
     </span>
   );
 }

@@ -51,7 +51,9 @@ function client(room, id, name) {
   ws.addEventListener("message", (e) => {
     const data = String(e.data);
     const m = JSON.parse(data);
-    if (m.t === "room") c.room = m.room;
+    // Room messages carry the chat history only on join; new lines arrive as "chat" deltas.
+    if (m.t === "room") c.room = { ...m.room, chat: m.room.chat ?? c.room?.chat ?? [] };
+    if (m.t === "chat" && c.room) c.room.chat = [...c.room.chat, m.msg];
     if (m.t === "game") {
       c.view = m.view;
       c.stats.game++;
