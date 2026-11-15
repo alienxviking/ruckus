@@ -13,6 +13,13 @@ import dial from "./dial/server";
 import dots from "./dots/server";
 import fourrow from "./fourrow/server";
 import tictactoe from "./tictactoe/server";
+import garble from "./garble/server";
+import liars from "./liars/server";
+import market from "./market/server";
+import barrage from "./barrage/server";
+import blitz from "./blitz/server";
+import sumo from "./sumo/server";
+import warlords from "./warlords/server";
 
 export const GAME_DEFS: Record<string, GameDef> = {
   sketch,
@@ -28,4 +35,11 @@ export const GAME_DEFS: Record<string, GameDef> = {
   dots,
   fourrow,
   tictactoe,
+  garble,
+  liars,
+  market,
+  barrage,
+  blitz,
+  sumo,
+  warlords,
 };

@@ -35,4 +35,11 @@ export const GAME_CLIENTS: Record<string, AnyGameClient> = {
   dots: dynamic(() => import("./dots/client"), { ssr: false, loading: Loading }),
   fourrow: dynamic(() => import("./fourrow/client"), { ssr: false, loading: Loading }),
   tictactoe: dynamic(() => import("./tictactoe/client"), { ssr: false, loading: Loading }),
+  garble: dynamic(() => import("./garble/client"), { ssr: false, loading: Loading }),
+  liars: dynamic(() => import("./liars/client"), { ssr: false, loading: Loading }),
+  market: dynamic(() => import("./market/client"), { ssr: false, loading: Loading }),
+  barrage: dynamic(() => import("./barrage/client"), { ssr: false, loading: Loading }),
+  blitz: dynamic(() => import("./blitz/client"), { ssr: false, loading: Loading }),
+  sumo: dynamic(() => import("./sumo/client"), { ssr: false, loading: Loading }),
+  warlords: dynamic(() => import("./warlords/client"), { ssr: false, loading: Loading }),
 };

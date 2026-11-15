@@ -23,4 +23,11 @@ export const SIM_LOADERS: Record<string, () => Promise<Loaded>> = {
   dots: () => Promise.all([import("./dots/server"), import("./dots/client")]),
   fourrow: () => Promise.all([import("./fourrow/server"), import("./fourrow/client")]),
   tictactoe: () => Promise.all([import("./tictactoe/server"), import("./tictactoe/client")]),
+  garble: () => Promise.all([import("./garble/server"), import("./garble/client")]),
+  liars: () => Promise.all([import("./liars/server"), import("./liars/client")]),
+  market: () => Promise.all([import("./market/server"), import("./market/client")]),
+  barrage: () => Promise.all([import("./barrage/server"), import("./barrage/client")]),
+  blitz: () => Promise.all([import("./blitz/server"), import("./blitz/client")]),
+  sumo: () => Promise.all([import("./sumo/server"), import("./sumo/client")]),
+  warlords: () => Promise.all([import("./warlords/server"), import("./warlords/client")]),
 };
