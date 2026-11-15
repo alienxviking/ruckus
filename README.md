@@ -17,6 +17,13 @@ Real-time party games for 2–12 friends in the browser. Make a room, send the l
 | Dots & Boxes | 2–4 | Draw lines, close boxes |
 | Four in a Row | 2 | Classic, best of three |
 | Tic-Tac-Toe | 2 | First to three rounds |
+| Garble | 3–12 | Telephone with drawings: write, draw, describe, then watch every book unravel |
+| Liar's Dice | 2–8 | Hidden dice, rising bids, call Liar! or Spot on |
+| Market Maker | 2–8 | Live trading: everyone holds a secret card, the contract pays the sum of all cards |
+| Barrage | 2–8 | Artillery where everyone aims in secret and every shell flies at once; craters and wind |
+| Blitz | 1–12 | Twelve microgames, a few seconds each: odd emoji out, stop the clock, tap frenzy… |
+| Ice Sumo | 2–8 | Real-time physics: shove everyone off a shrinking ice rink |
+| Warlords | 2–12 | Split 100 troops over five castles; one hides a dragon. Past moves are public |
 
 ## Run it
 

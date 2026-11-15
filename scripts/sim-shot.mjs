@@ -13,6 +13,7 @@
 //   { "click": { "player": 1, "selector": "canvas", "x": 0.5, "y": 0.5 } }  click at relative point
 //   { "fill": { "player": 0, "label": "Guess", "text": "apple", "enter": true } }
 //   { "key": { "player": 0, "key": "ArrowUp" } }      focus the frame, then press a key
+//   { "key": { "player": 0, "label": "Castle 1", "key": "ArrowUp" } }  press a key in a labelled control
 //   { "drag": { "player": 0, "selector": "canvas", "points": [[0.1,0.1],[0.9,0.9]] } }
 //   { "disconnect": 2 } / { "reconnect": 2 }
 //   { "focus": "p1" } / { "focus": null }              show one viewer / everyone
@@ -93,11 +94,19 @@ try {
       if (c.enter) await input.press("Enter");
     } else if ("key" in step) {
       const c = step.key;
-      await frame(c.player ?? 0).click({ position: { x: 5, y: 5 } });
-      await page.keyboard.press(c.key);
+      const f = frame(c.player ?? 0);
+      // With a label, focus that control and press the key there (e.g. arrows on a slider).
+      if (c.label) await f.getByLabel(c.label).first().press(c.key);
+      else {
+        await f.click({ position: { x: 5, y: 5 } });
+        await page.keyboard.press(c.key);
+      }
     } else if ("drag" in step) {
       const c = step.drag;
+      // Earlier clicks can leave the page scrolled; drags need their target fully on screen.
+      await page.evaluate(() => window.scrollTo(0, 0));
       const target = frame(c.player ?? 0).locator(c.selector).first();
+      await target.scrollIntoViewIfNeeded();
       const pts = [];
       for (const [x, y] of c.points) pts.push(await rel(target, x, y));
       await page.mouse.move(pts[0].x, pts[0].y);

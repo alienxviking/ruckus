@@ -9,8 +9,9 @@ const STEPS = [
   { emoji: "🎉", title: "Play together", text: "Pick a game, hit start. Everyone plays live, in sync." },
 ];
 
-// A few game icons drifting gently next to the headline.
-const FLOATERS = CATALOG.slice(0, 7).map((g, i) => ({
+// A few game icons drifting gently next to the headline: a mix of genres.
+const FLOATER_IDS = ["sketch", "barrage", "trivia", "sumo", "impostor", "market", "garble"];
+const FLOATERS = CATALOG.filter((g) => FLOATER_IDS.includes(g.id)).map((g, i) => ({
   emoji: g.emoji,
   accent: g.accent,
   tilt: `${(i % 2 ? 1 : -1) * (4 + (i % 3) * 2)}deg`,
@@ -53,8 +54,8 @@ export default function Home() {
             <span className="bg-gradient-to-r from-brand to-brand-2 bg-clip-text text-transparent">Cause a ruckus.</span>
           </h1>
           <p className="mt-5 max-w-md text-lg text-muted">
-            Real-time party games for 2–12 friends, right in the browser. Draw, bluff, race and brawl, on your phone or
-            laptop.
+            Real-time party games for 2–12 friends, right in the browser. Draw, bluff, trade, race and brawl, on your
+            phone or laptop.
           </p>
         </div>
         <div className="animate-rise" style={{ animationDelay: "120ms" }}>
