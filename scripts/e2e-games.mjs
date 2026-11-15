@@ -67,19 +67,35 @@ function client(room, id, name) {
     }
     c.waiters = c.waiters.filter((w) => !w());
   });
+  c.closing = false;
+  c.dropped = false;
+  ws.addEventListener("close", () => {
+    if (c.closing) return;
+    // The server closed us without being asked: usually `partykit dev` reloading after a file save.
+    c.dropped = true;
+    for (const w of c.waiters) w();
+  });
   c.send = (msg) => ws.readyState === 1 && ws.send(JSON.stringify(msg));
   c.until = (pred, ms = 6000, what = "condition") =>
     new Promise((res, rej) => {
       if (pred()) return res();
-      const t = setTimeout(() => rej(new Error(`${name}: timed out waiting for ${what}`)), ms);
-      c.waiters.push(() => (pred() ? (clearTimeout(t), res(), true) : false));
+      const fail = (why) => rej(Object.assign(new Error(`${name}: ${why} ${what}`), { dropped: c.dropped }));
+      const t = setTimeout(() => fail("timed out waiting for"), ms);
+      c.waiters.push(() => {
+        if (pred()) return clearTimeout(t), res(), true;
+        if (c.dropped) return clearTimeout(t), fail("socket dropped by the server (dev server reload?) while waiting for"), true;
+        return false;
+      });
     });
   c.open = new Promise((r, rej) => {
     ws.addEventListener("open", r);
     ws.addEventListener("error", () => rej(new Error(`${name}: socket error`)));
   });
   c.hello = (key = `${id}-secret-key-0001`) => c.send({ t: "hello", name, color: "#4ade80", avatar: "🦊", key });
-  c.close = () => new Promise((r) => (ws.readyState === 3 ? r() : (ws.addEventListener("close", r), ws.close())));
+  c.close = () => {
+    c.closing = true;
+    return new Promise((r) => (ws.readyState === 3 ? r() : (ws.addEventListener("close", r), ws.close())));
+  };
   return c;
 }
 
@@ -87,7 +103,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 let failures = 0;
 const rows = [];
 
-for (const g of games) {
+async function runGame(g) {
   const n = Math.min(g.maxPlayers, Math.max(g.minPlayers, 3));
   const room = `e2e-${g.id}-${Math.random().toString(36).slice(2, 7)}`;
   const clients = Array.from({ length: n }, (_, i) => client(room, `${g.id}p${i}`, `P${i}`));
@@ -142,19 +158,31 @@ for (const g of games) {
     host.send({ t: "lobby" });
     await clients[1].until(() => clients[1].room?.phase === "lobby", 4000, "back to lobby");
 
-    rows.push({
+    return {
       game: label,
       ok: "✓",
       "msgs/s (idle)": (idle.game + idle.ev) / 3,
       "KB/s per client": +(idle.bytes / 3 / 1024).toFixed(1),
       "max msg KB": +(idle.maxMsg / 1024).toFixed(1),
-    });
+    };
   } catch (e) {
-    failures++;
-    rows.push({ game: label, ok: "✗ " + e.message });
+    return { game: label, ok: "✗ " + e.message, dropped: !!e.dropped || clients.some((c) => c.dropped) };
   } finally {
     await Promise.all(clients.map((c) => c.close().catch(() => {})));
   }
+}
+
+for (const g of games) {
+  let row = await runGame(g);
+  // A dev-server reload mid-run isn't the game's fault: wait for the rebuild and try once more.
+  if (row.dropped) {
+    console.log(`↻ ${g.name}: server dropped the sockets (reload?), retrying once`);
+    await sleep(3000);
+    row = await runGame(g);
+  }
+  delete row.dropped;
+  if (row.ok !== "✓") failures++;
+  rows.push(row);
 }
 
 console.table(rows);
