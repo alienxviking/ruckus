@@ -247,6 +247,19 @@ function playOut(g: G, duringDraw?: (g: G) => void) {
   ok(g.act(c, { type: "guess", text: "x" }) === false, "no guessing during reveal");
 }
 
+// A guess that lands after the buzzer (before the next tick reveals) doesn't score.
+{
+  const g = start(3);
+  choose(g, "elephant");
+  const [a] = g.guessers();
+  g.t.advance(DRAW_MS + 100); // the deadline has passed but no tick has run yet
+  ok(g.act(a, { type: "guess", text: "elephant" }) === false, "late correct guess rejected");
+  ok((g.s.scores[a] ?? 0) === 0 && (g.s.scores[g.s.artist] ?? 0) === 0 && g.s.guessed.length === 0, "no points after time is up");
+  ok(g.act(a, { type: "guess", text: "giraffe" }) === false && !g.s.feed.some((f) => f.kind === "guess"), "late wrong guess ignored too");
+  g.tick();
+  ok(g.s.phase === "reveal" && g.s.reason === "time", "the tick then reveals as a timeout");
+}
+
 // Short words: near misses are public; containing the answer stays private.
 {
   const g = start(3);

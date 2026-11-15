@@ -368,6 +368,8 @@ function onGuess(s: SketchState, playerId: string, text: unknown, ctx: GameCtx):
   const clean = cleanText(text.slice(0, 400), MAX_GUESS);
   if (!clean) return false;
   const now = ctx.now();
+  // Time's up even if the tick that reveals hasn't run yet: a late guess doesn't count.
+  if (now >= s.endsAt) return false;
   if (now - (s.lastGuess[playerId] ?? -Infinity) < GUESS_GAP_MS) return false;
   s.lastGuess[playerId] = now;
 

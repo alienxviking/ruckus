@@ -2,7 +2,17 @@
 
 // Presentational pieces of the Sketch Storm screen.
 
-import { useEffect, useId, useRef, useState, type CSSProperties, type FormEvent, type ReactNode } from "react";
+import {
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type FormEvent,
+  type ReactNode,
+  type RefObject,
+} from "react";
 import { PlayerChip, StatusBanner, TimerBar, useSecondsLeft } from "@/components/game-ui";
 import type { Player } from "@/shared/types";
 import type { FeedItem, Offer, SketchAction, SketchView } from "./server";
@@ -44,6 +54,33 @@ function chunks(chars: (string | null)[]) {
 }
 
 const isLetter = (ch: string | null) => ch !== null && ch !== " " && ch !== "-";
+
+/**
+ * FLIP: when the order of `[data-flip]` children changes, slide each row from
+ * where it was to where it is now (transform only). Skipped with reduced motion.
+ */
+function useFlip(listRef: RefObject<HTMLElement | null>, order: string) {
+  const tops = useRef(new Map<string, number>());
+  useLayoutEffect(() => {
+    const list = listRef.current;
+    if (!list) return;
+    const still = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const next = new Map<string, number>();
+    for (const row of list.querySelectorAll<HTMLElement>("[data-flip]")) {
+      const id = row.dataset.flip ?? "";
+      const top = row.offsetTop;
+      next.set(id, top);
+      const was = tops.current.get(id);
+      if (!still && was !== undefined && was !== top && typeof row.animate === "function") {
+        row.animate([{ transform: `translateY(${was - top}px)` }, { transform: "none" }], {
+          duration: 480,
+          easing: "cubic-bezier(.2,.8,.2,1)",
+        });
+      }
+    }
+    tops.current = next;
+  }, [listRef, order]);
+}
 
 // ---------- header ----------
 
@@ -243,7 +280,7 @@ export function CanvasOverlay({ view, byId, me, act, serverNow }: { view: Sketch
 
 function Choosing({ artist, watching }: { artist: Player | undefined; watching: boolean }) {
   return (
-    <div className="absolute inset-0 grid place-items-center rounded-xl p-4 text-center" style={BACKDROP}>
+    <div className="sk-iris absolute inset-0 grid place-items-center rounded-xl p-4 text-center" style={BACKDROP}>
       <div className="animate-pop flex flex-col items-center gap-1">
         <div className="relative text-5xl @md:text-6xl" aria-hidden>
           {artist?.avatar ?? "🎨"}
@@ -260,7 +297,7 @@ function ChooseWord({ options, act, endsAt, serverNow }: { options: Offer[]; act
   const secs = useSecondsLeft(endsAt, serverNow);
   return (
     <div
-      className="absolute inset-0 flex flex-col items-center justify-center gap-2 overflow-y-auto rounded-xl p-2 text-center @md:gap-3 @md:p-4"
+      className="sk-iris absolute inset-0 flex flex-col items-center justify-center gap-2 overflow-y-auto rounded-xl p-2 text-center @md:gap-3 @md:p-4"
       style={BACKDROP}
     >
       <p className="font-display text-base font-bold @md:text-xl">Pick a word to draw</p>
@@ -439,7 +476,9 @@ export function Feed({ feed, byId, me, className = "" }: { feed: FeedItem[]; byI
   const last = feed.length ? feed[feed.length - 1].n : 0;
   useEffect(() => {
     const el = listRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
+    if (!el) return;
+    const still = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    el.scrollTo({ top: el.scrollHeight, behavior: still ? "auto" : "smooth" });
   }, [last]);
   return (
     <section className={`card flex min-h-0 flex-col p-3 ${className}`} aria-label="Guesses">
@@ -461,10 +500,12 @@ export function Feed({ feed, byId, me, className = "" }: { feed: FeedItem[]; byI
 
 export function Scores({ view, byId, me, className = "" }: { view: SketchView; byId: ById; me: string; className?: string }) {
   const ids = [...view.players].sort((a, b) => (view.scores[b] ?? 0) - (view.scores[a] ?? 0));
+  const listRef = useRef<HTMLOListElement>(null);
+  useFlip(listRef, ids.join());
   return (
     <section className={`card p-3 ${className}`} aria-label="Scores">
       <div className="label mb-2">Scores</div>
-      <ol className="space-y-1">
+      <ol ref={listRef} className="relative space-y-1">
         {ids.map((id, i) => {
           const p = byId[id];
           if (!p) return null;
@@ -473,6 +514,7 @@ export function Scores({ view, byId, me, className = "" }: { view: SketchView; b
           return (
             <li
               key={id}
+              data-flip={id}
               className={`flex items-center justify-between gap-2 rounded-lg px-2 py-1 ${id === me ? "bg-panel-2" : ""}`}
             >
               <span className="flex min-w-0 items-center gap-1.5">
@@ -491,11 +533,13 @@ export function Scores({ view, byId, me, className = "" }: { view: SketchView; b
               </span>
               <span className="flex shrink-0 items-center gap-1.5">
                 {gain > 0 && (
-                  <span key={gain} className="animate-pop rounded-full bg-emerald-400/15 px-1.5 text-xs font-bold text-emerald-300">
+                  <span key={`g${gain}`} className="animate-pop rounded-full bg-emerald-400/15 px-1.5 text-xs font-bold text-emerald-300">
                     +{gain}
                   </span>
                 )}
-                <span className="font-mono font-bold tabular-nums">{view.scores[id] ?? 0}</span>
+                <span key={`s${view.scores[id] ?? 0}`} className={`font-mono font-bold tabular-nums ${gain > 0 ? "animate-pop" : ""}`}>
+                  {view.scores[id] ?? 0}
+                </span>
               </span>
             </li>
           );
@@ -575,10 +619,20 @@ export function Final({ view, byId, me, store }: { view: SketchView; byId: ById;
                 style={{ animationDelay: `${i * 60}ms` }}
               >
                 <span className="flex min-w-0 items-center gap-2">
-                  <span className="w-7 shrink-0 text-center text-lg font-bold text-muted" aria-label={`rank ${rank}`}>
+                  <span
+                    className={`w-7 shrink-0 text-center text-lg font-bold text-muted ${medal ? "animate-pop" : ""}`}
+                    style={medal ? { animationDelay: `${250 + i * 60}ms` } : undefined}
+                    aria-label={`rank ${rank}`}
+                  >
                     {medal ?? rank}
                   </span>
-                  <PlayerChip player={byId[id]} />
+                  <PlayerChip player={byId[id]}>
+                    {win && (
+                      <span aria-hidden className="sk-crown">
+                        👑
+                      </span>
+                    )}
+                  </PlayerChip>
                 </span>
                 <span className="shrink-0 font-mono text-xl font-extrabold tabular-nums">
                   {view.scores[id] ?? 0}
@@ -593,8 +647,12 @@ export function Final({ view, byId, me, store }: { view: SketchView; byId: ById;
         <section className="card p-3" aria-label="Gallery">
           <div className="label mb-2">Tonight’s gallery</div>
           <ul className="grid grid-cols-2 gap-2 @xl:grid-cols-3 @4xl:grid-cols-4">
-            {view.history.map((h) => (
-              <li key={h.turn} className="flex min-w-0 flex-col gap-1.5 rounded-xl bg-panel-2 p-1.5">
+            {view.history.map((h, i) => (
+              <li
+                key={h.turn}
+                className="animate-rise flex min-w-0 flex-col gap-1.5 rounded-xl bg-panel-2 p-1.5"
+                style={{ animationDelay: `${300 + i * 70}ms` }}
+              >
                 <Thumb store={store} turn={h.turn} label={`${byId[h.artist]?.name ?? "Someone"}’s drawing of ${h.word}`} />
                 <div className="flex items-center justify-between gap-1 px-0.5">
                   <span className="truncate text-sm font-bold">{h.word.charAt(0).toUpperCase() + h.word.slice(1)}</span>

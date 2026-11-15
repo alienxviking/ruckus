@@ -20,12 +20,17 @@ const CSS = `
 .sk-wiggle { display: inline-block; animation: sk-wiggle 1.1s ease-in-out infinite }
 @keyframes sk-flip { from { opacity: 0; transform: translateY(8px) rotateX(80deg) } to { opacity: 1; transform: none } }
 .sk-flip { display: inline-block; animation: sk-flip .45s cubic-bezier(.2, 1.3, .4, 1) both }
+@keyframes sk-crown { from { opacity: 0; transform: translateY(6px) rotate(-30deg) scale(.3) } }
+.sk-crown { display: inline-block; animation: sk-crown .6s cubic-bezier(.2, 1.5, .4, 1) .45s both }
+/* New turn: the cover irises in over the fresh canvas (clip-path: paint only, no layout). */
+@keyframes sk-iris { from { clip-path: circle(0% at 50% 50%) } to { clip-path: circle(75% at 50% 50%) } }
+.sk-iris { animation: sk-iris .38s cubic-bezier(.65, 0, .35, 1) both }
 @keyframes sk-urgent { 50% { opacity: .5 } }
 .sk-urgent { animation: sk-urgent .9s ease-in-out infinite }
 @media (prefers-reduced-motion: reduce) {
   .sk-float, .sk-toast { animation-name: sk-fade }
   .sk-burst { display: none }
-  .sk-wiggle, .sk-flip, .sk-urgent { animation: none }
+  .sk-wiggle, .sk-flip, .sk-urgent, .sk-crown, .sk-iris { animation: none }
 }
 `;
 
