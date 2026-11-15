@@ -16,13 +16,31 @@ import type { Player } from "@/shared/types";
 import { Note, PlayerChip, Scoreboard, StatusBanner, TimerBar, useSecondsLeft } from "@/components/game-ui";
 import type { DialAction, DialRecap, DialReveal, DialRow, DialSeat, DialTeam, DialView } from "./server";
 import { CLUE_MAX, DIAL_START, cleanClue, clueProblem, isDialEvent, teamVerdict } from "./shared";
-import { BAND_COLOR, Burst, CX, CY, DialStyles, Gauge, LEFT_COLOR, RIGHT_COLOR, type GaugeNeedle } from "./gauge";
+import {
+  BAND_COLOR,
+  Burst,
+  CX,
+  CY,
+  DialStyles,
+  Gauge,
+  LEFT_COLOR,
+  REVEAL_T,
+  Roll,
+  RIGHT_COLOR,
+  type GaugeApi,
+  type GaugeNeedle,
+} from "./gauge";
 
 type Props = GameClientProps<DialView, DialAction>;
 type Who = (id: string) => Player;
 
 /** Needle updates go out at most this often (~12 per second). */
 const SEND_EVERY_MS = 85;
+/**
+ * Other players' needle events re-render at most this often. The gauge's springs
+ * glide between updates, so a crowd of 11 dragging players doesn't mean 60 renders/s.
+ */
+const LIVE_FLUSH_MS = 50;
 
 export default function OnTheDial(props: Props) {
   if (!props.view) {
@@ -38,6 +56,12 @@ export default function OnTheDial(props: Props) {
 // ---------- helpers ----------
 
 const clamp = (v: number) => Math.max(0, Math.min(100, Math.round(v)));
+/** Seconds as a CSS delay. */
+const sec = (s: number) => `${s.toFixed(2)}s`;
+/** Word joiner: keeps a closing quote on the same line as the clue's last letter. */
+const WJ = String.fromCharCode(0x2060);
+/** A clue in curly quotes that never leaves the closing quote alone on a line. */
+const quoted = (text: string | null) => `“${text ?? ""}${WJ}”`;
 
 /** Plain-words position on the spectrum, e.g. "a little toward Hot". */
 function lean(v: number, left: string, right: string): string {
@@ -65,28 +89,32 @@ function useLiveNeedles(view: DialView, onEvent: Props["onEvent"]): Map<string, 
   }, [view]);
 
   useEffect(() => {
-    let raf = 0;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let lastFlush = 0;
     // Each update remembers which view it arrived on: a newer view supersedes it.
     let batch = new Map<string, { v: number; base: DialView }>();
+    const flush = () => {
+      timer = null;
+      lastFlush = performance.now();
+      const updates = batch;
+      batch = new Map();
+      const base = viewRef.current;
+      setLive((prev) => {
+        const vals = new Map(prev && prev.base === base ? prev.vals : []);
+        for (const [id, u] of updates) if (u.base === base) vals.set(id, u.v);
+        return { base, vals };
+      });
+    };
     const off = onEvent((e) => {
       if (!isDialEvent(e)) return;
       batch.set(e.id, { v: e.v, base: viewRef.current });
-      if (raf) return;
-      raf = requestAnimationFrame(() => {
-        raf = 0;
-        const updates = batch;
-        batch = new Map();
-        const base = viewRef.current;
-        setLive((prev) => {
-          const vals = new Map(prev && prev.base === base ? prev.vals : []);
-          for (const [id, u] of updates) if (u.base === base) vals.set(id, u.v);
-          return { base, vals };
-        });
-      });
+      if (timer !== null) return;
+      // A lone dragger flushes at once; a crowd is coalesced to one render per LIVE_FLUSH_MS.
+      timer = setTimeout(flush, Math.max(0, LIVE_FLUSH_MS - (performance.now() - lastFlush)));
     });
     return () => {
       off();
-      if (raf) cancelAnimationFrame(raf);
+      if (timer !== null) clearTimeout(timer);
     };
   }, [onEvent]);
 
@@ -136,11 +164,11 @@ function Board({ view, me, byId, isPlayer, act, serverNow, onEvent, accent }: Pr
   }, [act]);
 
   const setDial = useCallback(
-    (raw: number) => {
+    (raw: number): boolean => {
       const L = latest.current;
-      if (!L.canDrag) return;
+      if (!L.canDrag) return false;
       const v = clamp(raw);
-      if (v === L.value) return;
+      if (v === L.value) return true;
       L.value = v;
       setMine({ key: L.key, v });
       const q = outbox.current;
@@ -148,11 +176,17 @@ function Board({ view, me, byId, isPlayer, act, serverNow, onEvent, accent }: Pr
       const wait = SEND_EVERY_MS - (performance.now() - q.last);
       if (wait <= 0) flush();
       else if (!q.timer) q.timer = setTimeout(flush, wait);
+      return true;
     },
     [flush],
   );
 
-  const nudge = useCallback((delta: number) => setDial((latest.current.value ?? DIAL_START) + delta), [setDial]);
+  const nudge = useCallback(
+    (delta: number) => {
+      setDial((latest.current.value ?? DIAL_START) + delta);
+    },
+    [setDial],
+  );
 
   const lock = useCallback(() => {
     const L = latest.current;
@@ -210,7 +244,6 @@ function Board({ view, me, byId, isPlayer, act, serverNow, onEvent, accent }: Pr
         locked: seat.locked,
         away: seat.away,
         ghost,
-        smooth: !isMe && view.phase === "guess",
         pts: view.phase === "reveal" ? (rows?.get(seat.id)?.pts ?? 0) : null,
       });
     }
@@ -249,6 +282,7 @@ function Board({ view, me, byId, isPlayer, act, serverNow, onEvent, accent }: Pr
 
       <DialPad
         view={view}
+        me={me}
         needles={needles}
         canDrag={canDrag}
         myValue={myValue}
@@ -328,7 +362,7 @@ function Headline({
             (view.clue?.length ?? 0) > 24 ? "text-2xl @lg:text-3xl" : "text-3xl @lg:text-4xl"
           }`}
         >
-          “{view.clue}”
+          {quoted(view.clue)}
         </div>
       </div>
     );
@@ -347,7 +381,10 @@ function Headline({
       <div key={`r${view.round}`}>
         <StatusBanner accent={accent}>
           <div>🎯 The target was {r.target}</div>
-          <div className="mt-0.5 font-sans text-sm font-semibold text-muted">
+          <div
+            className="animate-rise mt-0.5 font-sans text-sm font-semibold text-muted"
+            style={{ animationDelay: sec(REVEAL_T.chips) }}
+          >
             {sub}
             {myPts !== undefined && (
               <>
@@ -361,7 +398,7 @@ function Headline({
         </StatusBanner>
         <p className="mt-2 text-center text-sm text-muted">
           {giver.name}&apos;s clue:{" "}
-          <span className="font-display text-base font-bold text-text [overflow-wrap:anywhere]">“{view.clue}”</span>
+          <span className="font-display text-base font-bold text-text [overflow-wrap:anywhere]">{quoted(view.clue)}</span>
         </p>
       </div>
     );
@@ -421,7 +458,9 @@ function Meta({ view, who, serverNow, accent }: { view: DialView; who: Who; serv
             <span className="sr-only">is the clue-giver</span>
           </PlayerChip>
         )}
-        {view.team && <TeamPill team={view.team} />}
+        {view.team && (
+          <TeamPill team={view.team} gained={view.phase === "reveal" ? (view.reveal?.giverPts ?? 0) : 0} />
+        )}
         <SecondsLeft endsAt={view.endsAt} serverNow={serverNow} />
       </div>
       <TimerBar endsAt={view.endsAt} total={view.phaseMs} serverNow={serverNow} color={accent} />
@@ -429,13 +468,17 @@ function Meta({ view, who, serverNow, accent }: { view: DialView; who: Who; serv
   );
 }
 
-function TeamPill({ team }: { team: DialTeam }) {
+function TeamPill({ team, gained }: { team: DialTeam; gained: number }) {
   const reached = team.score >= team.goal;
   return (
     <span
       className={`rounded-full border px-2 py-0.5 text-xs font-semibold ${reached ? "border-emerald-400/60 text-emerald-300" : "border-line text-muted"}`}
     >
-      <span aria-hidden>🤝 </span>Team <b className="font-mono text-text tabular-nums">{team.score}</b>/{team.max}
+      <span aria-hidden>🤝 </span>Team{" "}
+      <b className="font-mono text-text tabular-nums">
+        <Roll from={team.score - gained} to={team.score} delay={REVEAL_T.done} />
+      </b>
+      /{team.max}
       <span className="text-muted"> · {reached ? "goal reached!" : `${team.goal} to win`}</span>
     </span>
   );
@@ -467,6 +510,7 @@ function EndingSoon({ endsAt, serverNow }: { endsAt: number; serverNow: () => nu
 
 function DialPad({
   view,
+  me,
   needles,
   canDrag,
   myValue,
@@ -478,20 +522,31 @@ function DialPad({
   burst,
 }: {
   view: DialView;
+  me: string;
   needles: GaugeNeedle[];
   canDrag: boolean;
   myValue: number | null;
   accent: string;
-  onValue: (v: number) => void;
+  /** False when the dial no longer takes input (locked, phase over). */
+  onValue: (v: number) => boolean;
   onNudge: (d: number) => void;
   onLock: () => void;
   onRelease: () => void;
   burst: boolean;
 }) {
   const svgRef = useRef<SVGSVGElement>(null);
+  const gaugeApi = useRef<GaugeApi>(null);
   const dragging = useRef(false);
   const labelsId = useId();
 
+  // Losing the right to drag (locked, phase over) mid-drag: let go of the needle.
+  useEffect(() => {
+    if (canDrag) return;
+    dragging.current = false;
+    gaugeApi.current?.pin(me, null);
+  }, [canDrag, me]);
+
+  /** Exact (fractional) dial value under the pointer, or null on the hub. */
   const valueAt = (clientX: number, clientY: number): number | null => {
     const ctm = svgRef.current?.getScreenCTM();
     if (!ctm) return null;
@@ -499,7 +554,20 @@ function DialPad({
     const dx = p.x - CX;
     const dy = Math.max(0, CY - p.y);
     if (dx * dx + dy * dy < 12 * 12) return null; // on the hub: direction is meaningless
-    return clamp(100 - (Math.atan2(dy, dx) / Math.PI) * 100);
+    return Math.max(0, Math.min(100, 100 - (Math.atan2(dy, dx) / Math.PI) * 100));
+  };
+
+  /** The needle follows the pointer exactly (painted right now); the value sent is rounded. */
+  const follow = (clientX: number, clientY: number) => {
+    const v = valueAt(clientX, clientY);
+    if (v === null) return;
+    if (!onValue(v)) return; // locked or over: the needle stays put
+    gaugeApi.current?.pin(me, v);
+  };
+  const release = () => {
+    dragging.current = false;
+    gaugeApi.current?.pin(me, null); // settles on the whole number it will lock at
+    onRelease();
   };
 
   const onPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
@@ -512,19 +580,16 @@ function DialPad({
       // Capture is best-effort (e.g. synthetic events).
     }
     dragging.current = true;
-    const v = valueAt(e.clientX, e.clientY);
-    if (v !== null) onValue(v);
+    follow(e.clientX, e.clientY);
   };
   const onPointerMove = (e: ReactPointerEvent<HTMLDivElement>) => {
     if (!dragging.current || !canDrag) return;
-    const v = valueAt(e.clientX, e.clientY);
-    if (v !== null) onValue(v);
+    follow(e.clientX, e.clientY);
   };
   const endDrag = (e: ReactPointerEvent<HTMLDivElement>) => {
     if (!dragging.current) return;
-    dragging.current = false;
     if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId);
-    onRelease();
+    release();
   };
   const onKeyDown = (e: ReactKeyboardEvent<HTMLDivElement>) => {
     if (!canDrag || e.altKey || e.ctrlKey || e.metaKey) return;
@@ -578,10 +643,7 @@ function DialPad({
         onPointerUp={endDrag}
         onPointerCancel={endDrag}
         onLostPointerCapture={() => {
-          if (dragging.current) {
-            dragging.current = false;
-            onRelease();
-          }
+          if (dragging.current) release();
         }}
         onKeyDown={onKeyDown}
         className={`relative rounded-2xl outline-none focus-visible:ring-1 ${
@@ -596,6 +658,7 @@ function DialPad({
           hidden={hiddenTarget}
           accent={accent}
           svgRef={svgRef}
+          apiRef={gaugeApi}
         />
         {burst && <Burst key={`burst-${view.round}`} />}
       </div>
@@ -790,14 +853,14 @@ function RevealList({
   return (
     <ol
       className="card animate-rise divide-y divide-line/70 overflow-hidden"
-      style={{ animationDelay: "0.3s" }}
+      style={{ animationDelay: sec(REVEAL_T.chips - 0.15) }}
       aria-label="Round results"
     >
       {reveal.rows.map((r, i) => (
         <li
           key={r.id}
           className={`animate-rise flex items-center gap-2 px-3 py-2 ${r.id === me ? "bg-panel-2" : ""}`}
-          style={{ animationDelay: `${0.45 + i * 0.06}s` }}
+          style={{ animationDelay: sec(REVEAL_T.chips + i * 0.05) }}
         >
           <span className="w-4 shrink-0 text-right text-xs text-muted tabular-nums">{r.v === null ? "–" : i + 1}</span>
           <PlayerChip player={who(r.id)} size="sm" />
@@ -812,7 +875,7 @@ function RevealList({
       ))}
       <li
         className={`animate-rise flex items-center gap-2 px-3 py-2 ${giver === me ? "bg-panel-2" : ""}`}
-        style={{ animationDelay: `${0.45 + reveal.rows.length * 0.06}s` }}
+        style={{ animationDelay: sec(REVEAL_T.chips + reveal.rows.length * 0.05) }}
       >
         <span aria-hidden className="w-4 shrink-0 text-right text-xs">
           🎙️
@@ -862,9 +925,14 @@ function PlayerStrip({
                   <span className="sr-only">{st.label}</span>
                 </>
               )}
-              <span className="font-mono text-text tabular-nums">{s.score}</span>
+              <span className="font-mono text-text tabular-nums">
+                <Roll from={s.score - (gained ?? 0)} to={s.score} delay={REVEAL_T.done} />
+              </span>
               {gained !== undefined && gained > 0 && (
-                <span className="animate-pop font-mono text-[11px] text-emerald-300" style={{ animationDelay: "0.9s" }}>
+                <span
+                  className="animate-pop font-mono text-[11px] text-emerald-300"
+                  style={{ animationDelay: sec(REVEAL_T.done) }}
+                >
                   +{gained}
                 </span>
               )}
@@ -900,23 +968,23 @@ function Final({ view, who, byId, me }: { view: DialView; who: Who; byId: Record
         />
       )}
       {(sharpest || bestClue) && (
-        <div className="grid gap-2 @lg:grid-cols-2">
+        <div className="animate-rise grid gap-2 @lg:grid-cols-2" style={{ animationDelay: "0.15s" }}>
           {sharpest?.best && (
             <Award icon="🎯" title="Sharpest guess">
               <b style={{ color: who(sharpest.best.id).color }}>{who(sharpest.best.id).name}</b>{" "}
-              {sharpest.best.dist === 0 ? "hit it dead on" : `was ${sharpest.best.dist} off`} for “{sharpest.clue}”
+              {sharpest.best.dist === 0 ? "hit it dead on" : `was ${sharpest.best.dist} off`} for {quoted(sharpest.clue)}
             </Award>
           )}
           {bestClue && (
             <Award icon="🎙️" title="Best clue">
-              “{bestClue.clue}” by <b style={{ color: who(bestClue.giver).color }}>{who(bestClue.giver).name}</b> (+
+              {quoted(bestClue.clue)} by <b style={{ color: who(bestClue.giver).color }}>{who(bestClue.giver).name}</b> (+
               {bestClue.giverPts})
             </Award>
           )}
         </div>
       )}
       {view.recap.length > 0 && (
-        <div className="card p-3">
+        <div className="card animate-rise p-3" style={{ animationDelay: "0.3s" }}>
           <div className="label mb-2">Round by round</div>
           <ol className="divide-y divide-line/60">
             {view.recap.map((r, i) => (
@@ -924,10 +992,10 @@ function Final({ view, who, byId, me }: { view: DialView; who: Who; byId: Record
                 <span className="w-6 shrink-0 text-xs text-muted tabular-nums">R{i + 1}</span>
                 <PlayerChip player={who(r.giver)} size="sm" />
                 <span className="min-w-0 font-semibold [overflow-wrap:anywhere]">
-                  {r.skipped ? <span className="font-normal text-muted italic">skipped</span> : <>“{r.clue}”</>}
+                  {r.skipped ? <span className="font-normal text-muted italic">skipped</span> : quoted(r.clue)}
                 </span>
                 <span className="w-full pl-8 text-xs text-muted @lg:ml-auto @lg:w-auto @lg:pl-0">
-                  {r.left} ↔ {r.right} · target {r.target}
+                  {r.left} ↔ {r.right} <span className="whitespace-nowrap">· target {r.target}</span>
                 </span>
               </li>
             ))}
@@ -958,17 +1026,17 @@ function TeamResult({ team, ids, who }: { team: DialTeam; ids: string[]; who: Wh
         role="img"
         aria-label={`${team.score} of ${team.max} points, ${team.goal} needed to win`}
       >
-        <div className="h-full rounded-full bg-emerald-400/80" style={{ width: `${pct}%` }} />
+        <div className="dial-grow h-full rounded-full bg-emerald-400/80" style={{ width: `${pct}%` }} />
         <div className="absolute inset-y-0 w-0.5 bg-white/70" style={{ left: `${goalPct}%` }} />
       </div>
-      <p className="text-sm text-muted">
+      <p className="text-sm text-balance text-muted">
         {ids.map((id, i) => (
           <span key={id}>
             {i > 0 && " & "}
             <b style={{ color: who(id).color }}>{who(id).name}</b>
           </span>
         ))}{" "}
-        played as a team · {team.goal} needed to win
+        played as a team · <span className="whitespace-nowrap">{team.goal} needed to win</span>
       </p>
     </div>
   );
