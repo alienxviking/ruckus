@@ -7,7 +7,7 @@ import { PlayerChip } from "@/components/game-ui";
 import type { Player } from "@/shared/types";
 import type { Cell, LettersView, RoundSummary } from "./shared";
 import { Board } from "./board";
-import { playerOf } from "./ui";
+import { CountUp, playerOf } from "./ui";
 
 const MEDALS = ["🥇", "🥈", "🥉"];
 
@@ -43,19 +43,35 @@ export function RoundResults({
   const gains = view.recap?.points ?? [];
   const bestGain = Math.max(0, ...gains);
   const hotStreak = gains.filter((g) => g === bestGain).length === 1 ? gains.indexOf(bestGain) : -1;
+  // Where everyone stood before this round, to show who climbed (meaningless after round 1).
+  const before = view.order.map((_, k) => (view.scores[k] ?? 0) - (gains[k] ?? 0));
+  const rankBefore = (k: number) => 1 + before.filter((t) => t > before[k]).length;
   return (
     <ol className="card flex flex-col gap-1 p-2 @sm:p-3" aria-label="Standings after this round">
       {rows.map((r, i) => {
         const p = playerOf(byId, r.id);
         const gained = gains[r.k] ?? 0;
         const lead = r.rank === 1 && r.total > 0;
+        const moved = view.round > 1 ? rankBefore(r.k) - r.rank : 0;
         return (
           <li
             key={r.id}
             className={`animate-rise flex items-center gap-2 rounded-xl px-2 py-2 ${r.k === view.you ? "bg-panel-2/80" : ""}`}
             style={{ animationDelay: `${i * 70}ms` }}
           >
-            <span className="w-5 shrink-0 text-right font-mono text-sm text-muted tabular-nums">{r.rank}</span>
+            <span className="flex w-5 shrink-0 flex-col items-end leading-none">
+              <span className="font-mono text-sm text-muted tabular-nums">{r.rank}</span>
+              {moved !== 0 && (
+                <span
+                  className={`animate-pop mt-0.5 text-[10px] font-bold tabular-nums ${moved > 0 ? "text-green-300" : "text-rose-300/80"}`}
+                  style={{ animationDelay: `${700 + i * 90}ms` }}
+                >
+                  <span aria-hidden>{moved > 0 ? "▲" : "▼"}</span>
+                  {Math.abs(moved)}
+                  <span className="sr-only">{moved > 0 ? " places up" : " places down"}</span>
+                </span>
+              )}
+            </span>
             <div className="min-w-0 flex-1">
               <PlayerChip player={p} dim={!p.connected}>
                 {lead && (
@@ -78,7 +94,7 @@ export function RoundResults({
               +{gained}
             </span>
             <span className="w-12 shrink-0 text-right font-mono text-lg font-bold tabular-nums">
-              {r.total}
+              <CountUp from={r.total - gained} to={r.total} delay={350 + i * 90} />
               <span className="sr-only"> points in total</span>
             </span>
           </li>

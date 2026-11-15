@@ -19,15 +19,46 @@ export const LETTERS_CSS = `
   100% { transform: scale(1); }
 }
 .lr-bump { animation: lr-bump 0.35s ease-out both; }
+/* Strike-through that draws across the answer (and every line it wraps onto) when it's knocked out. */
+.lr-strike {
+  background-image: linear-gradient(var(--lr-strike, currentColor), var(--lr-strike, currentColor));
+  background-repeat: no-repeat;
+  background-position: 0 58%;
+  background-size: 0% 2px;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+  transition: background-size 0.35s cubic-bezier(0.65, 0, 0.35, 1);
+}
+.lr-strike.lr-struck { background-size: 100% 2px; }
 @media (prefers-reduced-motion: reduce) {
   .lr-reel { animation: none; transform: translateY(calc(var(--lr-steps) * -100% / (var(--lr-steps) + 1))); }
   .lr-bump { animation: none; }
+  .lr-strike { transition: none; }
 }
 `;
 
 /** Stand-in for a participant who has vanished from the room entirely. */
 export function playerOf(byId: Record<string, Player>, id: string): Player {
   return byId[id] ?? { id, name: "Someone", color: "#94a3b8", avatar: "👤", connected: false };
+}
+
+/** A number that counts from `from` up to `to` (eased, ~0.7s) after `delay` ms. Instant with reduced motion. */
+export function CountUp({ from, to, delay = 0 }: { from: number; to: number; delay?: number }) {
+  const [n, setN] = useState(from);
+  useEffect(() => {
+    let raf = 0;
+    let start = -1;
+    const dur = window.matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : 700;
+    const step = (t: number) => {
+      if (start < 0) start = t + (dur ? delay : 0);
+      const p = dur ? Math.min(1, Math.max(0, (t - start) / dur)) : 1;
+      setN(Math.round(from + (to - from) * (1 - (1 - p) ** 3)));
+      if (p < 1) raf = requestAnimationFrame(step);
+    };
+    raf = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(raf);
+  }, [from, to, delay]);
+  return <>{n}</>;
 }
 
 /** Server time kept in state and refreshed every `ms`, so render never reads a clock. */

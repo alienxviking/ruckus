@@ -289,7 +289,11 @@ function AnswerPhase(props: PhaseProps) {
           <Note>You&apos;re watching. Answers stay secret until review.</Note>
           <ol className="grid gap-2 @xl:grid-cols-2">
             {view.categories.map((category, i) => (
-              <li key={i} className="card flex items-start gap-2 p-3 text-sm font-semibold">
+              <li
+                key={i}
+                className="card animate-rise flex items-start gap-2 p-3 text-sm font-semibold"
+                style={{ animationDelay: `${120 + i * 45}ms` }}
+              >
                 <CategoryNumber i={i} />
                 <span className="flex-1">{category}</span>
                 <span aria-hidden>🤫</span>
@@ -342,9 +346,10 @@ function AnswerField({
 
   return (
     <div
-      className={`card flex flex-col gap-1.5 p-2.5 transition-colors ${
+      className={`card animate-rise flex flex-col gap-1.5 p-2.5 transition-colors ${
         tone === "ok" ? "border-green-400/35" : tone === "warn" ? "border-amber-400/45" : ""
       }`}
+      style={{ animationDelay: `${120 + index * 45}ms` }}
     >
       <div className="flex items-start gap-2">
         <CategoryNumber i={index} />
@@ -430,7 +435,11 @@ function ReviewPhase(props: PhaseProps) {
         byId={byId}
         serverNow={serverNow}
         extra={(k) => (
-          <span className="font-mono text-[11px] font-bold tabular-nums" style={{ color: accent }}>
+          <span
+            key={projected[k]}
+            className="animate-pop inline-block font-mono text-[11px] font-bold tabular-nums"
+            style={{ color: accent }}
+          >
             +{projected[k]}
           </span>
         )}

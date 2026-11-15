@@ -3,6 +3,7 @@
 // The answer board: one card per category, one row per player. Live (with veto
 // buttons) during review; read-only for the round recap on the final screen.
 
+import type { CSSProperties } from "react";
 import type { Player } from "@/shared/types";
 import type { Cell, LiveCell } from "./shared";
 import { playerOf } from "./ui";
@@ -155,7 +156,9 @@ function AnswerRow({
             : "";
   return (
     <li
-      className={`flex items-center gap-2 rounded-xl px-1.5 py-1.5 transition-colors ${isYou ? "bg-panel-2/80" : ""}`}
+      className={`flex items-center gap-2 rounded-xl px-1.5 py-1.5 transition-colors duration-300 ${
+        cell.status === "vetoed" ? "bg-red-500/[0.07]" : isYou ? "bg-panel-2/80" : ""
+      }`}
     >
       <span
         aria-hidden
@@ -165,12 +168,17 @@ function AnswerRow({
         {player.avatar}
       </span>
       <div className="min-w-0 flex-1">
-        <p
-          className={`leading-snug font-semibold wrap-break-word transition-colors ${scored ? "" : "text-muted"} ${
-            struck ? "line-through decoration-2" : ""
-          } ${cell.status === "vetoed" ? "decoration-red-400/80" : ""}`}
-        >
-          {cell.text || <span className="font-normal italic">no answer</span>}
+        <p className={`leading-snug font-semibold wrap-break-word transition-colors duration-300 ${scored ? "" : "text-muted"}`}>
+          {cell.text ? (
+            <span
+              className={`lr-strike ${struck ? "lr-struck" : ""}`}
+              style={cell.status === "vetoed" ? ({ "--lr-strike": "#f87171cc" } as CSSProperties) : undefined}
+            >
+              {cell.text}
+            </span>
+          ) : (
+            <span className="font-normal italic">no answer</span>
+          )}
         </p>
         <p className="flex flex-wrap items-center gap-x-1.5 text-xs leading-tight">
           <span className="max-w-[9rem] truncate font-semibold" style={{ color: player.color }}>
