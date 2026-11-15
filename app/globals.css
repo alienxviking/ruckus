@@ -1,0 +1,127 @@
+@import "tailwindcss";
+
+@theme {
+  --color-ink: #0e0c1d;
+  --color-panel: #17142b;
+  --color-panel-2: #211d3a;
+  --color-line: #322c55;
+  --color-text: #f4f1ff;
+  --color-muted: #a39dc8;
+  --color-brand: #ff5d73;
+  --color-brand-2: #ffb020;
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+  --font-display: var(--font-display-face);
+}
+
+:root {
+  color-scheme: dark;
+}
+
+html,
+body {
+  background: var(--color-ink);
+  color: var(--color-text);
+}
+
+body {
+  font-family: var(--font-sans), system-ui, sans-serif;
+  background-image:
+    radial-gradient(60rem 40rem at 10% -10%, rgb(255 93 115 / 0.12), transparent 60%),
+    radial-gradient(50rem 40rem at 110% 10%, rgb(129 140 248 / 0.12), transparent 60%);
+  background-attachment: fixed;
+}
+
+@layer components {
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    border-radius: 0.75rem;
+    padding: 0.6rem 1.1rem;
+    font-weight: 600;
+    background: var(--color-panel-2);
+    border: 1px solid var(--color-line);
+    transition: transform 0.08s ease, background 0.15s ease, border-color 0.15s ease;
+    user-select: none;
+  }
+  .btn:hover:not(:disabled) {
+    border-color: color-mix(in oklab, var(--color-text) 35%, var(--color-line));
+  }
+  .btn:active:not(:disabled) {
+    transform: translateY(1px) scale(0.98);
+  }
+  .btn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+  .btn-primary {
+    background: linear-gradient(135deg, var(--color-brand), var(--color-brand-2));
+    border-color: transparent;
+    color: #1a0f14;
+  }
+  .btn-primary:hover:not(:disabled) {
+    border-color: transparent;
+    filter: brightness(1.08);
+  }
+  .card {
+    background: var(--color-panel);
+    border: 1px solid var(--color-line);
+    border-radius: 1.1rem;
+  }
+  .input {
+    width: 100%;
+    background: var(--color-ink);
+    border: 1px solid var(--color-line);
+    border-radius: 0.75rem;
+    padding: 0.6rem 0.85rem;
+    outline: none;
+    transition: border-color 0.15s ease;
+  }
+  .input:focus {
+    border-color: var(--color-brand);
+  }
+  .label {
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--color-muted);
+  }
+}
+
+@keyframes pop-in {
+  from {
+    transform: scale(0.6);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+.animate-pop {
+  animation: pop-in 0.22s cubic-bezier(0.2, 1.4, 0.4, 1) both;
+}
+
+@keyframes rise {
+  from {
+    transform: translateY(8px);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+.animate-rise {
+  animation: rise 0.3s ease both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-pop,
+  .animate-rise {
+    animation: none;
+  }
+}
