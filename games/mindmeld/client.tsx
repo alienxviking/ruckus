@@ -15,12 +15,17 @@ import {
   RatingLadder,
   SyncBadge,
   SyncMeter,
-  WordChip,
+  WordRow,
+  joinNames,
   revealTiming,
+  stagger,
   type Who,
 } from "./ui";
 
 type Props = GameClientProps<MmView, MmAction>;
+
+/** An unlocked but valid first word is sent this long before the writing deadline. */
+const AUTO_LOCK_LEAD_MS = 700;
 
 export default function MindMeld(props: Props) {
   if (!props.view) {
@@ -54,22 +59,43 @@ function Game({ view, players, byId, isPlayer, act, serverNow, onEvent, accent }
       {!over && !paused && (
         <TimerBar endsAt={view.endsAt} total={view.phaseMs} serverNow={serverNow} color={accent} />
       )}
-      {paused && <PausedCard view={view} who={who} serverNow={serverNow} />}
 
-      {view.phase === "writing" && (
-        <Writing view={view} isPlayer={isPlayer} who={who} act={act} onEvent={onEvent} accent={accent} last={last} />
-      )}
-      {view.phase === "reveal" && last && (
-        <Reveal record={last} who={who} accent={accent} final={view.round >= view.maxRounds} />
-      )}
-      {view.phase === "melded" && last && (
-        <Melded record={last} accent={accent} colors={[accent, ...players.map((p) => p.color)]} />
-      )}
-      {view.phase === "failed" && <Failed view={view} />}
+      {/* One keyed wrapper per phase + round: it animates in on a phase change and
+          never remounts on ordinary view updates, so typing keeps its focus and caret. */}
+      <div key={`${view.phase}-${view.round}`} className="mm-enter flex flex-col gap-3">
+        {paused && <PausedCard view={view} who={who} serverNow={serverNow} />}
+        {view.phase === "writing" && (
+          <Writing
+            view={view}
+            isPlayer={isPlayer}
+            who={who}
+            act={act}
+            onEvent={onEvent}
+            serverNow={serverNow}
+            accent={accent}
+            last={last}
+          />
+        )}
+        {view.phase === "reveal" && last && (
+          <Reveal
+            record={last}
+            who={who}
+            accent={accent}
+            final={view.round >= view.maxRounds}
+            endsAt={view.endsAt}
+            phaseMs={view.phaseMs}
+            serverNow={serverNow}
+          />
+        )}
+        {view.phase === "melded" && last && (
+          <Melded record={last} accent={accent} colors={[accent, ...players.map((p) => p.color)]} />
+        )}
+        {view.phase === "failed" && <Failed view={view} who={who} accent={accent} />}
 
-      {!isPlayer && view.phase === "writing" && (
-        <Note>👀 You&apos;re watching. Words stay secret until the reveal.</Note>
-      )}
+        {!isPlayer && view.phase === "writing" && (
+          <Note>👀 You&apos;re watching. Words stay secret until the reveal.</Note>
+        )}
+      </div>
 
       {over ? (
         <Journey rounds={view.history} who={who} accent={accent} title="Your journey" />
@@ -86,6 +112,7 @@ function RoundTrack({ view, accent, serverNow }: { view: MmView; accent: string;
   const secs = useSecondsLeft(view.endsAt, serverNow);
   const over = view.phase === "melded" || view.phase === "failed";
   const urgent = view.phase === "writing" && view.endsAt !== null && secs <= 10;
+  const finalRound = view.round >= view.maxRounds;
   return (
     <div className="flex items-center justify-between gap-3 px-1">
       <div className="flex min-w-0 items-center gap-2.5">
@@ -101,7 +128,7 @@ function RoundTrack({ view, accent, serverNow }: { view: MmView; accent: string;
             return (
               <li
                 key={i}
-                className={`size-3 rounded-full border transition-colors ${current ? "motion-safe:animate-pulse" : ""}`}
+                className={`size-3 rounded-full border transition-[background-color,border-color,transform] duration-300 ease-[cubic-bezier(.2,.8,.2,1)] ${current ? "motion-safe:animate-pulse" : ""}`}
                 style={
                   r
                     ? {
@@ -128,11 +155,15 @@ function RoundTrack({ view, accent, serverNow }: { view: MmView; accent: string;
       </div>
       {!over && (
         <span
-          className={`shrink-0 font-mono text-sm font-bold tabular-nums ${urgent ? "text-brand motion-safe:animate-pulse" : "text-muted"}`}
+          className={`shrink-0 font-mono text-sm font-bold whitespace-nowrap tabular-nums ${urgent ? "text-brand motion-safe:animate-pulse" : "text-muted"}`}
         >
           {view.endsAt === null ? (
             <>
               <span aria-hidden>⏸ </span>paused
+            </>
+          ) : view.phase === "reveal" ? (
+            <>
+              {finalRound ? "Results" : `R${view.round + 1}`} in {secs}s
             </>
           ) : (
             <>
@@ -147,8 +178,7 @@ function RoundTrack({ view, accent, serverNow }: { view: MmView; accent: string;
 }
 
 function namesList(names: string[]): string {
-  if (names.length <= 1) return names[0] ?? "";
-  if (names.length === 2) return `${names[0]} and ${names[1]}`;
+  if (names.length <= 2) return joinNames(names);
   return `${names.length} players`;
 }
 
@@ -157,7 +187,7 @@ function Status({ view, isPlayer, who, paused }: { view: MmView; isPlayer: boole
     const r = view.history[view.history.length - 1];
     return (
       <>
-        <span aria-hidden>👀 </span>Round {view.round} reveal
+        <span aria-hidden>🥁 </span>Round {view.round} reveal
         {r && <span className="sr-only">: {r.melded ? "Mind Meld! Every word matches." : `${r.sync} of ${r.total} in sync.`}</span>}
       </>
     );
@@ -213,7 +243,7 @@ function PausedCard({ view, who, serverNow }: { view: MmView; who: Who; serverNo
   const secs = useSecondsLeft(view.waitUntil, serverNow);
   const away = view.locks.filter((l) => !who(l.id).connected).map((l) => who(l.id).name);
   return (
-    <div className="card animate-rise flex items-center gap-3 border-brand/50 p-3 text-sm">
+    <div className="card mm-swap flex items-center gap-3 border-brand/50 p-3 text-sm">
       <span className="text-2xl leading-none" aria-hidden>
         ⏳
       </span>
@@ -234,6 +264,7 @@ function Writing({
   who,
   act,
   onEvent,
+  serverNow,
   accent,
   last,
 }: {
@@ -242,6 +273,7 @@ function Writing({
   who: Who;
   act: (a: MmAction) => void;
   onEvent: Props["onEvent"];
+  serverNow: () => number;
   accent: string;
   last: RoundRecord | null;
 }) {
@@ -259,6 +291,8 @@ function Writing({
               initial={me.word ?? ""}
               history={view.history}
               round={view.round}
+              endsAt={view.endsAt}
+              serverNow={serverNow}
               act={act}
               onEvent={onEvent}
               accent={accent}
@@ -273,10 +307,7 @@ function Writing({
 
 function FirstRound({ accent }: { accent: string }) {
   return (
-    <section
-      className="card animate-rise flex items-center gap-3 p-3 text-sm @sm:p-4"
-      style={{ borderColor: accent + "44" }}
-    >
+    <section className="card flex items-center gap-3 p-3 text-sm @sm:p-4" style={{ borderColor: accent + "44" }}>
       <span className="text-3xl" aria-hidden>
         🧠
       </span>
@@ -292,7 +323,7 @@ function Clue({ record, who, accent }: { record: RoundRecord; who: Who; accent: 
   const anyWords = record.entries.some((e) => e.word !== null);
   return (
     <section
-      className="card animate-rise p-3 @sm:p-4"
+      className="card p-3 @sm:p-4"
       aria-label={`Round ${record.round} words`}
       style={{
         borderColor: accent + "55",
@@ -304,13 +335,13 @@ function Clue({ record, who, accent }: { record: RoundRecord; who: Who; accent: 
         <SyncBadge record={record} accent={accent} />
       </div>
       {anyWords ? (
-        <ul
-          className={`mt-3 mb-1 flex flex-wrap items-center justify-center ${record.entries.length > 6 ? "gap-1.5" : "gap-2"}`}
-        >
-          {record.entries.map((e) => (
-            <WordChip key={e.id} entry={e} player={who(e.id)} size={record.entries.length > 6 ? "md" : "lg"} />
-          ))}
-        </ul>
+        <WordRow
+          record={record}
+          who={who}
+          accent={accent}
+          size={record.entries.length > 6 ? "md" : "lg"}
+          className={`mt-3 mb-1 items-center justify-center ${record.entries.length > 6 ? "gap-1.5" : "gap-2"}`}
+        />
       ) : (
         <p className="mt-3 text-center text-sm text-muted">Nobody wrote anything last round. Any new word goes!</p>
       )}
@@ -327,24 +358,38 @@ function WordForm({
   initial,
   history,
   round,
+  endsAt,
+  serverNow,
   act,
   onEvent,
   accent,
 }: {
+  /** The word already on the server (still counts while editing), or "". */
   initial: string;
   history: RoundRecord[];
   round: number;
+  endsAt: number | null;
+  serverNow: () => number;
   act: (a: MmAction) => void;
   onEvent: Props["onEvent"];
   accent: string;
 }) {
+  // The draft is local: incoming views never overwrite it.
   const [draft, setDraft] = useState(initial);
   const [serverError, setServerError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const id = useId();
+  const secs = useSecondsLeft(endsAt, serverNow);
   const check = checkWord(draft, history);
   const hint = draft.trim() === "" ? null : check.ok ? null : check.msg;
   const problem = serverError ?? hint;
+  const closing = endsAt !== null && secs <= 10;
+
+  // Latest values for the deadline timer, without re-arming it on every keystroke.
+  const latest = useRef({ draft, history, act });
+  useEffect(() => {
+    latest.current = { draft, history, act };
+  });
 
   // Private rejections from the server (e.g. a word that was already played).
   useEffect(
@@ -354,6 +399,23 @@ function WordForm({
       }),
     [onEvent],
   );
+
+  // Typed a good first word but never pressed Lock in? Send it just before time
+  // runs out: a blank can never meld. (An existing word is left alone: it counts.)
+  // Polled against serverNow (not one long timeout) so clock corrections can't make it miss.
+  useEffect(() => {
+    if (endsAt === null || initial) return;
+    let sent = false;
+    const id = setInterval(() => {
+      if (sent || endsAt - serverNow() > AUTO_LOCK_LEAD_MS) return;
+      const { draft: d, history: h, act: send } = latest.current;
+      const c = checkWord(d, h);
+      if (!c.ok) return;
+      sent = true;
+      send({ type: "submit", word: c.word });
+    }, 200);
+    return () => clearInterval(id);
+  }, [endsAt, initial, serverNow]);
 
   // Ready to type: focus the box when nothing else (like the chat) has focus,
   // and let a letter typed anywhere on the page land in it.
@@ -380,10 +442,19 @@ function WordForm({
     act({ type: "submit", word: c.word });
   };
 
+  let note: ReactNode;
+  if (initial && draft.trim() === initial) note = `“${initial}” still counts if time runs out. Enter to lock it again.`;
+  else if (initial && !draft.trim()) note = `“${initial}” still counts unless you lock in a new word.`;
+  else if (initial) note = `Enter to lock in · ${MAX_WORD - draft.length} characters left`;
+  else if (closing && check.ok) note = <b className="text-text">⏳ Time&apos;s nearly up: this word locks in by itself.</b>;
+  else if (closing) note = <b className="text-brand">⏳ Hurry! A blank can&apos;t meld.</b>;
+  else if (draft.trim()) note = `Enter to lock in · ${MAX_WORD - draft.length} characters left`;
+  else note = "You can change it until the reveal.";
+
   return (
     <form
       onSubmit={submit}
-      className="card animate-rise p-3 @sm:p-4"
+      className={`card p-3 @sm:p-4 ${initial ? "mm-swap" : ""}`}
       style={{ borderColor: accent + "66" }}
       noValidate
     >
@@ -404,6 +475,8 @@ function WordForm({
           placeholder={round === 1 ? "Any word…" : "The link…"}
           autoComplete="off"
           autoCapitalize="none"
+          autoCorrect="off"
+          spellCheck={false}
           enterKeyHint="done"
           aria-invalid={problem ? true : undefined}
           aria-describedby={`${id}-hint`}
@@ -421,26 +494,22 @@ function WordForm({
         <span className="font-semibold text-brand" aria-live="polite">
           {problem}
         </span>
-        {!problem && (
-          <span className="text-muted">
-            {initial && draft.trim() === initial
-              ? `“${initial}” still counts if time runs out. Enter to lock it again.`
-              : draft.trim()
-                ? `Enter to lock in · ${MAX_WORD - draft.length} characters left`
-                : initial
-                  ? `“${initial}” still counts unless you lock in a new word.`
-                  : "You can change it until the reveal."}
-          </span>
-        )}
+        {!problem && <span className="text-muted">{note}</span>}
       </p>
     </form>
   );
 }
 
 function LockedIn({ word, accent, onChange }: { word: string; accent: string; onChange: () => void }) {
+  const btn = useRef<HTMLButtonElement>(null);
+  // Locking in removes the focused input; keep keyboard users on the card.
+  useEffect(() => {
+    const active = document.activeElement;
+    if (!active || active === document.body) btn.current?.focus({ preventScroll: true });
+  }, []);
   return (
     <div
-      className="card animate-pop flex items-center gap-3 p-3 @sm:p-4"
+      className="card mm-lock flex items-center gap-3 p-3 @sm:p-4"
       style={{
         borderColor: accent + "99",
         background: `linear-gradient(135deg, ${accent}22, transparent 70%), var(--color-panel)`,
@@ -453,7 +522,7 @@ function LockedIn({ word, accent, onChange }: { word: string; accent: string; on
         <div className="label">Your word</div>
         <div className="font-display text-2xl leading-tight font-extrabold break-words">{word}</div>
       </div>
-      <button type="button" className="btn min-h-11 shrink-0" onClick={onChange} aria-label="Change your word">
+      <button ref={btn} type="button" className="btn min-h-11 shrink-0" onClick={onChange} aria-label="Change your word">
         <span aria-hidden>✎</span> Change
       </button>
     </div>
@@ -476,6 +545,12 @@ function LockList({ locks, who }: { locks: MmView["locks"]; who: Who }) {
         <span className="font-mono text-sm font-bold tabular-nums">
           {done}/{locks.length}
         </span>
+      </div>
+      <div className="mb-2 h-1 overflow-hidden rounded-full bg-panel-2" aria-hidden>
+        <div
+          className="h-full w-full origin-left rounded-full bg-[#4ade80] transition-transform duration-300 ease-[cubic-bezier(.2,.8,.2,1)] motion-reduce:transition-none"
+          style={{ transform: `scaleX(${locks.length ? done / locks.length : 0})` }}
+        />
       </div>
       <ul className="flex flex-wrap gap-1.5">
         {locks.map((l) => {
@@ -509,25 +584,44 @@ function Reveal({
   who,
   accent,
   final,
+  endsAt,
+  phaseMs,
+  serverNow,
 }: {
   record: RoundRecord;
   who: Who;
   accent: string;
   final: boolean;
+  endsAt: number | null;
+  phaseMs: number;
+  serverNow: () => number;
 }) {
-  const { stagger, flipDone } = revealTiming(record.entries.length);
-  const layout = cardLayout(record.entries.length);
+  // How far into the reveal we are when this mounts: ~0 normally, more after a
+  // reload or late join, so the flips resume at the right moment instead of
+  // replaying. Read once; later view updates must not shift the animation.
+  const [offset] = useState(() => {
+    if (endsAt === null) return 0;
+    const t = serverNow() - (endsAt - phaseMs);
+    return t > 250 ? Math.min(t, phaseMs) : 0;
+  });
+  const n = record.entries.length;
+  const t = revealTiming(n);
+  const layout = cardLayout(n);
+  const grouped = record.sync >= 2;
   return (
     <section className="flex flex-col gap-3" aria-label={`Round ${record.round} words`}>
-      <SyncMeter record={record} accent={accent} delay={flipDone} final={final} />
+      <SyncMeter record={record} accent={accent} delay={t.flipDone - offset} final={final} />
       <ul className="flex flex-wrap justify-center gap-2">
         {record.entries.map((e, i) => (
           <FlipCard
             key={`${record.round}-${e.id}`}
             entry={e}
             player={who(e.id)}
-            delay={i * stagger}
-            highlight={e.group === 0 && record.sync >= 2}
+            deal={i * t.deal - offset}
+            flip={t.first + i * t.stagger - offset}
+            snap={t.flipDone - offset}
+            highlight={grouped && e.group === 0}
+            dim={grouped && !record.melded && e.group === -1}
             accent={accent}
             layout={layout}
           />
@@ -543,7 +637,7 @@ function Melded({ record, accent, colors }: { record: RoundRecord; accent: strin
   const rounds = record.round;
   return (
     <section
-      className="card animate-pop relative overflow-hidden px-4 py-6 text-center"
+      className="card relative overflow-hidden px-4 py-6 text-center"
       style={{
         borderColor: accent,
         background: `radial-gradient(120% 90% at 50% 0%, ${accent}38, transparent 70%), var(--color-panel)`,
@@ -551,39 +645,48 @@ function Melded({ record, accent, colors }: { record: RoundRecord; accent: strin
     >
       <Confetti colors={colors} />
       <div className="relative">
-        <div className="mm-float inline-block text-5xl" aria-hidden>
-          🧠
+        <div className="mm-count inline-block" style={stagger(0, 0)}>
+          <div className="mm-float text-5xl" aria-hidden>
+            🧠
+          </div>
         </div>
-        <p className="label mt-2">Everyone said</p>
-        <p className="font-display text-4xl font-extrabold break-words" style={{ color: accent }}>
+        <p className="label mm-appear mt-2" style={stagger(1)}>
+          Everyone said
+        </p>
+        <p
+          className="mm-stamp font-display text-4xl font-extrabold break-words"
+          style={{ color: accent, textShadow: "0 2px 18px rgb(0 0 0 / 0.45)", ...stagger(2) }}
+        >
           “{meldWord(record)}”
         </p>
-        <p className="mt-1 text-sm text-muted">
+        <p className="mm-appear mt-1 text-sm text-muted" style={stagger(3)}>
           Melded in {rounds} round{rounds === 1 ? "" : "s"}
         </p>
-        <Badge accent={accent}>{rating(rounds)}</Badge>
-        <RatingLadder rounds={rounds} accent={accent} />
+        <Badge accent={accent} delay={4}>
+          {rating(rounds)}
+        </Badge>
+        <RatingLadder rounds={rounds} accent={accent} delay={120 + 5 * 110} />
       </div>
     </section>
   );
 }
 
-function Badge({ accent, children }: { accent: string; children: ReactNode }) {
+function Badge({ accent, delay, children }: { accent: string; delay: number; children: ReactNode }) {
   return (
     <p
-      className="mt-3 inline-block rounded-full px-4 py-1.5 font-display text-lg font-extrabold"
-      style={{ background: accent, color: "#1a0f14" }}
+      className="mm-count mt-3 inline-block rounded-full px-4 py-1.5 font-display text-lg font-extrabold"
+      style={{ background: accent, color: "#1a0f14", ...stagger(delay) }}
     >
       {children}
     </p>
   );
 }
 
-function Failed({ view }: { view: MmView }) {
+function Failed({ view, who, accent }: { view: MmView; who: Who; accent: string }) {
   const best = bestRound(view.history);
   const dropped = view.reason === "players";
   return (
-    <section className="card animate-rise px-4 py-6 text-center">
+    <section className="card px-4 py-6 text-center">
       <div className="text-5xl" aria-hidden>
         {dropped ? "💤" : "😅"}
       </div>
@@ -596,9 +699,12 @@ function Failed({ view }: { view: MmView }) {
           : `${view.maxRounds} rounds and the minds never quite lined up.`}
       </p>
       {best && best.sync >= 2 && (
-        <p className="mt-3 text-sm">
-          Closest: <b>round {best.round}</b>, {best.sync} of {best.total} in sync.
-        </p>
+        <div className="mm-appear mt-4 rounded-xl bg-panel-2/60 p-3" style={stagger(1, 200)}>
+          <p className="text-sm">
+            Closest: <b>round {best.round}</b>, {best.sync} of {best.total} in sync
+          </p>
+          <WordRow record={best} who={who} accent={accent} className="mt-2 justify-center gap-1" />
+        </div>
       )}
       <p className="mt-3 text-sm text-muted">Your brains are warmed up now. Another go?</p>
     </section>

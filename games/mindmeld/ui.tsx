@@ -11,28 +11,54 @@ export type Who = (id: string) => Player;
 
 /** CSS custom properties are fine in inline styles; TS just needs a nudge. */
 const vars = (v: Record<string, string>) => v as CSSProperties;
+const ms = (n: number) => `${Math.round(n)}ms`;
 
+// Motion language shared with the other Ruckus party games: entrances use
+// cubic-bezier(.2,.8,.2,1) on transform + opacity; playful pops use the
+// overshooting (.2,1.4,.4,1). Delays come from --mm-delay so the reveal can be
+// paced from the server clock (negative delays resume a reveal mid-way).
 const CSS = `
-.mm-card{perspective:900px}
-.mm-inner{position:relative;height:100%;transform-style:preserve-3d;animation:mm-flip .6s cubic-bezier(.2,.75,.25,1) var(--mm-delay,0ms) both}
+.mm-enter{animation:mm-enter .32s cubic-bezier(.2,.8,.2,1) both}
+@keyframes mm-enter{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+.mm-swap{animation:mm-swap .28s cubic-bezier(.2,.8,.2,1) both}
+@keyframes mm-swap{from{opacity:0;transform:scale(.97)}to{opacity:1;transform:none}}
+.mm-lock{animation:mm-lock .42s cubic-bezier(.2,1.4,.4,1) both}
+@keyframes mm-lock{from{opacity:0;transform:scale(.92)}to{opacity:1;transform:none}}
+.mm-card{perspective:900px;animation:mm-deal .34s cubic-bezier(.2,.8,.2,1) var(--mm-deal,0ms) both}
+@keyframes mm-deal{from{opacity:0;transform:translateY(16px) scale(.94)}to{opacity:1;transform:none}}
+.mm-inner{position:relative;height:100%;transform-style:preserve-3d;animation:mm-flip .62s cubic-bezier(.2,.8,.2,1) var(--mm-delay,0ms) both}
+@keyframes mm-flip{0%{transform:rotateY(180deg)}45%{transform:rotateY(90deg) scale(1.06)}80%{transform:rotateY(-8deg)}100%{transform:none}}
 .mm-face{position:absolute;inset:0;backface-visibility:hidden;-webkit-backface-visibility:hidden}
 .mm-back{transform:rotateY(180deg)}
-@keyframes mm-flip{from{transform:rotateY(180deg)}to{transform:rotateY(0deg)}}
-.mm-seg{transform-origin:left center;animation:mm-grow .28s ease-out var(--mm-delay,0ms) both}
+.mm-snap{animation:mm-snap .55s cubic-bezier(.2,1.4,.4,1) var(--mm-snap,0ms) both,mm-glow 1.4s ease-in-out calc(var(--mm-snap,0ms) + .5s) 2}
+@keyframes mm-snap{0%{transform:none;box-shadow:none}45%{transform:scale(1.07)}100%{transform:none}}
+@keyframes mm-glow{0%,100%{filter:none}50%{filter:brightness(1.25) saturate(1.2)}}
+.mm-dim{animation:mm-dim .4s ease var(--mm-snap,0ms) both}
+@keyframes mm-dim{from{opacity:1}to{opacity:.62}}
+.mm-badge{animation:mm-badge .4s cubic-bezier(.2,1.4,.4,1) var(--mm-snap,0ms) both}
+@keyframes mm-badge{from{opacity:0;transform:scale(.4)}to{opacity:1;transform:none}}
+.mm-seg{transform-origin:left center;animation:mm-grow .28s cubic-bezier(.2,.8,.2,1) var(--mm-delay,0ms) both}
 @keyframes mm-grow{from{transform:scaleX(0)}to{transform:scaleX(1)}}
-.mm-appear{animation:mm-appear .35s ease-out var(--mm-delay,0ms) both}
+.mm-appear{animation:mm-appear .35s cubic-bezier(.2,.8,.2,1) var(--mm-delay,0ms) both}
 @keyframes mm-appear{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+.mm-count{animation:mm-count .45s cubic-bezier(.2,1.4,.4,1) var(--mm-delay,0ms) both}
+@keyframes mm-count{from{opacity:0;transform:scale(.6)}to{opacity:1;transform:none}}
+.mm-out{animation:mm-out .18s ease var(--mm-delay,0ms) both}
+@keyframes mm-out{from{opacity:1}to{opacity:0;visibility:hidden}}
 .mm-meld{animation:mm-meld .6s cubic-bezier(.2,1.5,.4,1) var(--mm-delay,0ms) both}
 @keyframes mm-meld{from{opacity:0;transform:scale(.3) rotate(-8deg)}to{opacity:1;transform:none}}
-.mm-glow{animation:mm-glow 1.4s ease-in-out var(--mm-glow-delay,0ms) 2}
-@keyframes mm-glow{0%,100%{filter:none}50%{filter:brightness(1.25) saturate(1.2)}}
+.mm-stamp{animation:mm-stamp .5s cubic-bezier(.2,1.4,.4,1) var(--mm-delay,0ms) both}
+@keyframes mm-stamp{from{opacity:0;transform:scale(1.6)}to{opacity:1;transform:none}}
 .mm-float{animation:mm-float 2.6s ease-in-out infinite}
 @keyframes mm-float{0%,100%{transform:translateY(0) rotate(-3deg)}50%{transform:translateY(-6px) rotate(3deg)}}
 .mm-confetti i{position:absolute;top:-16px;display:block;animation:mm-fall var(--d,3s) linear var(--delay,0s) 2 both}
 @keyframes mm-fall{from{transform:translate3d(0,0,0) rotate(0deg)}to{transform:translate3d(var(--x,0px),460px,0) rotate(var(--r,540deg))}}
+@keyframes mm-fade{from{opacity:0}to{opacity:1}}
 @media (prefers-reduced-motion: reduce){
-  .mm-inner,.mm-seg,.mm-appear,.mm-meld,.mm-glow,.mm-float{animation:none}
-  .mm-confetti{display:none}
+  .mm-inner,.mm-seg,.mm-appear,.mm-count,.mm-meld,.mm-stamp,.mm-snap,.mm-badge,.mm-float,.mm-lock,.mm-swap{animation:none}
+  .mm-enter,.mm-card{animation:mm-fade .2s ease both}
+  .mm-dim{animation:none;opacity:.62}
+  .mm-out,.mm-confetti{display:none}
 }
 `;
 
@@ -45,57 +71,156 @@ export function MmStyles() {
   );
 }
 
-/** One word in a history row or the clue, tinted with its writer's colour. */
+/** "Asha", "Asha and Bo", "Asha, Bo and Chen". */
+export function joinNames(names: string[]): string {
+  if (names.length <= 1) return names[0] ?? "";
+  return `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+}
+
+// ---------- word chips ----------
+
+/** One chip in a word row: a lone word, a group of matching words, or the blanks. */
+export interface ChipItem {
+  key: string;
+  ids: string[];
+  /** Shown spelling (the first writer's); null for blanks. */
+  word: string | null;
+  entries: RoundEntry[];
+  /** Two or more matching words. */
+  matched: boolean;
+}
+
+/** Matching groups first (biggest first), then lone words in seat order, then blanks. */
+export function chipItems(r: RoundRecord): ChipItem[] {
+  const groups = new Map<number, RoundEntry[]>();
+  const singles: RoundEntry[] = [];
+  const blanks: RoundEntry[] = [];
+  for (const e of r.entries) {
+    if (e.word === null) blanks.push(e);
+    else if (e.group >= 0) groups.set(e.group, [...(groups.get(e.group) ?? []), e]);
+    else singles.push(e);
+  }
+  const items: ChipItem[] = [...groups.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([g, es]) => ({ key: `g${g}`, ids: es.map((e) => e.id), word: es[0].word, entries: es, matched: true }));
+  for (const e of singles) items.push({ key: e.id, ids: [e.id], word: e.word, entries: [e], matched: false });
+  if (blanks.length) items.push({ key: "blank", ids: blanks.map((e) => e.id), word: null, entries: blanks, matched: false });
+  return items;
+}
+
 const CHIP_SIZE = {
-  lg: "px-3 py-1.5 font-display text-base @sm:text-lg",
-  md: "px-2.5 py-1 font-display text-sm @sm:text-base",
-  sm: "px-2 py-0.5 text-xs",
+  lg: { chip: "px-3 py-1.5 font-display text-base @sm:text-lg", av: "size-6 text-sm" },
+  md: { chip: "px-2.5 py-1 font-display text-sm @sm:text-base", av: "size-5 text-xs" },
+  sm: { chip: "px-2 py-0.5 text-xs", av: "size-[1.15rem] text-[0.65rem]" },
 } as const;
 
+/** Overlapping avatar bubbles for a group chip (up to 4, then "+N"). */
+function Avatars({ ids, who, size }: { ids: string[]; who: Who; size: keyof typeof CHIP_SIZE }) {
+  if (ids.length === 1) return <span aria-hidden>{who(ids[0]).avatar}</span>;
+  const shown = ids.length > 4 ? ids.slice(0, 3) : ids;
+  const extra = ids.length - shown.length;
+  return (
+    <span className="flex shrink-0 items-center" aria-hidden>
+      {shown.map((id, i) => {
+        const p = who(id);
+        return (
+          <span
+            key={id}
+            className={`grid place-items-center rounded-full leading-none ${CHIP_SIZE[size].av} ${i ? "-ml-1.5" : ""}`}
+            style={{ background: `color-mix(in oklab, ${p.color} 30%, var(--color-panel))`, boxShadow: "0 0 0 1.5px var(--color-panel)" }}
+          >
+            {p.avatar}
+          </span>
+        );
+      })}
+      {extra > 0 && (
+        <span
+          className={`-ml-1.5 grid place-items-center rounded-full bg-panel-2 font-sans font-bold leading-none text-muted ${CHIP_SIZE[size].av}`}
+          style={{ boxShadow: "0 0 0 1.5px var(--color-panel)", fontSize: "0.6rem" }}
+        >
+          +{extra}
+        </span>
+      )}
+    </span>
+  );
+}
+
+/** A word (or group of matching words) tinted with its writer's colour, or the accent for a group. */
 export function WordChip({
-  entry,
-  player,
+  item,
+  who,
+  accent,
   size = "sm",
   plain,
 }: {
-  entry: RoundEntry;
-  player: Player;
+  item: ChipItem;
+  who: Who;
+  accent: string;
   size?: keyof typeof CHIP_SIZE;
   /** Hide the "×N" match badge (e.g. when the whole row melded). */
   plain?: boolean;
 }) {
-  const color = player.color;
-  const blank = entry.word === null;
+  const solo = item.ids.length === 1;
+  const color = solo ? who(item.ids[0]).color : accent;
+  const blank = item.word === null;
+  const names = item.ids.map((id) => who(id).name);
+  const blankWhy = (e: RoundEntry) => (e.away ? "offline" : "no word");
+  const title = blank
+    ? item.entries.map((e) => `${who(e.id).name}: ${blankWhy(e)}`).join(", ")
+    : item.entries.map((e) => `${who(e.id).name}: ${e.word}`).join(", ");
   return (
     <li
-      className={`inline-flex max-w-full items-center gap-1.5 rounded-full border font-semibold ${CHIP_SIZE[size]} ${
+      className={`inline-flex max-w-full items-center gap-1.5 rounded-full border font-semibold ${CHIP_SIZE[size].chip} ${
         blank ? "border-dashed opacity-60" : ""
       }`}
-      style={{ borderColor: color + "77", background: color + (blank ? "0d" : "1f") }}
-      title={`${player.name}: ${entry.word ?? (entry.away ? "offline" : "no word")}`}
+      style={{ borderColor: color + (item.matched ? "aa" : "77"), background: color + (blank ? "0d" : item.matched ? "2b" : "1f") }}
+      title={title}
     >
-      <span aria-hidden>{player.avatar}</span>
-      <span className="sr-only">{player.name}: </span>
+      <Avatars ids={item.ids} who={who} size={size} />
+      <span className="sr-only">{joinNames(names)}: </span>
       {blank ? (
         <span className="text-muted">
           <span aria-hidden>—</span>
-          <span className="sr-only">{entry.away ? "offline" : "no word"}</span>
+          <span className="sr-only">{item.entries.map(blankWhy).every((w) => w === "offline") ? "offline" : "no word"}</span>
         </span>
       ) : (
-        <span className="min-w-0 break-words" style={{ color }}>
-          {entry.word}
+        <span className="min-w-0 break-words" style={{ color: solo ? color : "var(--color-text)" }}>
+          {item.word}
         </span>
       )}
-      {entry.size >= 2 && !plain && (
+      {item.matched && !plain && (
         <span
-          className="rounded-full bg-black/30 px-1.5 text-[0.7rem] leading-4 font-bold tabular-nums"
-          style={{ color }}
+          className="rounded-full px-1.5 text-[0.7rem] leading-4 font-bold tabular-nums"
+          style={{ background: accent, color: "#1a0f14" }}
         >
-          <span aria-hidden>×{entry.size}</span>
-          <span className="sr-only">(matched by {entry.size})</span>
+          <span aria-hidden>×{item.ids.length}</span>
+          <span className="sr-only">(matched by {item.ids.length})</span>
         </span>
       )}
     </li>
+  );
+}
+
+/** A round's words as chips, matches first. */
+export function WordRow({
+  record,
+  who,
+  accent,
+  size = "sm",
+  className = "",
+}: {
+  record: RoundRecord;
+  who: Who;
+  accent: string;
+  size?: keyof typeof CHIP_SIZE;
+  className?: string;
+}) {
+  return (
+    <ul className={`flex min-w-0 flex-wrap ${className}`}>
+      {chipItems(record).map((item) => (
+        <WordChip key={item.key} item={item} who={who} accent={accent} size={size} plain={record.melded} />
+      ))}
+    </ul>
   );
 }
 
@@ -132,21 +257,17 @@ export function Journey({
 }) {
   if (!rounds.length) return null;
   return (
-    <section className="card animate-rise p-3" aria-label={title}>
+    <section className="card mm-enter p-3" aria-label={title}>
       <h3 className="label mb-2">{title}</h3>
       <ol className="flex flex-col gap-1.5">
         {rounds.map((r) => (
           <li
             key={r.round}
-            className="flex items-start gap-2 rounded-xl px-1.5 py-1"
+            className="mm-appear flex items-start gap-2 rounded-xl px-1.5 py-1"
             style={r.melded ? { background: accent + "1a" } : undefined}
           >
-            <span className="w-7 shrink-0 pt-0.5 font-mono text-xs font-bold text-muted">R{r.round}</span>
-            <ul className="flex min-w-0 flex-1 flex-wrap gap-1">
-              {r.entries.map((e) => (
-                <WordChip key={e.id} entry={e} player={who(e.id)} plain={r.melded} />
-              ))}
-            </ul>
+            <span className="w-6 shrink-0 pt-0.5 font-mono text-xs font-bold text-muted">R{r.round}</span>
+            <WordRow record={r} who={who} accent={accent} className="flex-1 gap-1" />
             <SyncBadge record={r} accent={accent} />
           </li>
         ))}
@@ -155,10 +276,23 @@ export function Journey({
   );
 }
 
-/** Timing of the reveal animation, shared by the cards and the meter. */
+// ---------- reveal ----------
+
+/** When the first card flips (after the face-down cards are dealt). */
+const FIRST_FLIP = 450;
+const FLIP_MS = 620;
+
+/**
+ * Reveal pacing in ms from the start of the reveal phase, shared by the cards
+ * and the meter. Few players get slow, suspenseful flips; big groups keep the
+ * whole sequence inside the 5s reveal (the verdict lands by ~3.3s at 12).
+ */
 export function revealTiming(count: number) {
-  const stagger = Math.min(160, Math.round(1500 / Math.max(1, count)));
-  return { stagger, flipDone: (Math.max(1, count) - 1) * stagger + 650 };
+  const n = Math.max(1, count);
+  const stagger = n <= 1 ? 0 : Math.min(450, Math.round(1500 / (n - 1)));
+  const deal = Math.min(40, Math.round(300 / n));
+  const flipDone = FIRST_FLIP + (n - 1) * stagger + FLIP_MS;
+  return { deal, stagger, first: FIRST_FLIP, flipDone };
 }
 
 // Card widths per column count (full class names so Tailwind can see them).
@@ -196,33 +330,46 @@ function fitWord(word: string, maxRem: number): string {
   return `clamp(0.8rem, calc((100cqw - 1rem) / ${(0.68 * chars).toFixed(2)}), ${maxRem}rem)`;
 }
 
-/** A face-down card that flips to show one player's word. */
+/**
+ * A face-down card that flips to show one player's word. Once every card is
+ * up (`snap`), the biggest matching group lights up together and lone words
+ * step back a little.
+ */
 export function FlipCard({
   entry,
   player,
-  delay,
+  deal,
+  flip,
+  snap,
   highlight,
+  dim,
   accent,
   layout,
 }: {
   entry: RoundEntry;
   player: Player;
-  delay: number;
+  /** Delays in ms (relative to now; negative = already under way). */
+  deal: number;
+  flip: number;
+  snap: number;
   highlight: boolean;
+  dim: boolean;
   accent: string;
   layout: CardLayout;
 }) {
   const color = player.color;
   return (
-    <li className={`mm-card ${layout.cls}`} style={vars({ "--mm-delay": `${delay}ms` })}>
+    <li
+      className={`mm-card ${layout.cls}`}
+      style={vars({ "--mm-deal": ms(deal), "--mm-delay": ms(flip), "--mm-snap": ms(snap) })}
+    >
       <div className="mm-inner">
         <div
-          className={`mm-face card @container flex flex-col px-2 pt-1.5 pb-2 ${highlight ? "mm-glow" : ""}`}
+          className={`mm-face card @container flex flex-col px-2 pt-1.5 pb-2 ${highlight ? "mm-snap" : dim ? "mm-dim" : ""}`}
           style={{
             borderColor: highlight ? accent : color + "66",
-            background: `linear-gradient(160deg, ${color}2e, transparent 70%), var(--color-panel)`,
+            background: `linear-gradient(160deg, ${highlight ? accent : color}2e, transparent 70%), var(--color-panel)`,
             boxShadow: highlight ? `0 0 0 1px ${accent}, 0 0 22px ${accent}55` : undefined,
-            ...vars({ "--mm-glow-delay": `${delay + 600}ms` }),
           }}
         >
           <span className="flex items-center justify-between gap-1 text-xs font-semibold">
@@ -232,7 +379,7 @@ export function FlipCard({
             </span>
             {entry.size >= 2 && (
               <span
-                className="shrink-0 rounded-full px-1.5 text-[0.7rem] leading-4 font-bold tabular-nums"
+                className="mm-badge shrink-0 rounded-full px-1.5 text-[0.7rem] leading-4 font-bold tabular-nums"
                 style={{ background: highlight ? accent : color + "33", color: highlight ? "#1a0f14" : color }}
               >
                 <span aria-hidden>×{entry.size}</span>
@@ -261,8 +408,11 @@ export function FlipCard({
             background: `repeating-linear-gradient(45deg, ${color}26 0 8px, ${color}10 8px 16px), var(--color-panel-2)`,
           }}
         >
-          <span className="font-display text-3xl font-extrabold" style={{ color }}>
-            ?
+          <span className="flex flex-col items-center gap-0.5">
+            <span className="text-lg leading-none">{player.avatar}</span>
+            <span className="font-display text-2xl leading-none font-extrabold" style={{ color }}>
+              ?
+            </span>
           </span>
         </div>
       </div>
@@ -289,12 +439,16 @@ export function SyncMeter({
 }: {
   record: RoundRecord;
   accent: string;
+  /** When every card is face up (ms from now; negative = already). */
   delay: number;
   /** No rounds left after this one. */
   final: boolean;
 }) {
   const total = Math.max(1, record.total);
-  const segDone = delay + total * 70;
+  const step = Math.min(70, Math.round(600 / total));
+  const segDone = delay + total * step;
+  // A single "match" is just one word: show it, but don't make it look like progress.
+  const segColor = record.sync >= 2 ? accent : `color-mix(in oklab, ${accent} 40%, var(--color-panel-2))`;
   return (
     <div
       className="card p-3"
@@ -302,11 +456,13 @@ export function SyncMeter({
     >
       <div className="flex items-center justify-between gap-2">
         <span className="label">Sync</span>
-        <span
-          className="mm-appear font-display text-lg font-bold tabular-nums"
-          style={vars({ "--mm-delay": `${delay}ms` })}
-        >
-          {record.sync} of {record.total} in sync
+        <span className="grid justify-items-end font-display text-lg font-bold tabular-nums">
+          <span className="mm-out text-base text-muted [grid-area:1/1]" style={vars({ "--mm-delay": ms(delay) })} aria-hidden>
+            Revealing<span className="motion-safe:animate-pulse">…</span>
+          </span>
+          <span className="mm-count [grid-area:1/1]" style={vars({ "--mm-delay": ms(delay) })}>
+            {record.sync} of {record.total} in sync
+          </span>
         </span>
       </div>
       <div className="mt-2 flex gap-1" aria-hidden>
@@ -315,7 +471,7 @@ export function SyncMeter({
             {i < record.sync && (
               <span
                 className="mm-seg block h-full w-full rounded-full"
-                style={{ background: accent, ...vars({ "--mm-delay": `${delay + i * 70}ms` }) }}
+                style={{ background: segColor, ...vars({ "--mm-delay": ms(delay + i * step) }) }}
               />
             )}
           </span>
@@ -324,18 +480,20 @@ export function SyncMeter({
       {record.melded ? (
         <p
           className="mm-meld mt-3 text-center font-display text-3xl font-extrabold"
-          style={{ color: accent, ...vars({ "--mm-delay": `${segDone + 100}ms` }) }}
+          style={{ color: accent, ...vars({ "--mm-delay": ms(segDone + 100) }) }}
         >
           🧠 Mind Meld!
         </p>
       ) : (
-        <p className="mm-appear mt-2 text-center text-sm text-muted" style={vars({ "--mm-delay": `${segDone}ms` })}>
+        <p className="mm-appear mt-2 text-center text-sm text-muted" style={vars({ "--mm-delay": ms(segDone) })}>
           {meterLine(record, final)}
         </p>
       )}
     </div>
   );
 }
+
+// ---------- the end ----------
 
 /** CSS-only confetti burst (hidden for reduced motion). Deterministic, no Math.random. */
 export function Confetti({ colors }: { colors: string[] }) {
@@ -367,19 +525,25 @@ export function Confetti({ colors }: { colors: string[] }) {
   );
 }
 
+/** Staggered entrance for the pieces of an end screen. */
+export const stagger = (i: number, base = 120, gap = 110) => vars({ "--mm-delay": ms(base + i * gap) });
+
 /** The five success tiers with the earned one lit up. */
-export function RatingLadder({ rounds, accent }: { rounds: number; accent: string }) {
+export function RatingLadder({ rounds, accent, delay = 0 }: { rounds: number; accent: string; delay?: number }) {
   const earned = rating(rounds);
   return (
     <ol className="mt-4 flex flex-wrap justify-center gap-1.5" aria-label="Rating scale">
-      {RATINGS.map((r) => {
+      {RATINGS.map((r, i) => {
         const on = r.label === earned;
         return (
           <li
             key={r.label}
             aria-current={on ? "true" : undefined}
-            className={`rounded-full border px-2.5 py-1 text-xs ${on ? "font-bold" : "border-line text-muted"}`}
-            style={on ? { borderColor: accent, color: accent, background: accent + "1f" } : undefined}
+            className={`rounded-full border px-2.5 py-1 text-xs ${on ? "mm-count font-bold" : "mm-appear border-line text-muted"}`}
+            style={{
+              ...(on ? { borderColor: accent, color: accent, background: accent + "1f" } : null),
+              ...vars({ "--mm-delay": ms(delay + i * 60 + (on ? 200 : 0)) }),
+            }}
           >
             <span className="tabular-nums opacity-75">{r.rounds}</span> {r.label}
           </li>
