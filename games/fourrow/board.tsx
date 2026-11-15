@@ -3,7 +3,7 @@
 // The Four in a Row board: an SVG with a frame that has real holes, so discs
 // fall *behind* it and show through, plus transparent column buttons on top.
 
-import { useId, type CSSProperties, type KeyboardEvent } from "react";
+import { useId, useRef, type CSSProperties, type KeyboardEvent, type PointerEvent } from "react";
 import type { Disc, LastMove, Seat, WinInfo } from "./server";
 import { COLS, ROWS } from "./shared";
 
@@ -136,11 +136,65 @@ function vars(v: Record<string, string | number>): CSSProperties {
   return v as CSSProperties;
 }
 
+// ---------- motion ----------
+// Discs fall under "gravity": quadratic ease-in, fall time grows with the square
+// root of the distance, then one small bounce and a tiny settle. Each drop height
+// (1..ROWS cells) gets its own keyframes so the bounce lands at the right moment.
+const EASE_IN = "cubic-bezier(0.11, 0, 0.5, 0)"; // quad in: accelerating
+const EASE_OUT = "cubic-bezier(0.5, 1, 0.89, 1)"; // quad out: decelerating
+/** Win sweep: ms between neighbouring discs lighting up. */
+const SWEEP_STEP = 110;
+
+export function dropTiming(rows: number) {
+  const n = Math.max(1, Math.min(ROWS, Math.round(rows)));
+  const height = n * CELL;
+  const fall = 140 * Math.sqrt(n);
+  const bounce1 = Math.min(18, 5 + 2.5 * n);
+  const bounce2 = bounce1 * 0.28;
+  // Time aloft for a bounce of height h under the same gravity: 2 * fall * sqrt(h / height).
+  const up1 = 2 * fall * Math.sqrt(bounce1 / height);
+  const up2 = 2 * fall * Math.sqrt(bounce2 / height);
+  return {
+    n,
+    height,
+    fall,
+    bounce1,
+    bounce2,
+    up1,
+    up2,
+    /** Disc has landed and bounced once: a good moment for follow-up effects. */
+    settled: Math.round(fall + up1),
+    total: Math.round(fall + up1 + up2),
+  };
+}
+
+function dropKeyframes(rows: number): string {
+  const t = dropTiming(rows);
+  const at = (ms: number) => `${((ms / t.total) * 100).toFixed(2)}%`;
+  return (
+    `@keyframes fr-drop-${rows} {` +
+    `0% { transform: translateY(${-t.height}px); animation-timing-function: ${EASE_IN}; }` +
+    `${at(t.fall)} { transform: translateY(0); animation-timing-function: ${EASE_OUT}; }` +
+    `${at(t.fall + t.up1 / 2)} { transform: translateY(${-t.bounce1}px); animation-timing-function: ${EASE_IN}; }` +
+    `${at(t.fall + t.up1)} { transform: translateY(0); animation-timing-function: ${EASE_OUT}; }` +
+    `${at(t.fall + t.up1 + t.up2 / 2)} { transform: translateY(${(-t.bounce2).toFixed(1)}px); animation-timing-function: ${EASE_IN}; }` +
+    `100% { transform: translateY(0); } }`
+  );
+}
+
 export interface BoardPreview {
   col: number;
   seat: Seat;
   /** The viewer's own hover (vs. the opponent's, relayed by the server). */
   mine: boolean;
+  /** Already dropped, waiting for the server: hold still. */
+  held?: boolean;
+}
+
+/** A press (mouse, pen or finger) on the columns that may end in a drop. */
+interface Press {
+  id: number;
+  touch: boolean;
 }
 
 export function Board({
@@ -154,6 +208,7 @@ export function Board({
   compact,
   buttons,
   canDrop,
+  releasing,
   onHover,
   onDrop,
   label,
@@ -173,12 +228,15 @@ export function Board({
   /** Render the column buttons (players only). */
   buttons: boolean;
   canDrop: boolean;
+  /** The next game is about to start: let the discs fall out of the bottom. */
+  releasing: boolean;
   onHover: (col: number | null) => void;
   onDrop: (col: number) => void;
   /** Screen-reader summary of the position. */
   label: string;
 }) {
   const uid = useId().replace(/[^a-zA-Z0-9_-]/g, "");
+  const press = useRef<Press | null>(null);
   const grad = (seat: Seat) => `fr${uid}d${seat}`;
   const winSet = new Set(win?.cells.map(([r, c]) => r * COLS + c) ?? []);
   const landing = preview ? landingRowOf(board, preview.col) : -1;
@@ -190,13 +248,57 @@ export function Board({
   const fx = (x: number) => (x + PAD) / VB_W; // SVG x -> fraction of the box width
   const fy = (y: number) => (y - vbY) / vbH; // SVG y -> fraction of the box height
 
-  // Centre of the winning line, for the confetti burst.
-  let burst: { x: number; y: number; color: string } | null = null;
+  // ----- win choreography: everything waits for the winning disc to land, then
+  // sweeps outwards from it along the line(s), one disc every SWEEP_STEP ms.
+  const lastDrop = last ? dropTiming(last.row + 1) : null;
+  const winDelay = lastDrop ? lastDrop.settled : 0;
+  const origin: [number, number] | null = win
+    ? last && winSet.has(last.row * COLS + last.col)
+      ? [last.row, last.col]
+      : (win.cells[0] ?? null)
+    : null;
+  const sweepAt = (r: number, c: number) =>
+    origin ? winDelay + Math.max(Math.abs(r - origin[0]), Math.abs(c - origin[1])) * SWEEP_STEP : winDelay;
+  const segments: { d: string; ms: number }[] = [];
+  if (win && origin) {
+    const [or, oc] = origin;
+    for (const [r1, c1, r2, c2] of win.lines) {
+      for (const [r, c] of [
+        [r1, c1],
+        [r2, c2],
+      ]) {
+        const len = Math.max(Math.abs(r - or), Math.abs(c - oc));
+        if (len > 0) segments.push({ d: `M${cx(oc)},${cy(or)}L${cx(c)},${cy(r)}`, ms: len * SWEEP_STEP });
+      }
+    }
+  }
+  let burst: { x: number; y: number; color: string; delay: number } | null = null;
   if (win && win.cells.length) {
     const avgR = win.cells.reduce((n, [r]) => n + r, 0) / win.cells.length;
     const avgC = win.cells.reduce((n, [, c]) => n + c, 0) / win.cells.length;
-    burst = { x: fx(cx(avgC)), y: fy(cy(avgR)), color: colors[win.seat] };
+    burst = { x: fx(cx(avgC)), y: fy(cy(avgR)), color: colors[win.seat], delay: winDelay + SWEEP_STEP };
   }
+
+  // ----- pointer: hover follows the mouse; a press can be dragged sideways to
+  // pick a column and drops on release (drag off the board to cancel). Vertical
+  // swipes still scroll the page on phones (touch-action: pan-y).
+  const colAt = (e: PointerEvent<HTMLDivElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    if (rect.width <= 0) return null;
+    const slack = press.current ? 28 : 0;
+    const { clientX: x, clientY: y } = e;
+    if (x < rect.left - slack || x > rect.right + slack || y < rect.top - slack || y > rect.bottom + slack) return null;
+    return Math.max(0, Math.min(COLS - 1, Math.floor(((x - rect.left) / rect.width) * COLS)));
+  };
+  const endPress = (e: PointerEvent<HTMLDivElement>, drop: boolean) => {
+    const p = press.current;
+    if (!p || p.id !== e.pointerId) return;
+    const col = drop ? colAt(e) : null;
+    press.current = null;
+    if (col !== null && canDrop) onDrop(col);
+    // Fingers don't hover: clear the preview once they lift (mice keep pointing).
+    if (p.touch || col === null) onHover(e.pointerType === "mouse" ? colAt(e) : null);
+  };
 
   const onKey = (e: KeyboardEvent<HTMLButtonElement>, col: number) => {
     const dir = e.key === "ArrowLeft" ? -1 : e.key === "ArrowRight" ? 1 : 0;
@@ -251,13 +353,22 @@ export function Board({
               if (cell === null) return null;
               const isLast = !!last && last.row === r && last.col === c;
               const dim = win !== null && !winSet.has(r * COLS + c);
+              const t = isLast ? lastDrop : null;
               return (
                 <g
                   key={`${game}-${r}-${c}`}
-                  className={`fr-dim${isLast ? " fr-drop" : ""}`}
+                  className={`fr-dim${t ? " fr-drop" : ""}${releasing ? " fr-out" : ""}`}
                   style={{
                     opacity: dim ? 0.32 : 1,
-                    ...(isLast ? vars({ "--fr-rows": r + 1, "--fr-dur": `${170 + (r + 1) * 30}ms` }) : {}),
+                    transitionDelay: dim ? `${winDelay}ms` : undefined,
+                    ...(t ? vars({ "--fr-drop-name": `fr-drop-${t.n}`, "--fr-drop-dur": `${t.total}ms` }) : {}),
+                    ...(releasing
+                      ? vars({
+                          // Bottom rows go first, columns ripple from the middle out.
+                          "--fr-out-delay": `${(ROWS - 1 - r) * 18 + Math.abs(c - 3) * 22}ms`,
+                          "--fr-out-dist": `${(ROWS - r) * CELL + PAD * 2}px`,
+                        })
+                      : {}),
                   }}
                 >
                   <DiscShape seat={cell} x={cx(c)} y={cy(r)} fill={`url(#${grad(cell)})`} />
@@ -283,11 +394,13 @@ export function Board({
             )),
           )}
 
-          {/* Column highlight + where the disc would land */}
+          {/* Column highlight + where the disc would land (both glide between columns) */}
           {preview && pc && (
-            <g style={{ pointerEvents: "none" }}>
+            <g className="fr-appear" style={{ pointerEvents: "none" }}>
               <rect
-                x={preview.col * CELL + 4}
+                className="fr-slide"
+                style={{ transform: `translateX(${preview.col * CELL}px)` }}
+                x={4}
                 y={TOP - PAD + 4}
                 width={CELL - 8}
                 height={ROWS * CELL + PAD * 2 - 8}
@@ -297,8 +410,10 @@ export function Board({
               />
               {landing >= 0 && (
                 <circle
-                  cx={cx(preview.col)}
-                  cy={cy(landing)}
+                  className="fr-slide"
+                  style={{ transform: `translate(${preview.col * CELL}px, ${landing * CELL}px)` }}
+                  cx={cx(0)}
+                  cy={cy(0)}
                   r={31}
                   fill={pc}
                   fillOpacity={0.14}
@@ -313,69 +428,65 @@ export function Board({
 
           {/* Column numbers (also the keyboard shortcuts) while it's your move */}
           {canDrop &&
-            board[0].map((top, c) =>
-              preview?.col === c ? null : (
-                <text
-                  key={`num-${c}`}
-                  x={cx(c)}
-                  y={CELL / 2}
-                  textAnchor="middle"
-                  dominantBaseline="central"
-                  fontSize={30}
-                  fontWeight={700}
-                  fill="#a39dc8"
-                  opacity={top === null ? 0.55 : 0.15}
-                >
-                  {c + 1}
-                </text>
-              ),
-            )}
+            board[0].map((top, c) => (
+              <text
+                key={`num-${c}`}
+                className="fr-num"
+                x={cx(c)}
+                y={CELL / 2}
+                textAnchor="middle"
+                dominantBaseline="central"
+                fontSize={30}
+                fontWeight={700}
+                fill="#a39dc8"
+                opacity={preview?.col === c ? 0 : top === null ? 0.55 : 0.15}
+              >
+                {c + 1}
+              </text>
+            ))}
 
-          {/* Hovering disc above the board (slides between columns) */}
+          {/* Hovering disc above the board (glides between columns) */}
           {preview && (
             <g className="fr-slide" style={{ transform: `translateX(${preview.col * CELL}px)` }}>
-              <g className={preview.mine ? "fr-bob" : undefined} style={{ opacity: preview.mine ? 1 : 0.8 }}>
-                <DiscShape seat={preview.seat} x={cx(0)} y={CELL / 2} fill={`url(#${grad(preview.seat)})`} />
+              <g className="fr-appear">
+                <g
+                  className={preview.mine && !preview.held ? "fr-bob" : undefined}
+                  style={{ opacity: preview.mine ? 1 : 0.8 }}
+                >
+                  <DiscShape seat={preview.seat} x={cx(0)} y={CELL / 2} fill={`url(#${grad(preview.seat)})`} />
+                </g>
               </g>
             </g>
           )}
 
-          {/* Last move marker */}
+          {/* Last move marker (appears once the disc has settled) */}
           {last && !win && (
-            <circle
-              key={`last-${game}-${last.row}-${last.col}`}
-              className="fr-fadein"
-              cx={cx(last.col)}
-              cy={cy(last.row)}
-              r={HOLE_R + 4}
-              fill="none"
-              stroke="#ffffff"
-              strokeOpacity={0.6}
-              strokeWidth={3.5}
-            />
+            <g className={releasing ? "fr-fadeout" : undefined}>
+              <circle
+                key={`last-${game}-${last.row}-${last.col}`}
+                className="fr-fadein"
+                style={{ animationDelay: `${lastDrop?.total ?? 0}ms` }}
+                cx={cx(last.col)}
+                cy={cy(last.row)}
+                r={HOLE_R + 4}
+                fill="none"
+                stroke="#ffffff"
+                strokeOpacity={0.6}
+                strokeWidth={3.5}
+              />
+            </g>
           )}
 
-          {/* Winning line */}
+          {/* Winning line: sweeps out from the winning disc */}
           {win && (
-            <g key={`win-${game}`} style={{ pointerEvents: "none" }}>
-              {win.cells.map(([r, c]) => (
-                <circle
-                  key={`ring-${r}-${c}`}
-                  className="fr-ring"
-                  cx={cx(c)}
-                  cy={cy(r)}
-                  r={HOLE_R + 5}
-                  fill="none"
-                  stroke="#ffffff"
-                  strokeWidth={5}
-                />
-              ))}
-              {win.lines.map(([r1, c1, r2, c2], i) => (
+            <g key={`win-${game}`} className={releasing ? "fr-fadeout" : undefined} style={{ pointerEvents: "none" }}>
+              {segments.map((s, i) => (
                 <g key={`line-${i}`}>
                   <path
                     className="fr-line"
+                    style={{ animationDuration: `${s.ms}ms`, animationDelay: `${winDelay}ms` }}
                     pathLength={1}
-                    d={`M${cx(c1)},${cy(r1)}L${cx(c2)},${cy(r2)}`}
+                    d={s.d}
                     stroke={colors[win.seat]}
                     strokeOpacity={0.55}
                     strokeWidth={26}
@@ -384,8 +495,9 @@ export function Board({
                   />
                   <path
                     className="fr-line"
+                    style={{ animationDuration: `${s.ms}ms`, animationDelay: `${winDelay}ms` }}
                     pathLength={1}
-                    d={`M${cx(c1)},${cy(r1)}L${cx(c2)},${cy(r2)}`}
+                    d={s.d}
                     stroke="#ffffff"
                     strokeWidth={11}
                     strokeLinecap="round"
@@ -393,12 +505,37 @@ export function Board({
                   />
                 </g>
               ))}
+              {win.cells.map(([r, c]) => {
+                const at = sweepAt(r, c);
+                return (
+                  <g key={`cell-${r}-${c}`}>
+                    <circle
+                      className="fr-glint"
+                      style={{ animationDelay: `${at}ms` }}
+                      cx={cx(c)}
+                      cy={cy(r)}
+                      r={HOLE_R - 3}
+                      fill="#ffffff"
+                    />
+                    <circle
+                      className="fr-ring"
+                      style={vars({ "--fr-at": `${at}ms` })}
+                      cx={cx(c)}
+                      cy={cy(r)}
+                      r={HOLE_R + 5}
+                      fill="none"
+                      stroke="#ffffff"
+                      strokeWidth={5}
+                    />
+                  </g>
+                );
+              })}
             </g>
           )}
         </svg>
 
         {/* Celebration */}
-        {burst && (
+        {burst && !releasing && (
           <div key={`burst-${game}`} aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">
             {CONFETTI.map((p, i) => (
               <span
@@ -408,7 +545,7 @@ export function Board({
                   left: pct(burst.x),
                   top: pct(burst.y),
                   background: p.light ? "#ffffff" : burst.color,
-                  animationDelay: `${p.delay}ms`,
+                  animationDelay: `${burst.delay + p.delay}ms`,
                   ...vars({ "--dx": `${p.dx}px`, "--dy": `${p.dy}px`, "--rot": `${p.rot}deg` }),
                 }}
               />
@@ -426,10 +563,30 @@ export function Board({
               top: pct(fy(0)),
               height: pct(fy(TOP + ROWS * CELL) - fy(0)),
               gridTemplateColumns: `repeat(${COLS}, minmax(0, 1fr))`,
+              touchAction: "pan-y pinch-zoom",
             }}
             role="group"
             aria-label="Board columns"
-            onPointerLeave={() => onHover(null)}
+            onPointerDown={(e) => {
+              if (!e.isPrimary || e.button !== 0) return;
+              press.current = { id: e.pointerId, touch: e.pointerType !== "mouse" };
+              try {
+                e.currentTarget.setPointerCapture(e.pointerId);
+              } catch {
+                // Capture is a nicety (keeps tracking a drag that leaves the board).
+              }
+              onHover(colAt(e));
+            }}
+            onPointerMove={(e) => {
+              const p = press.current;
+              if (p ? p.id !== e.pointerId : e.pointerType !== "mouse") return;
+              onHover(colAt(e));
+            }}
+            onPointerUp={(e) => endPress(e, true)}
+            onPointerCancel={(e) => endPress(e, false)}
+            onPointerLeave={(e) => {
+              if (!press.current && e.pointerType === "mouse") onHover(null);
+            }}
             onBlur={(e) => {
               if (!(e.relatedTarget instanceof Node && e.currentTarget.contains(e.relatedTarget))) onHover(null);
             }}
@@ -444,14 +601,18 @@ export function Board({
                   tabIndex={c === focusCol ? 0 : -1}
                   aria-label={full ? `Column ${c + 1}, full` : `Drop in column ${c + 1}`}
                   aria-disabled={!live}
-                  className={`h-full touch-manipulation rounded-2xl outline-none focus-visible:ring-2 focus-visible:ring-white/70 focus-visible:ring-inset ${
+                  className={`h-full rounded-2xl outline-none focus-visible:ring-2 focus-visible:ring-white/70 focus-visible:ring-inset ${
                     live ? "cursor-pointer" : "cursor-default"
                   }`}
-                  onPointerEnter={() => onHover(c)}
-                  onPointerDown={() => onHover(c)}
-                  onFocus={() => onHover(c)}
+                  // Keyboard focus previews the column; pointer focus is handled above.
+                  onFocus={(e) => {
+                    if (e.currentTarget.matches(":focus-visible")) onHover(c);
+                  }}
                   onKeyDown={(e) => onKey(e, c)}
-                  onClick={() => live && onDrop(c)}
+                  // Pointer presses drop on release (above); this is Enter / Space.
+                  onClick={(e) => {
+                    if (e.detail === 0 && live) onDrop(c);
+                  }}
                 />
               );
             })}
@@ -468,27 +629,36 @@ function landingRowOf(board: Disc[][], col: number): number {
 }
 
 export const BOARD_CSS = `
-.fr-drop { animation: fr-drop var(--fr-dur, 300ms) linear both; }
-@keyframes fr-drop {
-  0% { transform: translateY(calc(var(--fr-rows, 1) * -100px)); animation-timing-function: cubic-bezier(0.55, 0, 1, 0.45); }
-  72% { transform: translateY(0); animation-timing-function: cubic-bezier(0, 0.55, 0.45, 1); }
-  86% { transform: translateY(-10px); animation-timing-function: cubic-bezier(0.55, 0, 1, 0.45); }
-  100% { transform: translateY(0); }
-}
+${Array.from({ length: ROWS }, (_, i) => dropKeyframes(i + 1)).join("\n")}
+.fr-drop { animation: var(--fr-drop-name, fr-drop-6) var(--fr-drop-dur, 500ms) linear both; }
+.fr-out { animation: fr-out 0.45s var(--fr-out-delay, 0ms) cubic-bezier(0.5, 0, 0.9, 0.55) forwards; }
+@keyframes fr-out { from { transform: translateY(0); } to { transform: translateY(var(--fr-out-dist, 700px)); } }
 .fr-bob { animation: fr-bob 0.9s ease-in-out infinite alternate; }
 @keyframes fr-bob { from { transform: translateY(-5px); } to { transform: translateY(3px); } }
-.fr-slide { transition: transform 0.12s ease-out; }
+.fr-slide { transition: transform 0.18s cubic-bezier(0.22, 1, 0.36, 1); }
+.fr-appear { animation: fr-fade 0.14s ease-out both; }
+.fr-num { transition: opacity 0.15s ease; }
 .fr-dim { transition: opacity 0.4s ease; }
 .fr-glow { transition: box-shadow 0.35s ease; }
-.fr-fadein { animation: fr-fade 0.25s 0.3s ease both; }
+.fr-fadein { animation: fr-fade 0.25s ease both; }
 @keyframes fr-fade { from { opacity: 0; } }
-.fr-ring { transform-box: fill-box; transform-origin: center; animation: fr-pulse 0.85s ease-in-out infinite alternate; }
-@keyframes fr-pulse { from { transform: scale(0.93); opacity: 0.65; } to { transform: scale(1.05); opacity: 1; } }
-.fr-line { stroke-dasharray: 1; stroke-dashoffset: 1; animation: fr-draw 0.45s 0.25s ease-out forwards; }
-@keyframes fr-draw { to { stroke-dashoffset: 0; } }
+.fr-fadeout { transition: opacity 0.3s ease; opacity: 0; }
+.fr-ring {
+  transform-box: fill-box; transform-origin: center;
+  animation: fr-ring-in 0.38s var(--fr-at, 0ms) cubic-bezier(0.2, 1.4, 0.4, 1) both,
+    fr-wave 1.5s calc(var(--fr-at, 0ms) + 0.9s) ease-in-out 4;
+}
+@keyframes fr-ring-in { from { transform: scale(0.55); opacity: 0; } }
+@keyframes fr-wave { 50% { transform: scale(1.07); opacity: 0.5; } }
+.fr-glint { opacity: 0; animation: fr-glint 0.5s ease-out both; }
+@keyframes fr-glint { 0% { opacity: 0; } 25% { opacity: 0.6; } 100% { opacity: 0; } }
+/* Hidden until its delay ends (a round cap on an undrawn dash would show as a dot). */
+.fr-line { stroke-dasharray: 1; stroke-dashoffset: 1; opacity: 0; animation: fr-draw 0.3s linear forwards; }
+@keyframes fr-draw { from { stroke-dashoffset: 1; opacity: 1; } to { stroke-dashoffset: 0; opacity: 1; } }
+/* Invisible while waiting for its delay (no backwards fill), gone after (forwards). */
 .fr-confetti {
-  position: absolute; width: 8px; height: 13px; border-radius: 3px;
-  animation: fr-burst 1.05s cubic-bezier(0.15, 0.7, 0.35, 1) both;
+  position: absolute; width: 8px; height: 13px; border-radius: 3px; opacity: 0;
+  animation: fr-burst 1.05s cubic-bezier(0.15, 0.7, 0.35, 1) forwards;
 }
 @keyframes fr-burst {
   0% { transform: translate(-50%, -50%) scale(0.3) rotate(0deg); opacity: 1; }
@@ -499,10 +669,13 @@ export const BOARD_CSS = `
 @keyframes fr-urgent { to { opacity: 0.4; } }
 .fr-swap { animation: fr-swap 0.3s cubic-bezier(0.2, 1.4, 0.4, 1) both; }
 @keyframes fr-swap { from { transform: scale(0.85); opacity: 0.4; } }
+.fr-status { animation: fr-status 0.28s cubic-bezier(0.22, 1, 0.36, 1) both; }
+@keyframes fr-status { from { transform: translateY(5px); opacity: 0; } }
 @media (prefers-reduced-motion: reduce) {
-  .fr-drop, .fr-bob, .fr-ring, .fr-urgent, .fr-fadein, .fr-swap { animation: none; }
-  .fr-slide, .fr-dim, .fr-glow { transition: none; }
-  .fr-line { animation: none; stroke-dashoffset: 0; }
-  .fr-confetti { display: none; }
+  .fr-drop, .fr-out, .fr-bob, .fr-ring, .fr-urgent, .fr-fadein, .fr-swap, .fr-appear, .fr-status { animation: none; }
+  .fr-slide, .fr-dim, .fr-glow, .fr-num { transition: none; }
+  .fr-fadeout { transition: none; opacity: 1; } /* discs don't fall out either: keep it all until the new board */
+  .fr-line { animation: none; stroke-dashoffset: 0; opacity: 1; }
+  .fr-glint, .fr-confetti { display: none; }
 }
 `;

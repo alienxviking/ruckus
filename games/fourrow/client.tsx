@@ -22,6 +22,8 @@ export default function FourInARow(props: Props) {
 }
 
 const SEATS: Seat[] = [0, 1];
+/** How long before the next game the old discs start falling out. */
+const RELEASE_MS = 600;
 const otherSeat = (seat: Seat): Seat => (seat === 0 ? 1 : 0);
 
 function isHoverEvent(e: unknown): e is HoverEvent {
@@ -48,6 +50,11 @@ function fallbackPlayer(id: string, seat: Seat): Player {
 function Match({ view, byId, isPlayer, act, serverNow, onEvent, accent }: Props & { view: FourView }) {
   const [hover, setHover] = useState<number | null>(null);
   const [remote, setRemote] = useState<HoverEvent | null>(null);
+  // Our drop is on its way to the server: hold the preview still and ignore
+  // repeat presses until the next view (a new seq) arrives.
+  const [sent, setSent] = useState<{ seq: number; col: number } | null>(null);
+  // Game number whose discs are falling out of the board (end of the pause).
+  const [released, setReleased] = useState<number | null>(null);
 
   const you = isPlayer ? view.you : null;
   const people = SEATS.map((seat) => byId[view.seats[seat]] ?? fallbackPlayer(view.seats[seat], seat)) as [
@@ -63,11 +70,19 @@ function Match({ view, byId, isPlayer, act, serverNow, onEvent, accent }: Props 
   const frozen = playing && away(0) && away(1);
   const lastGame = view.results.length ? view.results[view.results.length - 1] : undefined;
 
+  const waiting = myTurn && sent !== null && sent.seq === view.seq;
+  const canDrop = myTurn && !waiting;
+  const releasing = view.phase === "between" && released === view.game;
+
   // Where the mover is pointing: our own hover, or the opponent's (relayed by the server).
-  const hoverCol = myTurn && hover !== null && view.board[0][hover] === null ? hover : null;
+  const hoverCol = waiting
+    ? sent.col
+    : myTurn && hover !== null && view.board[0][hover] === null
+      ? hover
+      : null;
   let preview: BoardPreview | null = null;
   if (myTurn && hoverCol !== null) {
-    preview = { col: hoverCol, seat: you, mine: true };
+    preview = { col: hoverCol, seat: you, mine: true, held: waiting };
   } else if (
     playing &&
     !myTurn &&
@@ -94,25 +109,43 @@ function Match({ view, byId, isPlayer, act, serverNow, onEvent, accent }: Props 
     if (myTurn) act({ type: "hover", col: hoverCol });
   }, [myTurn, hoverCol, act]);
 
-  // Keys 1-7 drop straight into that column (ignored while typing, e.g. in chat).
-  const board = view.board;
+  // A lost or rejected drop must not lock the board: give up waiting after a moment.
   useEffect(() => {
-    if (!myTurn) return;
+    if (!sent) return;
+    const id = setTimeout(() => setSent(null), 1500);
+    return () => clearTimeout(id);
+  }, [sent]);
+
+  // Near the end of the pause between games the discs drop out of the board.
+  const { phase, endsAt, game } = view;
+  useEffect(() => {
+    if (phase !== "between") return;
+    const id = setTimeout(() => setReleased(game), Math.max(0, endsAt - RELEASE_MS - serverNow()));
+    return () => clearTimeout(id);
+  }, [phase, endsAt, game, serverNow]);
+
+  // Keys 1-7 drop straight into that column (ignored while typing, e.g. in chat).
+  const { board, seq } = view;
+  useEffect(() => {
+    if (!canDrop) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.defaultPrevented || e.repeat || e.ctrlKey || e.metaKey || e.altKey || isTyping(e.target)) return;
       if (!/^[1-9]$/.test(e.key)) return;
       const col = Number(e.key) - 1;
       if (col >= COLS || board[0][col] !== null) return;
       e.preventDefault();
+      setSent({ seq, col });
       act({ type: "drop", col });
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [myTurn, board, act]);
+  }, [canDrop, board, seq, act]);
 
   const onHover = (col: number | null) => setHover(col);
   const onDrop = (col: number) => {
-    if (myTurn && view.board[0][col] === null) act({ type: "drop", col });
+    if (!canDrop || board[0][col] !== null) return;
+    setSent({ seq, col });
+    act({ type: "drop", col });
   };
 
   // ---------- words ----------
@@ -232,9 +265,12 @@ function Match({ view, byId, isPlayer, act, serverNow, onEvent, accent }: Props 
         {announce}
       </p>
 
-      <StatusBanner accent={myTurn ? colors[view.turn] : accent} key={statusKey}>
-        <div className="truncate">{headline}</div>
-        <div className="mt-0.5 truncate font-sans text-xs font-normal text-muted sm:text-sm">{sub}</div>
+      <StatusBanner accent={myTurn ? colors[view.turn] : accent}>
+        {/* Only the words animate on a new turn; the card itself stays put (no flicker). */}
+        <div key={statusKey} className="fr-status">
+          <div className="truncate">{headline}</div>
+          <div className="mt-0.5 truncate font-sans text-xs font-normal text-muted sm:text-sm">{sub}</div>
+        </div>
       </StatusBanner>
 
       {you === null && (
@@ -302,7 +338,8 @@ function Match({ view, byId, isPlayer, act, serverNow, onEvent, accent }: Props 
         glow={playing ? colors[view.turn] : null}
         compact={view.phase === "over"}
         buttons={you !== null && view.phase !== "over"}
-        canDrop={myTurn}
+        canDrop={canDrop}
+        releasing={releasing}
         onHover={onHover}
         onDrop={onDrop}
         label={boardLabel}
