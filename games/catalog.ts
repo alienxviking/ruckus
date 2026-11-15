@@ -363,7 +363,7 @@ export const CATALOG: GameMeta[] = [
   {
     id: "incognito",
     name: "Incognito",
-    tagline: "Hide in a crowd of bots. Spot the humans.",
+    tagline: "Blend into a crowd of bots. Snipe the humans.",
     category: "arena",
     minPlayers: 3,
     maxPlayers: 8,
@@ -373,9 +373,9 @@ export const CATALOG: GameMeta[] = [
     isNew: true,
     original: true,
     how: [
-      "You're one figure in a crowd of identical bots. Move like a bot so nobody can tell it's you.",
-      "Stand on the glowing landmarks to light them, without getting caught doing it.",
-      "Snipe a figure you think is human: right is a point, wrong gives you away. Most points wins.",
+      "You are one trench-coated walker among 36 identical bots. Walk like them: straight lines, short pauses.",
+      "Stand on a glowing landmark for 1.5s to light it. Light all 5 to win the round, but every pulse draws eyes.",
+      "3 darts a round: hit a human for +2 and they are out; hit a bot and you flash in your colour. 3 rounds.",
     ],
   },
   {
