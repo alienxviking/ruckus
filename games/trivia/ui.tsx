@@ -1,0 +1,308 @@
+"use client";
+
+// Presentational pieces for Trivia Rush (no game logic here).
+
+import type { CSSProperties, ReactNode } from "react";
+import type { Player } from "@/shared/types";
+import { CATEGORY_EMOJI, LETTERS, fmt, type Category, type Difficulty } from "./shared";
+
+/** Answer colours. Always paired with a letter so colour is never the only cue. */
+export const ANSWER_COLORS = ["#f43f5e", "#3b82f6", "#f59e0b", "#10b981"] as const;
+
+export const MEDALS = ["🥇", "🥈", "🥉"] as const;
+
+export const cssVars = (vars: Record<string, string>) => vars as CSSProperties;
+
+export function seconds(ms: number | null | undefined): string {
+  return ms === null || ms === undefined ? "–" : `${(ms / 1000).toFixed(1)}s`;
+}
+
+export function ordinal(n: number): string {
+  const tens = n % 100;
+  if (tens >= 11 && tens <= 13) return `${n}th`;
+  return `${n}${["th", "st", "nd", "rd"][n % 10] ?? "th"}`;
+}
+
+/** Someone who is no longer in the room still needs a face. */
+export function personOf(byId: Record<string, Player>, id: string): Player {
+  return byId[id] ?? { id, name: "Player", color: "#94a3b8", avatar: "❔", connected: false };
+}
+
+const CSS = `
+@keyframes trv-float {
+  0% { opacity: 0; transform: translate(-50%, 8px) scale(.7); }
+  18% { opacity: 1; transform: translate(-50%, -10px) scale(1.15); }
+  70% { opacity: 1; transform: translate(-50%, -34px) scale(1); }
+  100% { opacity: 0; transform: translate(-50%, -50px) scale(.95); }
+}
+@keyframes trv-correct {
+  0% { transform: scale(1); }
+  35% { transform: scale(1.06); }
+  65% { transform: scale(.99); }
+  100% { transform: scale(1.02); }
+}
+@keyframes trv-glow {
+  0%, 100% { box-shadow: 0 0 0 0 var(--trv-glow); }
+  50% { box-shadow: 0 0 26px 3px var(--trv-glow); }
+}
+@keyframes trv-shake {
+  0%, 100% { transform: translateX(0); }
+  20%, 60% { transform: translateX(-5px); }
+  40%, 80% { transform: translateX(5px); }
+}
+@keyframes trv-slide {
+  from { transform: translateY(var(--trv-from, 0px)); }
+  to { transform: translateY(0); }
+}
+@keyframes trv-count {
+  0% { transform: scale(1.6); opacity: 0; }
+  40% { opacity: 1; }
+  100% { transform: scale(1); opacity: 1; }
+}
+@keyframes trv-pulse { 50% { opacity: .45; } }
+@keyframes trv-spark {
+  0% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+  100% { opacity: 0; transform: translate(calc(-50% + var(--dx)), calc(-50% + var(--dy))) scale(.3); }
+}
+@keyframes trv-bar { from { transform: scaleY(0); } to { transform: scaleY(1); } }
+.trv-float { animation: trv-float 1.8s cubic-bezier(.2,.8,.3,1) both; }
+.trv-correct { animation: trv-correct .55s cubic-bezier(.2,1.4,.4,1) both, trv-glow 1.4s ease-in-out .25s 2; }
+.trv-shake { animation: trv-shake .42s ease both; }
+.trv-slide { animation: trv-slide .75s cubic-bezier(.2,.9,.25,1) .3s both; }
+.trv-count { animation: trv-count .45s cubic-bezier(.2,1.2,.4,1) both; }
+.trv-pulse { animation: trv-pulse .9s ease-in-out infinite; }
+.trv-spark { animation: trv-spark .85s ease-out .1s both; }
+.trv-bar { transform-origin: bottom; animation: trv-bar .6s cubic-bezier(.2,1,.3,1) both; }
+@media (prefers-reduced-motion: reduce) {
+  .trv-float, .trv-spark { display: none; }
+  .trv-correct, .trv-shake, .trv-slide, .trv-count, .trv-pulse, .trv-bar { animation: none; }
+}
+`;
+
+/** Keyframes for this game, hoisted and de-duplicated by React. */
+export function TriviaStyles() {
+  return (
+    <style href="trivia-rush-styles" precedence="medium">
+      {CSS}
+    </style>
+  );
+}
+
+export function CategoryChip({ cat, accent }: { cat: Category; accent: string }) {
+  return (
+    <span
+      className="inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-bold"
+      style={{ borderColor: accent + "66", background: accent + "1a", color: accent }}
+    >
+      <span aria-hidden>{CATEGORY_EMOJI[cat]}</span>
+      {cat}
+    </span>
+  );
+}
+
+const DIFF_DOTS: Record<Difficulty, number> = { easy: 1, medium: 2, hard: 3 };
+
+export function DiffPill({ diff }: { diff: Difficulty }) {
+  const n = DIFF_DOTS[diff];
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full bg-panel-2 px-2 py-1 text-[11px] font-semibold text-muted capitalize">
+      <span aria-hidden className="flex gap-0.5">
+        {[1, 2, 3].map((i) => (
+          <span key={i} className={`size-1.5 rounded-full ${i <= n ? "bg-text" : "bg-line"}`} />
+        ))}
+      </span>
+      {diff}
+    </span>
+  );
+}
+
+/** Small round avatar with the player's colour ring. */
+export function Face({ player, size = "sm" }: { player: Player; size?: "sm" | "md" }) {
+  return (
+    <span
+      title={player.name}
+      className={`grid shrink-0 place-items-center rounded-full ${size === "sm" ? "size-6 text-[13px]" : "size-8 text-base"} ${
+        player.connected ? "" : "opacity-50"
+      }`}
+      style={{ background: player.color + "33", boxShadow: `inset 0 0 0 1.5px ${player.color}` }}
+    >
+      <span aria-hidden>{player.avatar}</span>
+    </span>
+  );
+}
+
+const SPARKS = Array.from({ length: 8 }, (_, i) => {
+  const a = (i / 8) * Math.PI * 2 + 0.3;
+  return { dx: `${Math.round(Math.cos(a) * 54)}px`, dy: `${Math.round(Math.sin(a) * 40)}px` };
+});
+
+export type AnswerLook = "open" | "plain" | "locked" | "faded" | "correct" | "wrong";
+
+const TONE: Record<AnswerLook, string> = {
+  open: "cursor-pointer hover:-translate-y-0.5 hover:brightness-125 active:translate-y-0 active:scale-[0.98]",
+  plain: "",
+  locked: "",
+  faded: "opacity-40 saturate-50",
+  correct: "trv-correct",
+  wrong: "",
+};
+
+/**
+ * One of the four answer tiles. Sizes follow the width of the answers grid (a
+ * named `answers` container), so long words fit on phones and in side-by-side layouts.
+ */
+export function AnswerButton({
+  index,
+  text,
+  look,
+  mine,
+  pickers,
+  points,
+  accent,
+  onPick,
+}: {
+  index: number;
+  text: string;
+  look: AnswerLook;
+  /** The viewer picked this one (reveal). */
+  mine: boolean;
+  pickers: Player[];
+  /** Points the viewer gained on this answer (reveal, own correct pick). */
+  points: number;
+  accent: string;
+  onPick: (i: number) => void;
+}) {
+  const color = ANSWER_COLORS[index];
+  const letter = LETTERS[index];
+  const revealing = look === "correct" || look === "wrong";
+  const dim = look === "wrong";
+  const names = pickers.map((p) => p.name).join(", ");
+  const label = revealing
+    ? `${letter}: ${text}${look === "correct" ? " (correct answer)" : ""}${mine ? " (your pick)" : ""}${
+        pickers.length ? `, picked by ${names}` : ", nobody picked this"
+      }`
+    : `Answer ${letter}: ${text}${look === "locked" ? " (locked in)" : ""}`;
+
+  const strong = look === "locked" || look === "correct";
+  const style: CSSProperties = {
+    borderColor: strong ? color : color + (dim ? "26" : "66"),
+    background: dim
+      ? `${color}0a`
+      : `linear-gradient(160deg, ${color}${strong ? "4d" : "29"}, ${color}${strong ? "26" : "0f"})`,
+    boxShadow: look === "locked" ? `0 0 0 3px ${color}55, 0 8px 24px -10px ${color}` : undefined,
+    ...cssVars({ "--trv-glow": color + "99" }),
+  };
+
+  const badge =
+    look === "locked"
+      ? { icon: "🔒", cls: "bg-panel-2 text-[11px]" }
+      : look === "correct"
+        ? { icon: "✓", cls: "bg-green-400 text-ink" }
+        : look === "wrong" && mine
+          ? { icon: "✗", cls: "bg-rose-500 text-ink" }
+          : null;
+
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      disabled={look !== "open"}
+      onClick={() => onPick(index)}
+      className={`relative flex min-h-[4.75rem] w-full flex-col items-center justify-center gap-1.5 rounded-2xl border-2 px-2.5 pt-3 pb-2.5 text-center outline-none transition-[opacity,filter,transform,box-shadow,background-color,border-color] duration-300 focus-visible:ring-4 focus-visible:ring-white/70 @lg/answers:min-h-[5.25rem] @lg/answers:items-stretch @lg/answers:px-3.5 @lg/answers:py-2 @lg/answers:text-left ${
+        TONE[look]
+      } ${dim && mine ? "trv-shake" : ""}`}
+      style={style}
+    >
+      <span className="flex w-full items-center justify-center gap-3 @lg/answers:justify-start">
+        {/* Narrow tiles: the letter is a tab on the corner so words get the full width. */}
+        <span
+          aria-hidden
+          className={`absolute -top-2 left-2 z-[1] grid size-6 shrink-0 place-items-center rounded-full font-display text-sm font-black text-ink shadow-md ring-2 ring-ink transition-opacity duration-300 @lg/answers:static @lg/answers:size-9 @lg/answers:rounded-lg @lg/answers:text-lg @lg/answers:shadow-none @lg/answers:ring-0 ${
+            dim ? "opacity-40" : ""
+          }`}
+          style={{ background: color }}
+        >
+          {letter}
+        </span>
+        <span
+          className={`min-w-0 text-[0.95rem] leading-tight font-semibold [overflow-wrap:break-word] hyphens-auto transition-colors duration-300 @lg/answers:flex-1 @lg/answers:text-lg ${
+            dim ? "text-text/45" : ""
+          }`}
+        >
+          {text}
+        </span>
+      </span>
+      {revealing && pickers.length > 0 && (
+        <span
+          aria-hidden
+          className="flex flex-wrap items-center justify-center gap-1 @lg/answers:justify-start @lg/answers:pl-12"
+        >
+          {pickers.slice(0, 6).map((p) => (
+            <span key={p.id} className="animate-pop">
+              <Face player={p} />
+            </span>
+          ))}
+          {pickers.length > 6 && <span className="text-xs font-bold text-muted">+{pickers.length - 6}</span>}
+        </span>
+      )}
+      {badge && (
+        <span
+          aria-hidden
+          className={`animate-pop absolute -top-2 right-2 z-[1] grid size-6 place-items-center rounded-full text-sm font-black shadow-md ring-2 ring-ink ${badge.cls}`}
+        >
+          {badge.icon}
+        </span>
+      )}
+      {look === "correct" && mine && points > 0 && (
+        <>
+          {SPARKS.map((sp, i) => (
+            <span
+              key={i}
+              aria-hidden
+              className="trv-spark pointer-events-none absolute top-1/2 left-1/2 text-sm"
+              style={{ color: i % 2 ? accent : color, ...cssVars({ "--dx": sp.dx, "--dy": sp.dy }) }}
+            >
+              ✦
+            </span>
+          ))}
+          <span
+            aria-hidden
+            className="trv-float pointer-events-none absolute top-0 left-1/2 z-10 rounded-full px-3 py-0.5 font-display text-xl font-black whitespace-nowrap shadow-lg shadow-black/40"
+            style={{ background: accent, color: "#1d1604" }}
+          >
+            +{fmt(points)}
+          </span>
+        </>
+      )}
+    </button>
+  );
+}
+
+export function RankDelta({ delta, show }: { delta: number; show: boolean }) {
+  if (!show || delta === 0) {
+    return (
+      <span className="w-7 shrink-0 text-center text-xs text-muted" aria-hidden>
+        ·
+      </span>
+    );
+  }
+  const up = delta > 0;
+  return (
+    <span className={`w-7 shrink-0 text-center font-mono text-[11px] font-bold ${up ? "text-green-300" : "text-rose-300"}`}>
+      <span aria-hidden>
+        {up ? "▲" : "▼"}
+        {Math.abs(delta)}
+      </span>
+      <span className="sr-only">{up ? `up ${delta}` : `down ${-delta}`}</span>
+    </span>
+  );
+}
+
+export function SectionTitle({ children, aside }: { children: ReactNode; aside?: ReactNode }) {
+  return (
+    <div className="mb-2 flex items-center justify-between gap-2">
+      <span className="label">{children}</span>
+      {aside && <span className="text-xs text-muted">{aside}</span>}
+    </div>
+  );
+}
