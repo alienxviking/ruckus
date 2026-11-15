@@ -80,7 +80,7 @@ export function Room({
           {r.status === "closed" ? "Can't reach the game server. Retrying…" : "Connecting…"}
         </div>
       ) : (
-        <div className="grid flex-1 gap-4 pb-4 lg:grid-cols-[minmax(0,1fr)_300px]">
+        <div className="grid flex-1 gap-4 pb-24 lg:pb-4 lg:grid-cols-[minmax(0,1fr)_300px]">
           <section className="min-w-0">
             {room.phase === "lobby" ? (
               <Lobby room={room} isHost={isHost} send={r.send} />
