@@ -12,6 +12,8 @@ const CHAT_LIMIT = 80;
 const PING_BURST = [0, 250, 600, 1100];
 const PING_EVERY_MS = 8_000;
 const SAMPLES = 8;
+/** Reconnect fast after a blip (jittered so a whole room doesn't reconnect in lockstep). */
+const RECONNECT_MIN_MS = 250 + Math.random() * 500;
 
 /** Local wall clock. Only ever called from socket callbacks and handlers, never during render. */
 function localNow(): number {
@@ -100,6 +102,10 @@ export function useRoom(code: string, identity: Identity) {
     host: partyHost(),
     room: code.toLowerCase(),
     id: identity.id,
+    minReconnectionDelay: RECONNECT_MIN_MS,
+    maxReconnectionDelay: 4_000,
+    reconnectionDelayGrowFactor: 1.5,
+    connectionTimeout: 4_000,
     onOpen() {
       setStatus("open");
       socket.send(hello(identityRef.current));
@@ -165,6 +171,23 @@ export function useRoom(code: string, identity: Identity) {
 
   // Stop pinging when the room unmounts.
   useEffect(() => stopPings, []);
+
+  // Phones drop sockets when the screen locks or the network changes. When the tab comes back
+  // (or the network does), reconnect right away instead of waiting for the backoff timer, and
+  // probe a socket that looks open so a dead one is noticed quickly.
+  useEffect(() => {
+    const wake = () => {
+      if (document.visibilityState !== "visible") return;
+      if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ t: "ping", c: localNow() } satisfies ClientMsg));
+      else socket.reconnect();
+    };
+    document.addEventListener("visibilitychange", wake);
+    window.addEventListener("online", wake);
+    return () => {
+      document.removeEventListener("visibilitychange", wake);
+      window.removeEventListener("online", wake);
+    };
+  }, [socket]);
 
   const send = useCallback(
     (msg: ClientMsg) => {
