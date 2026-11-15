@@ -31,6 +31,9 @@ import {
   Who,
   WordCard,
   nameOf,
+  revealPlan,
+  usePast,
+  type RevealPlan,
 } from "./ui";
 
 type Props = GameClientProps<ImpostorView, ImpostorAction>;
@@ -44,14 +47,19 @@ function isErrorEvent(e: unknown): e is ImpostorErrorEvent {
 
 export default function OddOneOut({ view, me, byId, isPlayer, act, serverNow, onEvent, accent }: Props) {
   const [hidden, setHidden] = useState(false);
+  const last = view?.history.length ? view.history[view.history.length - 1] : null;
+  // The reveal plays as a timed sequence anchored to the server's phase clock, so every
+  // screen (and one that reconnects halfway) sees the same beat at the same moment.
+  const plan = view?.phase === "reveal" && last ? revealPlan(last) : null;
+  const revealStart = view && plan ? view.endsAt - REVEAL_MS : 0;
+  const outcomeShown = usePast(plan ? revealStart + plan.outcomeAt : null, serverNow);
   if (!view) return <Note>Dealing out the secret words…</Note>;
 
   const toggleWord = () => setHidden((h) => !h);
-  const last = view.history.length ? view.history[view.history.length - 1] : null;
   const myTurn = isPlayer && view.phase === "clues" && view.currentId === me;
   const caughtMe = view.phase === "lastGuess" && view.caughtId === me;
   const settling = view.phase === "vote" && view.allVoted;
-  const status = statusLine(view, me, isPlayer, byId, settling, last);
+  const status = statusLine(view, me, isPlayer, byId, settling, last, outcomeShown);
   const earlier = view.clues.flatMap((c) => (c.text === null ? [] : [c.text]));
 
   const wordCard = (compact?: boolean, hint?: ReactNode) =>
@@ -96,55 +104,105 @@ export default function OddOneOut({ view, me, byId, isPlayer, act, serverNow, on
         <PhaseTimer view={view} serverNow={serverNow} accent={accent} myTurn={myTurn} caughtMe={caughtMe} settling={settling} />
       )}
 
-      {view.phase === "clues" && (
-        <div className="grid gap-3 @2xl:grid-cols-[minmax(0,5fr)_minmax(0,6fr)] @2xl:items-start">
-          <div className="flex min-w-0 flex-col gap-3">
-            {wordCard(false, "Clue it without giving it away. Someone has a different word…")}
-            {myTurn && view.myWord ? (
-              <ClueInput
-                key={view.turn}
-                myWord={view.myWord}
-                earlier={earlier}
-                act={act}
-                onEvent={onEvent}
-                accent={accent}
-              />
-            ) : (
-              isPlayer && <TurnHint view={view} me={me} byId={byId} />
-            )}
+      {/* One wrapper per phase (and round): it slides in on a phase change, and stays put
+          while views update within the phase, so inputs keep their focus and caret. */}
+      <div key={`${view.phase}-${view.round}`} className="oo-enter flex flex-col gap-3">
+        {view.phase === "clues" && (
+          <div className="grid gap-3 @2xl:grid-cols-[minmax(0,5fr)_minmax(0,6fr)] @2xl:items-start">
+            <div className="flex min-w-0 flex-col gap-3">
+              {wordCard(false, "Clue it without giving it away. Someone has a different word…")}
+              {myTurn && view.myWord ? (
+                <ClueInput
+                  key={view.turn}
+                  myWord={view.myWord}
+                  earlier={earlier}
+                  act={act}
+                  onEvent={onEvent}
+                  accent={accent}
+                />
+              ) : (
+                isPlayer && <TurnHint view={view} me={me} byId={byId} />
+              )}
+            </div>
+            <ClueBoard view={view} byId={byId} me={me} accent={accent} />
           </div>
-          <ClueBoard view={view} byId={byId} me={me} accent={accent} />
-        </div>
+        )}
+
+        {view.phase === "vote" && (
+          <>
+            {wordCard(true)}
+            <VoteGrid view={view} me={me} byId={byId} isPlayer={isPlayer} act={act} accent={accent} />
+          </>
+        )}
+
+        {view.phase === "lastGuess" && (
+          <div className="grid gap-3 @2xl:grid-cols-[minmax(0,5fr)_minmax(0,6fr)] @2xl:items-start">
+            {caughtMe && view.myWord ? (
+              <GuessPanel myWord={view.myWord} act={act} onEvent={onEvent} accent={accent} />
+            ) : (
+              <CaughtCard caught={view.caughtId} byId={byId} isPlayer={isPlayer} accent={accent} />
+            )}
+            <ClueBoard view={view} byId={byId} me={me} accent={accent} />
+          </div>
+        )}
+
+        {view.phase === "reveal" && last && plan && (
+          <RevealStage
+            view={view}
+            s={last}
+            plan={plan}
+            revealStart={revealStart}
+            serverNow={serverNow}
+            byId={byId}
+            me={me}
+            accent={accent}
+          />
+        )}
+
+        {view.phase === "final" && <FinalScreen view={view} byId={byId} me={me} accent={accent} />}
+      </div>
+
+      {view.phase !== "final" && (
+        <ScoreStrip
+          view={view}
+          byId={byId}
+          me={me}
+          serverNow={serverNow}
+          gains={plan && last ? last.points : null}
+          gainsAt={plan ? revealStart + plan.pointsAt : 0}
+        />
       )}
+    </div>
+  );
+}
 
-      {view.phase === "vote" && (
-        <>
-          {wordCard(true)}
-          <VoteGrid view={view} me={me} byId={byId} isPlayer={isPlayer} act={act} accent={accent} />
-        </>
-      )}
-
-      {view.phase === "lastGuess" && (
-        <div className="grid gap-3 @2xl:grid-cols-[minmax(0,5fr)_minmax(0,6fr)] @2xl:items-start">
-          {caughtMe && view.myWord ? (
-            <GuessPanel myWord={view.myWord} act={act} onEvent={onEvent} accent={accent} />
-          ) : (
-            <CaughtCard caught={view.caughtId} byId={byId} isPlayer={isPlayer} accent={accent} />
-          )}
-          <ClueBoard view={view} byId={byId} me={me} accent={accent} />
-        </div>
-      )}
-
-      {view.phase === "reveal" && last && (
-        <div className="grid gap-3 @2xl:grid-cols-[minmax(0,6fr)_minmax(0,5fr)] @2xl:items-start">
-          <RevealCard s={last} byId={byId} me={me} accent={accent} />
-          <ClueBoard view={view} byId={byId} me={me} accent={accent} oddId={last.oddId} />
-        </div>
-      )}
-
-      {view.phase === "final" && <FinalScreen view={view} byId={byId} me={me} accent={accent} />}
-
-      {view.phase !== "final" && <ScoreStrip view={view} byId={byId} me={me} />}
+/** The reveal card and the unmasked clue board, sharing one timeline. */
+function RevealStage({
+  view,
+  s,
+  plan,
+  revealStart,
+  serverNow,
+  byId,
+  me,
+  accent,
+}: {
+  view: ImpostorView;
+  s: ImpostorView["history"][number];
+  plan: RevealPlan;
+  revealStart: number;
+  serverNow: () => number;
+  byId: ById;
+  me: string;
+  accent: string;
+}) {
+  // Where the reveal's timeline stood when this mounted: ~0 normally, negative after a
+  // reconnect mid-reveal (beats already past then show at once instead of replaying).
+  const [t0] = useState(() => Math.min(0, revealStart - serverNow()));
+  return (
+    <div className="grid gap-3 @2xl:grid-cols-[minmax(0,6fr)_minmax(0,5fr)] @2xl:items-start">
+      <RevealCard s={s} plan={plan} t0={t0} byId={byId} me={me} accent={accent} />
+      <ClueBoard view={view} byId={byId} me={me} accent={accent} odd={{ id: s.oddId, delay: t0 + plan.chipAt }} />
     </div>
   );
 }
@@ -158,6 +216,7 @@ function statusLine(
   byId: ById,
   settling: boolean,
   last: ImpostorView["history"][number] | null,
+  outcomeShown: boolean,
 ): { key: string; node: ReactNode } {
   const key = `${view.phase}-${view.round}`;
   switch (view.phase) {
@@ -200,6 +259,19 @@ function statusLine(
       if (!last) return { key, node: <>The reveal!</> };
       const you = last.oddId === me;
       const odd = <Who player={byId[last.oddId]} you={you} />;
+      // Hold the verdict back until the reveal card gets there.
+      if (!outcomeShown) {
+        if (last.outcome === "escaped") return { key: `${key}-wait`, node: <>🔎 Who had the odd word…?</> };
+        if (you) return { key: `${key}-wait`, node: <>🎯 Did you guess right…?</> };
+        return {
+          key: `${key}-wait`,
+          node: (
+            <>
+              🎯 Did {odd} guess the word…?
+            </>
+          ),
+        };
+      }
       if (last.outcome === "escaped") return { key, node: <>🕵️ {odd} got away!</> };
       if (last.outcome === "guessed") return { key, node: <>🎯 {odd} guessed the word!</> };
       return { key, node: <>🎉 {odd} {you ? "were" : "was"} caught!</> };
@@ -502,9 +574,13 @@ function CaughtCard({
       <p className="text-sm">
         <b>{name}</b> had the odd word! They get one guess at {isPlayer ? "yours" : "the majority word"}…
       </p>
-      <span className="flex items-center gap-2 text-sm font-semibold" style={{ color: accent }}>
-        <Dots /> guessing
-      </span>
+      {caught && byId[caught]?.connected === false ? (
+        <span className="text-sm font-semibold text-muted">📴 Offline: waiting a few seconds for them…</span>
+      ) : (
+        <span className="flex items-center gap-2 text-sm font-semibold" style={{ color: accent }}>
+          <Dots /> guessing
+        </span>
+      )}
       <p className="text-xs text-muted">
         If they miss: everyone else +{POINTS.catch}, and +{POINTS.sharpEye} more for voting {name}. If they nail it: {name} +
         {POINTS.guess}.
