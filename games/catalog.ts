@@ -381,7 +381,7 @@ export const CATALOG: GameMeta[] = [
   {
     id: "minerush",
     name: "Mine Rush",
-    tagline: "One minefield, everyone clicking at once.",
+    tagline: "One minefield. Everyone digging at once.",
     category: "arena",
     minPlayers: 1,
     maxPlayers: 8,
@@ -391,9 +391,9 @@ export const CATALOG: GameMeta[] = [
     isNew: true,
     original: true,
     how: [
-      "Everyone clears the same minefield at the same time. Numbers count the mines around a cell.",
-      "Cells you open score points; open a mine and you're stunned and lose points.",
-      "Grab gems and power-ups. Most points when the field is cleared or time runs out wins.",
+      "Everyone digs the same field at once: tap to open cells for +1 each (cascades count). Numbers count mines.",
+      "Hit a mine: −10 and stunned 4s. Long-press or right-click to flag; flags are private, ±2 each at the end.",
+      "Grab 💎 +15, 🔍 scans and ❄️ rival freezes. Most points when the field clears or at 3:00 wins.",
     ],
   },
   {
