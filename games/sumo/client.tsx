@@ -175,6 +175,7 @@ function Game({
   isPlayer,
   act,
   serverNow,
+  rtt,
   onEvent,
   accent,
 }: Omit<Props, "view"> & { view: SumoView }) {
@@ -205,6 +206,8 @@ function Game({
   const [dashes, setDashes] = useState(0);
   // Replays your inputs on your own disc so it moves the instant you steer (see predict.ts).
   const [pred] = useState(() => new SumoPredictor());
+  // The room's measured round trip seeds the predictor until the server acknowledges an input.
+  useEffect(() => pred.attachRtt(rtt), [pred, rtt]);
 
   /** Refill the send budget; returns ms until one more send is allowed (0 = now). */
   const budget = () => {

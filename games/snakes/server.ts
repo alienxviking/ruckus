@@ -2,6 +2,7 @@ import { shuffle, topScorers, type GameCtx, type GameDef } from "../../shared/ga
 import {
   COUNTDOWN_MS,
   DELTA,
+  DIRS,
   GHOST_MS,
   GOLDEN_VALUE,
   MAX_HOLD,
@@ -32,6 +33,11 @@ import {
 // and the server applies it on exactly that step (holding it if it arrives early).
 // A late turn just lands on the next step and the client corrects itself. Each player's
 // view carries their own input status (`me`), which is how the client tunes its lead.
+//
+// Bandwidth: a plain step goes out as a tiny delta event (each snake's direction and length,
+// pellets that came and went; see SnakeDelta) and tick() returns false. The full view (which
+// can always render from scratch) goes out on phase changes, deaths, joins and refreshes, and
+// every KEYFRAME_MS as a safety net. A client that misses a step asks for a keyframe ("sync").
 
 const SMALL_GRID = { w: 32, h: 24 }; // up to 3 players
 const LARGE_GRID = { w: 40, h: 30 }; // 4-8 players
@@ -39,6 +45,10 @@ const MAX_SNAKES = 8;
 const GOLDEN_EVERY_MS = 8_000;
 const GOLDEN_JITTER_MS = 1_000;
 const FEED_LIMIT = 6;
+/** During play a full view still goes out this often, so a client can never drift for long. */
+export const KEYFRAME_MS = 3_000;
+/** A viewer gets at most one requested keyframe this often. */
+const SYNC_MS = 1_000;
 /** Distance from the wall behind a fresh snake to its head (its tail sits 2 cells off the wall). */
 const SPAWN_INSET = 5;
 
@@ -137,13 +147,52 @@ export interface SnakeState {
   waitingSince: number | null;
   /** Bumped on every visible change; keys the shared view cache. */
   rev: number;
+  /** When the last full view went out during play (deltas fill the gaps). */
+  fullAt: number;
 }
 
 /**
  * `seq` numbers the client's inputs and `at` names the step the turn should land on
  * (both optional; without `at` the turn happens on the next step).
  */
-export type SnakeAction = { type: "turn"; dir: Dir; seq?: number; at?: number };
+export type SnakeAction = { type: "turn"; dir: Dir; seq?: number; at?: number } | { type: "sync" };
+
+/**
+ * One plain step, sent to everyone as an event instead of a full view.
+ * Apply it to the view of step `n - 1` of round `r` (see delta.ts).
+ */
+export interface SnakeDelta {
+  k: "d";
+  r: number;
+  n: number;
+  /** Server time of the step (SnakeView.at). */
+  at: number;
+  /** For each live snake in view order: [direction index into DIRS, body cells, length]. */
+  m: number[];
+  /** Pellets added / removed (cell indices y * w + x). */
+  fa?: number[];
+  fr?: number[];
+  /** Golden pellet moved (cell index) or vanished (-1). */
+  g?: number;
+  /** Turns applied this step: [snake index in view order, input number, ...]. */
+  ap?: number[];
+}
+
+/** A player's turn reached the server: [input number, ms it arrived before its step]. Only to them. */
+export interface SnakeInputEcho {
+  k: "m";
+  r: number;
+  rx: number;
+  sl: number;
+}
+
+/** A full view on request (after a missed step). Only to the one who asked. */
+export interface SnakeKeyframe {
+  k: "K";
+  v: SnakeView;
+}
+
+export type SnakeEvent = SnakeDelta | SnakeInputEcho | SnakeKeyframe;
 
 export interface RoundResult {
   winner: string | null;
@@ -559,8 +608,69 @@ export function buildView(s: SnakeState, now: number): SnakeView {
 
 /** Every viewer sees the same thing, so build the view once per change. */
 const viewCache = new WeakMap<SnakeState, { rev: number; view: SnakeView }>();
+/** When each viewer last got a keyframe they asked for (not game state, so not in SnakeState). */
+const syncs = new WeakMap<SnakeState, Map<string, number>>();
+
+/** Snapshot of what a delta has to describe, taken before a tick. */
+interface Before {
+  round: number;
+  phase: Phase;
+  tick: number;
+  food: number[];
+  golden: number | null;
+  feed: number;
+  applied: number[];
+}
+
+function beforeTick(s: SnakeState): Before {
+  return {
+    round: s.round,
+    phase: s.phase,
+    tick: s.tick,
+    food: s.food.slice(),
+    golden: s.golden,
+    feed: s.feed.length,
+    applied: s.snakes.map((sn) => sn.applied),
+  };
+}
+
+/** The delta for a plain step (null when the step needs a full view: a phase change or a death). */
+export function makeDelta(s: SnakeState, b: Before): SnakeDelta | null {
+  if (s.phase !== "play" || b.phase !== "play" || s.round !== b.round || s.tick !== b.tick + 1) return null;
+  if (s.feed.length !== b.feed || s.feed.some((f) => f.at === s.stepAt)) return null;
+  const shown = s.snakes.filter((sn) => !sn.away);
+  const m: number[] = [];
+  const ap: number[] = [];
+  shown.forEach((sn, i) => {
+    if (!sn.alive) return;
+    m.push(DIRS.indexOf(sn.dir), sn.body.length, lenOf(sn));
+    const was = b.applied[s.snakes.indexOf(sn)];
+    if (sn.applied !== was) ap.push(i, sn.applied);
+  });
+  const d: SnakeDelta = { k: "d", r: s.round, n: s.tick, at: s.stepAt, m };
+  const had = new Set(b.food);
+  const now = new Set(s.food);
+  const fa = s.food.filter((c) => !had.has(c));
+  const fr = b.food.filter((c) => !now.has(c));
+  if (fa.length) d.fa = fa;
+  if (fr.length) d.fr = fr;
+  if (s.golden !== b.golden) d.g = s.golden ?? -1;
+  if (ap.length) d.ap = ap;
+  return d;
+}
 
 // ---------- game definition ----------
+
+/** A client missed a step: send it the full view as an event (at most once a second each). */
+function sendKeyframe(s: SnakeState, viewerId: string, ctx: GameCtx): false {
+  let seen = syncs.get(s);
+  if (!seen) syncs.set(s, (seen = new Map()));
+  const now = ctx.now();
+  if (now - (seen.get(viewerId) ?? -Infinity) < SYNC_MS) return false;
+  seen.set(viewerId, now);
+  ctx.emit({ k: "K", v: snakes.view(s, viewerId, ctx) as SnakeView } satisfies SnakeEvent, { to: viewerId });
+  return false;
+}
 
 export const snakes: GameDef<SnakeState, SnakeAction> = {
   id: "snakes",
@@ -590,6 +700,7 @@ export const snakes: GameDef<SnakeState, SnakeAction> = {
       champions: null,
       waitingSince: null,
       rev: 0,
+      fullAt: 0,
     };
     const ready = onlineIds(s, ctx);
     startRound(s, ctx, ready.length >= 2 ? ready : ids);
@@ -597,9 +708,10 @@ export const snakes: GameDef<SnakeState, SnakeAction> = {
   },
 
   action(s, playerId, action, ctx) {
-    if (s.phase !== "countdown" && s.phase !== "play") return false;
     const a: unknown = action;
     if (!a || typeof a !== "object" || Array.isArray(a)) return false;
+    if ((a as { type?: unknown }).type === "sync") return sendKeyframe(s, playerId, ctx);
+    if (s.phase !== "countdown" && s.phase !== "play") return false;
     const { type, dir, seq, at } = a as { type?: unknown; dir?: unknown; seq?: unknown; at?: unknown };
     if (type !== "turn" || !isDir(dir)) return false;
     if (seq !== undefined && !isCount(seq)) return false;
@@ -612,6 +724,7 @@ export const snakes: GameDef<SnakeState, SnakeAction> = {
       sn.rx = seq;
       // How early it arrived for the step it asked for (the client learns its timing from this).
       sn.slack = when > 0 ? Math.max(-999, Math.min(999, Math.round(s.stepAt + (when - s.tick) * TICK_MS - ctx.now()))) : 0;
+      ctx.emit({ k: "m", r: s.round, rx: sn.rx, sl: sn.slack } satisfies SnakeEvent, { to: playerId });
     }
     if (sn.queue.length >= MAX_QUEUE) return false;
     const last = sn.queue.length ? sn.queue[sn.queue.length - 1].dir : sn.dir;
@@ -622,11 +735,26 @@ export const snakes: GameDef<SnakeState, SnakeAction> = {
   },
 
   tick(s, ctx) {
+    const b = beforeTick(s);
     const changed = advance(s, ctx);
-    if (changed) s.rev += 1;
-    return changed;
+    if (!changed) return false;
+    s.rev += 1;
+    // A plain step: everyone gets a tiny delta instead of the full view.
+    const d = ctx.now() - s.fullAt < KEYFRAME_MS ? makeDelta(s, b) : null;
+    if (d) {
+      ctx.emit(d satisfies SnakeEvent);
+      return false;
+    }
+    s.fullAt = ctx.now();
+    return true;
   },
   tickMs: TICK_MS,
+
+  spectatorAction(s, viewerId, action, ctx) {
+    const a: unknown = action;
+    if (!a || typeof a !== "object" || (a as { type?: unknown }).type !== "sync") return false;
+    return sendKeyframe(s, viewerId, ctx);
+  },
 
   view(s, viewerId, ctx) {
     const hit = viewCache.get(s);

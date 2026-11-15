@@ -5,13 +5,18 @@ import game, {
   fillEnclosed,
   homeSpots,
   paint,
+  KEYFRAME_MS,
   type PowerUp,
+  type TurfDelta,
   type TurfEvent,
+  type TurfInputEcho,
+  type TurfKeyframe,
   type TurfState,
   type TurfView,
 } from "./server";
 import { BOMB_RADIUS, COUNTDOWN_MS, DASH_MS, FREEZE_MS, MAX_HOLD, PLAY_MS, TICK_MS, boardSize, type Dir } from "./shared";
 import { TurfPredictor } from "./predict";
+import { applyDelta, hear, isTurfWire, nothingHeard, rebuild, type Heard } from "./delta";
 
 // ---------- helpers ----------
 
@@ -747,9 +752,19 @@ function netGame(up: number, down: number, skew: number, dash: boolean): NetResu
   if (dash) s.painters[0].dashUntil = FOREVER;
   const me = t.ids[0];
   const pred = new TurfPredictor();
-  const toClient: { at: number; v: TurfView }[] = [];
+  // What reaches the client: full views (when tick() returns true) and events (deltas, echoes).
+  const toClient: { at: number; v?: TurfView; e?: unknown }[] = [];
   const toServer: { at: number; a: unknown }[] = [];
   const send = () => toClient.push({ at: t.ctx.now() + down, v: JSON.parse(JSON.stringify(view(s, me, t))) });
+  let seen = t.events.length;
+  const flushEvents = () => {
+    for (; seen < t.events.length; seen++) {
+      const ev = t.events[seen];
+      if (!ev.to || ev.to === me) toClient.push({ at: t.ctx.now() + down, e: JSON.parse(JSON.stringify(ev.event)) });
+    }
+  };
+  let base: TurfView | null = null;
+  let heard: Heard = nothingHeard;
   send();
   let rnd = 12345;
   const rand = () => ((rnd = (rnd * 1103515245 + 12345) % 2147483648) / 2147483648);
@@ -766,13 +781,21 @@ function netGame(up: number, down: number, skew: number, dash: boolean): NetResu
     t.advance(now - t.ctx.now());
     const cnow = now + skew;
     while (toServer.length && toServer[0].at <= now) game.action(s, me, toServer.shift()!.a as never, t.ctx);
+    flushEvents();
     if (now >= nextTick) {
       nextTick += TICK_MS;
       if (game.tick!(s, t.ctx)) send();
+      flushEvents();
     }
     const calibrated = res.accepted >= 3;
     while (toClient.length && toClient[0].at <= now) {
-      const { v } = toClient.shift()!;
+      const msg = toClient.shift()!;
+      if (msg.v) base = msg.v;
+      else if (isTurfWire(msg.e)) heard = hear(heard, msg.e);
+      const built = rebuild(base, heard);
+      check(!built.gap, "no missing ticks on a reliable link");
+      const v = built.view;
+      if (!v) continue;
       const tau = pred.advance(now, cnow);
       pred.head(tau, head);
       const [bx, by] = [head.x, head.y];
@@ -856,6 +879,129 @@ for (const [up, down, skew, dash] of [
   check(p2.press(aim, t2, t2)?.at === undefined, "countdown aims are untimed");
   p2.head(p2.advance(t2, t2), head);
   check(head.next === aim, "countdown aim shows at once");
+}
+
+// ---------- delta protocol: the rebuilt view always equals the server's; bandwidth ----------
+function deltaFuzz(n: number, seed: number) {
+  const { t, s } = newGame(n, seed);
+  const player = t.ids[0];
+  const viewers = [player, "spectator"];
+  const base: Record<string, TurfView> = Object.fromEntries(viewers.map((v) => [v, JSON.parse(JSON.stringify(view(s, v, t)))]));
+  const heard: Record<string, Heard> = Object.fromEntries(viewers.map((v) => [v, nothingHeard]));
+  let r = seed * 7919 + 3;
+  const rand = () => ((r = (r * 1103515245 + 12345) % 2147483648) / 2147483648);
+  let seen = 0;
+  let bytes = 0;
+  let playMs = 0;
+  let checks = 0;
+  let fulls = 0;
+  const refresh = () => {
+    for (const v of viewers) base[v] = JSON.parse(JSON.stringify(view(s, v, t)));
+  };
+  for (let step = 0; step < 2000 && s.phase !== "over"; step++) {
+    for (const id of t.ids) {
+      if (rand() < 0.3) {
+        const d = ["up", "right", "down", "left"][Math.floor(rand() * 4)] as Dir;
+        game.action(s, id, { type: "turn", dir: d, seq: step + 1, at: s.tick + 1 + Math.floor(rand() * 2) }, t.ctx);
+      }
+    }
+    if (rand() < 0.01) {
+      // Someone drops or comes back: the room sends everyone the full view.
+      const p = t.ctx.player(t.ids[1 + Math.floor(rand() * (n - 1))])!;
+      p.connected = !p.connected;
+      if (p.connected) game.playerReturned!(s, p.id, t.ctx);
+      else game.playerLeft!(s, p.id, t.ctx);
+      refresh();
+    }
+    const playing = s.phase === "play";
+    const full = tick(t, s);
+    for (; seen < t.events.length; seen++) {
+      const ev = t.events[seen];
+      if (!isTurfWire(ev.event)) continue;
+      for (const v of viewers) if (!ev.to || ev.to === v) heard[v] = hear(heard[v], JSON.parse(JSON.stringify(ev.event)));
+      if (playing && (!ev.to || ev.to === player)) bytes += JSON.stringify({ t: "ev", e: ev.event, now: t.ctx.now() }).length;
+    }
+    if (full) {
+      refresh();
+      fulls += 1;
+      if (playing) bytes += JSON.stringify({ t: "game", view: base[player], now: t.ctx.now() }).length;
+    }
+    if (playing) playMs += TICK_MS;
+    for (const v of viewers) {
+      const built = rebuild(base[v], heard[v]);
+      check(!built.gap, `turf delta n=${n} step ${step}: no gap for ${v}`);
+      const want = JSON.stringify(view(s, v, t));
+      const got = JSON.stringify(built.view);
+      if (got !== want) throw new Error(`turf delta n=${n} step ${step} (${v}): rebuilt view differs\n got  ${got.replace(/"tiles":"[^"]*"/, "")}\n want ${want.replace(/"tiles":"[^"]*"/, "")}`);
+      checks += 1;
+    }
+  }
+  check(s.phase === "over", `turf delta n=${n}: game over`);
+  return { kbps: bytes / (playMs / 1000) / 1024, checks, fulls };
+}
+
+for (const [n, seed] of [
+  [2, 5],
+  [3, 6],
+  [8, 7],
+] as const) {
+  const { kbps, checks, fulls } = deltaFuzz(n, seed);
+  if (process.env.NET_VERBOSE) console.log(`turf delta n=${n}: ${kbps.toFixed(2)} KB/s per client during play, ${checks} checks, ${fulls} full views`);
+  check(checks > 200, `turf delta n=${n}: enough comparisons (${checks})`);
+  check(kbps < (n === 8 ? 5 : 3), `turf delta n=${n}: small enough (${kbps.toFixed(2)} KB/s per client)`);
+}
+
+{
+  // A plain tick is a delta (tick() returns false) carrying only the tiles that changed.
+  const { t, s } = playing(3);
+  clearBoard(s);
+  place(s, 0, 10, 10, "right");
+  place(s, 1, 20, 10, "right");
+  place(s, 2, 30, 10, "left");
+  s.fullAt = t.ctx.now();
+  tick(t, s);
+  t.events.length = 0;
+  check(tick(t, s) === false, "a plain tick returns false");
+  const d = t.events.find((e) => (e.event as TurfDelta).k === "d")?.event as TurfDelta;
+  check(d && d.n === s.tick && d.p.length === 15 && d.c?.length === 9, "positions plus three painted tiles");
+  check(JSON.stringify(d).length < 160, `deltas are small (${JSON.stringify(d).length} bytes)`);
+  check(!d.b && !d.pw && !d.dz, "nothing else when nothing else changed");
+  // A big fill sends the whole board instead of a long change list.
+  for (let i = 0; i < s.tiles.length * 0.3; i++) paint(s, i, 1);
+  t.events.length = 0;
+  tick(t, s);
+  const big = t.events.find((e) => (e.event as TurfDelta).k === "d")?.event as TurfDelta;
+  check(typeof big?.b === "string" && big.b.length === s.w * s.h && !big.c, "the whole board after a big fill");
+  // Full views every KEYFRAME_MS.
+  let fulls = 0;
+  for (let i = 0; i < Math.ceil((2 * KEYFRAME_MS) / TICK_MS); i++) if (tick(t, s)) fulls += 1;
+  check(fulls === 2, `a keyframe every ${KEYFRAME_MS}ms (${fulls})`);
+  // A missing tick is a gap; a requested keyframe closes it (once a second per viewer).
+  const v0 = JSON.parse(JSON.stringify(view(s, t.ids[0], t))) as TurfView;
+  t.events.length = 0;
+  tick(t, s);
+  tick(t, s);
+  const ds = t.events.map((e) => e.event as TurfDelta).filter((e) => e.k === "d");
+  check(ds.length === 2 && applyDelta(v0, ds[1]) === null, "a delta only applies to the tick before it");
+  let h = hear(nothingHeard, ds[1]);
+  check(rebuild(v0, h).gap, "a skipped tick is a gap");
+  t.events.length = 0;
+  check(game.action(s, t.ids[0], { type: "sync" }, t.ctx) === false, "sync never broadcasts");
+  const key = t.events.find((e) => (e.event as TurfKeyframe).k === "K");
+  check(key?.to === t.ids[0], "the keyframe goes only to whoever asked");
+  h = hear(h, key!.event as TurfKeyframe);
+  check(!rebuild(v0, h).gap && rebuild(v0, h).view?.tick === s.tick, "the keyframe closes the gap");
+  t.events.length = 0;
+  game.action(s, t.ids[0], { type: "sync" }, t.ctx);
+  check(t.events.length === 0, "one keyframe a second per viewer");
+  const before = snap(s);
+  check(game.spectatorAction!(s, "spectator", { type: "sync" }, t.ctx) === false, "spectators can ask too");
+  check(t.events.some((e) => e.to === "spectator"), "and get one");
+  check(snap(s) === before, "spectator requests never change the game");
+  // Your input echo goes only to you.
+  t.events.length = 0;
+  game.action(s, t.ids[0], { type: "turn", dir: "up", seq: 41, at: s.tick + 1 }, t.ctx);
+  check(t.events[0]?.to === t.ids[0] && (t.events[0].event as TurfInputEcho).rx === 41, "input echo, to you only");
 }
 
 console.log("turf: all tests passed");

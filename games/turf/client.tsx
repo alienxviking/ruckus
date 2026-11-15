@@ -8,6 +8,7 @@ import type { TurfAction, TurfEvent, TurfView } from "./server";
 import { DIRS, FREEZE_MS, PLAY_MS, POWER_INFO } from "./shared";
 import { TurfBoard, parsePainters, rgba, textureCss, type Painter } from "./board";
 import { TurfPredictor } from "./predict";
+import { hear, isTurfWire, nothingHeard, rebuild, type Heard } from "./delta";
 
 type Props = GameClientProps<TurfView, TurfAction>;
 
@@ -25,14 +26,38 @@ const ARROWS = ["▲", "▶", "▼", "◀"];
 const MEDALS = ["🥇", "🥈", "🥉"];
 
 export default function TurfWar(props: Props) {
-  if (!props.view) {
+  const { view, onEvent, act } = props;
+  // Full views (the whole board) come on phase changes and every few seconds; each tick in
+  // between is a small delta event. The view shown is the newest full view with every delta since.
+  const [heard, setHeard] = useState<Heard>(nothingHeard);
+  useEffect(
+    () =>
+      onEvent((e) => {
+        if (isTurfWire(e)) setHeard((h) => hear(h, e));
+      }),
+    [onEvent],
+  );
+  const base = view && typeof view.tiles === "string" && Array.isArray(view.players) ? view : null;
+  const live = useMemo(() => rebuild(base, heard), [base, heard]);
+  // A tick went missing (say, before we subscribed): ask for a full view, and keep asking.
+  const gap = live.gap;
+  useEffect(() => {
+    if (!gap) return;
+    const first = setTimeout(() => act({ type: "sync" }), 120);
+    const again = setInterval(() => act({ type: "sync" }), 1_100);
+    return () => {
+      clearTimeout(first);
+      clearInterval(again);
+    };
+  }, [gap, act]);
+  if (!live.view) {
     return (
       <div className="card grid min-h-[40vh] place-items-center p-6">
         <Note>Rolling out the map…</Note>
       </div>
     );
   }
-  return <TurfGame {...props} view={props.view} />;
+  return <TurfGame {...props} view={live.view} />;
 }
 
 /** Server time, refreshed every `ms` (kept in state so rendering stays pure). */

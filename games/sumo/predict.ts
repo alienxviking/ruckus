@@ -18,7 +18,7 @@ import { BRAKE_FRICTION, FRICTION, SUB_MS, applyDash, integrate, keepOnIce, type
 export const MAX_PREDICT_MS = 400;
 const MAX_EVENTS = 64;
 const LEAD_ALPHA = 0.2;
-/** Before the first acknowledgement: a typical phone round trip (ms). */
+/** Before the first acknowledgement and without a measured round trip: a typical phone one (ms). */
 const LEAD_GUESS = 80;
 
 /** Your snapshot of your disc, as the replay starts from it. */
@@ -140,7 +140,19 @@ export class SumoPredictor {
 
   /** ms from your clock to the sim time an input sent now takes effect. */
   lead(): number {
-    return Number.isNaN(this.leadEst) ? LEAD_GUESS : this.leadEst;
+    if (!Number.isNaN(this.leadEst)) return this.leadEst;
+    // Until an input has been acknowledged: the room's measured round trip. An input lands about
+    // one round trip after the quickest snapshot time, less the half tick the server backdates it.
+    const rtt = this.rtt?.();
+    if (typeof rtt === "number" && Number.isFinite(rtt) && rtt >= 0) return Math.max(0, rtt - TICK_MS / 2);
+    return LEAD_GUESS;
+  }
+
+  private rtt: (() => number | null) | null = null;
+
+  /** The room's measured round trip (ms; null until measured), for the first guess at `lead`. */
+  attachRtt(rtt: (() => number | null) | undefined) {
+    this.rtt = rtt ?? null;
   }
 
   /** The newest snapshot of your disc (null: not on the ice). */

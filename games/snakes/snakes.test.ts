@@ -1,7 +1,19 @@
 import { assert, makeTestCtx } from "../../shared/testing";
 import type { GameResult } from "../../shared/types";
-import game, { buildView, spawnLayout, type Snake, type SnakeAction, type SnakeState, type SnakeView } from "./server";
+import game, {
+  KEYFRAME_MS,
+  buildView,
+  spawnLayout,
+  type Snake,
+  type SnakeAction,
+  type SnakeDelta,
+  type SnakeInputEcho,
+  type SnakeKeyframe,
+  type SnakeState,
+  type SnakeView,
+} from "./server";
 import { SnakePredictor, emptyShape } from "./predict";
+import { applyDelta, hear, isSnakeEvent, nothingHeard, rebuild, type Heard } from "./delta";
 import {
   COUNTDOWN_MS,
   DELTA,
@@ -1045,16 +1057,30 @@ interface NetResult {
  * Two snakes; yours (p0) is steered in a small square through the predictor with `up`/`down` ms
  * of one-way delay and a client clock that is `skew` ms off. The other snake drives safely.
  */
+const res0 = { views: 0, events: 0 };
 function netGame(up: number, down: number, skew: number, seed: number): NetResult {
   const h = start(2, seed);
   const [me, other] = h.t.ids;
   quiet(h);
   place(h, me, line(14, 13, "right"), "right");
-  place(h, other, line(3, 3, "down"), "down");
+  // The other snake chases its tail round a 2x2 square forever, so the round never ends.
+  place(h, other, [[3, 3], [3, 4], [4, 4], [4, 3]], "up");
   const pred = new SnakePredictor();
-  const toClient: { at: number; v: SnakeView }[] = [];
+  // What reaches the client: full views (when tick() returns true) and events (deltas, echoes).
+  const toClient: { at: number; v?: SnakeView; e?: unknown }[] = [];
   const toServer: { at: number; a: SnakeAction }[] = [];
   const send = () => toClient.push({ at: h.t.ctx.now() + down, v: JSON.parse(JSON.stringify(viewOf(h, me))) });
+  let seen = 0;
+  const flushEvents = () => {
+    for (; seen < h.t.events.length; seen++) {
+      const ev = h.t.events[seen];
+      if (!ev.to || ev.to === me) toClient.push({ at: h.t.ctx.now() + down, e: JSON.parse(JSON.stringify(ev.event)) });
+    }
+  };
+  let base: SnakeView | null = null;
+  let heard: Heard = nothingHeard;
+  res0.views = 0;
+  res0.events = 0;
   send();
   let rnd = seed * 9301 + 49297;
   const rand = () => ((rnd = (rnd * 233280 + 49297) % 2147483647) / 2147483647);
@@ -1071,16 +1097,29 @@ function netGame(up: number, down: number, skew: number, seed: number): NetResul
     h.t.advance(now - h.t.ctx.now());
     const cnow = now + skew;
     while (toServer.length && toServer[0].at <= now) game.action(h.s, me, toServer.shift()!.a, h.t.ctx);
+    flushEvents();
     if (now >= nextTick) {
       nextTick += TICK_MS;
-      // The other snake idles far away (put back every step) so the round never ends.
-      place(h, other, line(5, 20, "right"), "right");
+      const o = snakeOf(h, other);
+      game.action(h.s, other, { type: "turn", dir: ({ up: "right", right: "down", down: "left", left: "up" } as const)[o.dir] }, h.t.ctx);
       if (game.tick!(h.s, h.t.ctx)) send();
+      flushEvents();
       if (h.s.phase === "roundOver") break;
     }
     const calibrated = res.accepted >= 3;
     while (toClient.length && toClient[0].at <= now) {
-      const { v } = toClient.shift()!;
+      const msg = toClient.shift()!;
+      if (msg.v) {
+        base = msg.v;
+        res0.views += 1;
+      } else if (isSnakeEvent(msg.e)) {
+        heard = hear(heard, msg.e);
+        res0.events += 1;
+      }
+      const built = rebuild(base, heard, me);
+      assert(!built.gap, "no missing steps on a reliable link");
+      const v = built.view;
+      if (!v) continue;
       const tau = pred.advance(now, cnow);
       const had = pred.shape(tau, sh);
       const [bx, by] = [sh.hx, sh.hy];
@@ -1194,6 +1233,128 @@ for (const [up, down, skew] of [
     assert(sh.pts.length / 2 === body.length, `walk length matches the server after ${k} steps (food)`);
     assert(sh.hx === body[0] % h3.s.w && sh.hy === Math.floor(body[0] / h3.s.w), `walk head matches after ${k}`);
   }
+}
+
+// ---------- delta protocol: the rebuilt view always equals the server's; bandwidth ----------
+
+function deltaFuzz(n: number, seed: number) {
+  const h = start(n, seed);
+  const player = h.t.ids[0];
+  const viewers = [player, "spectator"];
+  const base: Record<string, SnakeView> = Object.fromEntries(viewers.map((v) => [v, JSON.parse(JSON.stringify(viewOf(h, v)))]));
+  const heard: Record<string, Heard> = Object.fromEntries(viewers.map((v) => [v, nothingHeard]));
+  let r = seed * 7919 + 3;
+  const rand = () => ((r = (r * 1103515245 + 12345) % 2147483648) / 2147483648);
+  let seen = 0;
+  let bytes = 0;
+  let playMs = 0;
+  let checks = 0;
+  const env = (x: unknown) => JSON.stringify({ t: "ev", e: x, now: h.t.ctx.now() }).length;
+  for (let steps = 0; steps < 6000 && phaseOf(h) !== "final"; steps++) {
+    for (const id of h.t.ids) {
+      const x = rand();
+      if (x < 0.12) act(h, id, { type: "turn", dir: DIRS[Math.floor(rand() * 4)], seq: steps + 1, at: h.s.tick + 2 });
+      else if (x < 0.9) {
+        const d = safeDir(h, id);
+        if (d && d !== snakeOf(h, id).dir) act(h, id, { type: "turn", dir: d, seq: steps + 1, at: h.s.tick + 1 });
+      }
+    }
+    const playing = phaseOf(h) === "play";
+    const full = tick(h);
+    for (; seen < h.t.events.length; seen++) {
+      const ev = h.t.events[seen];
+      if (!isSnakeEvent(ev.event)) continue;
+      for (const v of viewers) if (!ev.to || ev.to === v) heard[v] = hear(heard[v], JSON.parse(JSON.stringify(ev.event)));
+      if (playing && (!ev.to || ev.to === player)) bytes += env(ev.event);
+    }
+    if (full) {
+      for (const v of viewers) base[v] = JSON.parse(JSON.stringify(viewOf(h, v)));
+      if (playing) bytes += JSON.stringify({ t: "game", view: base[player], now: 0 }).length;
+    }
+    if (playing) playMs += TICK_MS;
+    for (const v of viewers) {
+      const built = rebuild(base[v], heard[v], v);
+      assert(!built.gap, `delta n=${n} step ${steps}: no gap for ${v}`);
+      const want = JSON.stringify(viewOf(h, v));
+      const got = JSON.stringify(built.view);
+      if (got !== want) throw new Error(`delta n=${n} step ${steps} (${v}): rebuilt view differs\n got  ${got.slice(0, 400)}\n want ${want.slice(0, 400)}`);
+      checks += 1;
+    }
+  }
+  assert(phaseOf(h) === "final", `delta n=${n}: match finished`);
+  return { kbps: bytes / (playMs / 1000) / 1024, checks };
+}
+
+for (const [n, seed] of [
+  [2, 1],
+  [3, 2],
+  [8, 3],
+  [8, 4],
+] as const) {
+  const { kbps, checks } = deltaFuzz(n, seed);
+  if (process.env.NET_VERBOSE) console.log(`delta n=${n} seed=${seed}: ${kbps.toFixed(2)} KB/s per client during play, ${checks} checks`);
+  assert(checks > 200, `delta n=${n}: enough comparisons (${checks})`);
+  assert(kbps < (n === 8 ? 4 : 2.5), `delta n=${n}: small enough (${kbps.toFixed(2)} KB/s per client)`);
+}
+
+{
+  // A plain step is a delta event and tick() returns false; a death sends the full view.
+  const h = start(3);
+  const [a, b, c] = h.t.ids;
+  quiet(h);
+  toPlay(h);
+  place(h, a, line(10, 10, "right"), "right");
+  place(h, b, line(10, 14, "right"), "right");
+  place(h, c, line(h.s.w - 1, 18, "right"), "right");
+  h.t.events.length = 0;
+  h.s.fullAt = h.t.ctx.now();
+  assert(tick(h) === true, "a crash sends the full view");
+  assert(h.t.events.length === 0, "and no delta");
+  h.t.events.length = 0;
+  assert(tick(h) === false, "a plain step returns false");
+  const d = h.t.events[0]?.event as SnakeDelta;
+  assert(d?.k === "d" && d.n === h.s.tick && d.m.length === 6, "a delta for the two live snakes");
+  assert(JSON.stringify(d).length < 90, `deltas are tiny (${JSON.stringify(d).length} bytes)`);
+  // Deltas fill the gaps between full views, which still come every KEYFRAME_MS.
+  let fulls = 0;
+  for (let i = 0; i < Math.ceil((KEYFRAME_MS * 2) / TICK_MS); i++) {
+    place(h, a, line(10, 10, "right"), "right");
+    place(h, b, line(10, 14, "right"), "right");
+    if (tick(h)) fulls += 1;
+  }
+  assert(fulls === 2, `a keyframe every ${KEYFRAME_MS}ms (${fulls})`);
+  // A missing step shows up as a gap; a keyframe on request closes it (once a second at most).
+  const v0 = JSON.parse(JSON.stringify(viewOf(h, a))) as SnakeView;
+  h.t.events.length = 0;
+  place(h, a, line(10, 10, "right"), "right");
+  place(h, b, line(10, 14, "right"), "right");
+  tick(h);
+  tick(h);
+  const later = h.t.events.map((e) => e.event as SnakeDelta).filter((e) => e.k === "d");
+  assert(later.length === 2, "two deltas");
+  let heardA = hear(nothingHeard, later[1]);
+  assert(rebuild(v0, heardA, a).gap, "a skipped step is a gap");
+  assert(applyDelta(v0, later[1], a) === null, "a delta only applies to the step before it");
+  h.t.events.length = 0;
+  assert(act(h, a, { type: "sync" }) === false, "sync never broadcasts");
+  const key = h.t.events.find((e) => (e.event as { k?: string }).k === "K");
+  assert(key && key.to === a, "the keyframe goes only to whoever asked");
+  heardA = hear(heardA, key.event as SnakeKeyframe);
+  const fixed = rebuild(v0, heardA, a);
+  assert(!fixed.gap && fixed.view?.tick === h.s.tick, "the keyframe closes the gap");
+  h.t.events.length = 0;
+  act(h, a, { type: "sync" });
+  assert(h.t.events.length === 0, "one keyframe a second per viewer");
+  const before = JSON.stringify(h.s);
+  assert(game.spectatorAction!(h.s, "spectator", { type: "sync" }, h.t.ctx) === false, "spectators can ask too");
+  assert(h.t.events.some((e) => e.to === "spectator"), "and get one");
+  assert(game.spectatorAction!(h.s, "spectator", { type: "turn", dir: "up" }, h.t.ctx) === false, "but can't steer");
+  assert(JSON.stringify(h.s) === before, "spectator requests never change the game");
+  // Your input echo goes only to you.
+  h.t.events.length = 0;
+  act(h, a, { type: "turn", dir: "up", seq: 77, at: h.s.tick + 1 });
+  const echo = h.t.events[0];
+  assert(echo?.to === a && (echo.event as SnakeInputEcho).rx === 77, "input echo, to you only");
 }
 
 console.log("snakes: all tests passed");

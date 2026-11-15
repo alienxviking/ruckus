@@ -28,6 +28,11 @@ import {
 // turn for the next tile boundary on its screen; the server holds an early turn until that
 // tick (a late one lands on the next tick). Each player's view carries their own input
 // status (`me`), from which the client learns how far ahead to run.
+//
+// Bandwidth: a play tick goes out as a small delta event (every painter's position and
+// counters, plus only the tiles that changed hands; see TurfDelta) and tick() returns false.
+// The full view (the whole board, renderable from scratch) goes out on phase changes, joins,
+// refreshes and every KEYFRAME_MS. A client that misses a tick asks for a keyframe ("sync").
 
 const SPAWN_FIRST_MS = 2_500;
 const SPAWN_MIN_MS = 5_000;
@@ -37,6 +42,12 @@ const MAX_POWERS = 3;
 const POWER_CLEARANCE = 3;
 /** With fewer than two painters online for this long, the game ends. */
 export const ABANDON_MS = 8_000;
+/** During play a full view (the whole board) still goes out this often: a safety net for deltas. */
+export const KEYFRAME_MS = 3_000;
+/** A viewer gets at most one requested keyframe this often. */
+const SYNC_MS = 1_000;
+/** A tick that repaints more than this share of the board sends the whole board instead. */
+const WHOLE_BOARD_SHARE = 0.25;
 
 export type Phase = "countdown" | "play" | "over";
 export type EndReason = "time" | "abandoned";
@@ -100,6 +111,8 @@ export interface TurfState {
   dirty: boolean;
   /** When the game dropped below two connected painters. */
   aloneSince: number | null;
+  /** When the last full view went out during play (deltas fill the gaps). */
+  fullAt: number;
   winners: string[] | null;
   endReason: EndReason | null;
 }
@@ -108,7 +121,51 @@ export interface TurfState {
  * `seq` numbers the client's inputs and `at` names the tick the turn should land on
  * (both optional; without `at` the turn happens on the next step).
  */
-export type TurfAction = { type: "turn"; dir: Dir; seq?: number; at?: number };
+export type TurfAction = { type: "turn"; dir: Dir; seq?: number; at?: number } | { type: "sync" };
+
+/**
+ * One play tick, sent to everyone as an event instead of a full view.
+ * Apply it to the view of tick `n - 1` (see delta.ts).
+ */
+export interface TurfDelta {
+  k: "d";
+  n: number;
+  /** Server time of the tick (TurfView.at) and the view's change counter. */
+  at: number;
+  seq: number;
+  /** Every painter, in order: [x, y, dir, tiles owned, open-loop length, ...]. */
+  p: number[];
+  /** Tiles that changed hands: 3 characters each (index in base 64, then the owner as in `tiles`). */
+  c?: string;
+  /** The whole board instead (after a big fill). */
+  b?: string;
+  /** Dash / freeze timers that changed: [painter, dashUntil, frozenUntil, ...]. */
+  dz?: number[];
+  /** Power-ups on the board, when they changed. */
+  pw?: PowerUp[];
+  /** Turns applied this tick: [painter, input number, ...]. */
+  ap?: number[];
+}
+
+/** A player's turn reached the server: [input number, ms it arrived before its tick]. Only to them. */
+export interface TurfInputEcho {
+  k: "m";
+  rx: number;
+  sl: number;
+  /** Countdown aims apply at once: this input number is also the last applied. */
+  ap?: number;
+}
+
+/** A full view on request (after a missed tick). Only to the one who asked. */
+export interface TurfKeyframe {
+  k: "K";
+  v: TurfView;
+}
+
+export type TurfWire = TurfDelta | TurfInputEcho | TurfKeyframe;
+
+/** URL- and JSON-safe base 64 digits for tile indices. */
+export const B64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
 
 /** Compact painter, to keep each tick's view small. */
 export type PainterTuple = [
@@ -166,7 +223,83 @@ export function paint(s: TurfState, i: number, owner: number): boolean {
   s.tiles[i] = owner;
   if (owner >= 0) s.painters[owner].count += 1;
   s.encDirty = true;
+  changedTiles(s).add(i);
   return true;
+}
+
+/** Tiles repainted since the last delta (bookkeeping for the wire, so kept out of TurfState). */
+const changes = new WeakMap<TurfState, Set<number>>();
+function changedTiles(s: TurfState): Set<number> {
+  let set = changes.get(s);
+  if (!set) changes.set(s, (set = new Set()));
+  return set;
+}
+/** When each viewer last got a keyframe they asked for. */
+const syncs = new WeakMap<TurfState, Map<string, number>>();
+
+const tileChar = (o: number) => (o < 0 ? "." : String.fromCharCode(48 + o));
+
+/** What a delta has to compare against, taken before a tick. */
+interface Before {
+  phase: Phase;
+  tick: number;
+  alone: number | null;
+  powers: string;
+  timers: number[];
+  applied: number[];
+}
+
+const powersKey = (s: TurfState) => s.powers.map((q) => `${q.x},${q.y},${q.kind}`).join(";");
+
+function beforeTick(s: TurfState): Before {
+  return {
+    phase: s.phase,
+    tick: s.tick,
+    alone: s.aloneSince,
+    powers: powersKey(s),
+    timers: s.painters.flatMap((p) => [p.dashUntil, p.frozenUntil]),
+    applied: s.painters.map((p) => p.applied),
+  };
+}
+
+/** The delta for a plain play tick (null when the tick needs a full view). */
+export function makeDelta(s: TurfState, b: Before): TurfDelta | null {
+  if (s.phase !== "play" || b.phase !== "play" || s.tick !== b.tick + 1 || s.aloneSince !== b.alone) return null;
+  const d: TurfDelta = {
+    k: "d",
+    n: s.tick,
+    at: s.stepAt,
+    seq: s.seq,
+    p: s.painters.flatMap((p) => [p.x, p.y, p.dir, p.count, p.out]),
+  };
+  const set = changedTiles(s);
+  if (set.size > s.tiles.length * WHOLE_BOARD_SHARE) d.b = encodeTiles(s);
+  else if (set.size) {
+    let c = "";
+    for (const i of set) c += B64[i >> 6] + B64[i & 63] + tileChar(s.tiles[i]);
+    d.c = c;
+  }
+  const dz: number[] = [];
+  const ap: number[] = [];
+  s.painters.forEach((p, i) => {
+    if (p.dashUntil !== b.timers[2 * i] || p.frozenUntil !== b.timers[2 * i + 1]) dz.push(i, p.dashUntil, p.frozenUntil);
+    if (p.applied !== b.applied[i]) ap.push(i, p.applied);
+  });
+  if (dz.length) d.dz = dz;
+  if (ap.length) d.ap = ap;
+  if (powersKey(s) !== b.powers) d.pw = s.powers.map((q) => ({ x: q.x, y: q.y, kind: q.kind }));
+  return d;
+}
+
+/** A client missed a tick: send it the full view as an event (at most once a second each). */
+function sendKeyframe(s: TurfState, viewerId: string, ctx: GameCtx): false {
+  let seen = syncs.get(s);
+  if (!seen) syncs.set(s, (seen = new Map()));
+  const now = ctx.now();
+  if (now - (seen.get(viewerId) ?? -Infinity) < SYNC_MS) return false;
+  seen.set(viewerId, now);
+  ctx.emit({ k: "K", v: turf.view(s, viewerId, ctx) as TurfView } satisfies TurfWire, { to: viewerId });
+  return false;
 }
 
 /**
@@ -438,6 +571,40 @@ function finish(s: TurfState, ctx: GameCtx, reason: EndReason) {
   ctx.end({ winners, headline, scores });
 }
 
+/** One tick of game flow. True when something players can see changed. */
+function advanceTick(s: TurfState, ctx: GameCtx): boolean {
+  if (isOver(s)) return false;
+  const now = ctx.now();
+  let changed = checkAbandon(s, ctx, now);
+  if (!isOver(s)) {
+    if (s.phase === "countdown") {
+      if (now >= s.endsAt) {
+        s.phase = "play";
+        s.endsAt = now + PLAY_MS;
+        s.stepAt = now;
+        s.nextSpawnAt = now + SPAWN_FIRST_MS;
+        changed = true;
+      } else if (s.dirty) {
+        changed = true;
+      }
+    } else if (now >= s.endsAt) {
+      finish(s, ctx, "time");
+      changed = true;
+    } else {
+      s.tick += 1;
+      s.stepAt = now;
+      if (movePainters(s, ctx, now)) changed = true;
+      if (now >= s.nextSpawnAt) {
+        if (spawnPower(s, ctx)) changed = true;
+        s.nextSpawnAt = now + SPAWN_MIN_MS + Math.floor(ctx.random() * (SPAWN_MAX_MS - SPAWN_MIN_MS));
+      }
+    }
+  }
+  s.dirty = false;
+  if (changed) s.seq += 1;
+  return changed;
+}
+
 // ---------- the game definition ----------
 
 export const turf: GameDef<TurfState, TurfAction> = {
@@ -477,6 +644,7 @@ export const turf: GameDef<TurfState, TurfAction> = {
       seq: 0,
       dirty: false,
       aloneSince: null,
+      fullAt: 0,
       winners: null,
       endReason: null,
     };
@@ -490,11 +658,12 @@ export const turf: GameDef<TurfState, TurfAction> = {
   },
 
   action(s, playerId, action, ctx) {
+    const a: unknown = action;
+    if (typeof a !== "object" || a === null || Array.isArray(a)) return false;
+    if ((a as { type?: unknown }).type === "sync") return sendKeyframe(s, playerId, ctx);
     if (s.phase === "over") return false;
     const idx = s.painters.findIndex((p) => p.id === playerId);
     if (idx === -1) return false;
-    const a: unknown = action;
-    if (typeof a !== "object" || a === null || Array.isArray(a)) return false;
     const { type, dir, seq, at } = a as { type?: unknown; dir?: unknown; seq?: unknown; at?: unknown };
     if (type !== "turn" || typeof dir !== "string" || dir.length > 5) return false;
     if (seq !== undefined && !isCount(seq)) return false;
@@ -511,6 +680,7 @@ export const turf: GameDef<TurfState, TurfAction> = {
         p.rx = n;
         p.applied = n;
         p.slack = 0;
+        ctx.emit({ k: "m", rx: n, sl: 0, ap: n } satisfies TurfWire, { to: playerId });
       }
       if (p.dir !== d) {
         p.dir = d;
@@ -524,6 +694,7 @@ export const turf: GameDef<TurfState, TurfAction> = {
     if (n) {
       p.rx = n;
       p.slack = when > 0 ? clamp(Math.round(s.stepAt + (when - s.tick) * TICK_MS - ctx.now()), -999, 999) : 0;
+      ctx.emit({ k: "m", rx: p.rx, sl: p.slack } satisfies TurfWire, { to: playerId });
     }
     // Reversals allowed; this is not a snake.
     const last = p.queue.length ? p.queue[p.queue.length - 1].d : p.dir;
@@ -537,36 +708,28 @@ export const turf: GameDef<TurfState, TurfAction> = {
   },
 
   tick(s, ctx) {
-    if (isOver(s)) return false;
+    const b = beforeTick(s);
+    const changed = advanceTick(s, ctx);
     const now = ctx.now();
-    let changed = checkAbandon(s, ctx, now);
-    if (!isOver(s)) {
-      if (s.phase === "countdown") {
-        if (now >= s.endsAt) {
-          s.phase = "play";
-          s.endsAt = now + PLAY_MS;
-          s.stepAt = now;
-          s.nextSpawnAt = now + SPAWN_FIRST_MS;
-          changed = true;
-        } else if (s.dirty) {
-          changed = true;
-        }
-      } else if (now >= s.endsAt) {
-        finish(s, ctx, "time");
-        changed = true;
-      } else {
-        s.tick += 1;
-        s.stepAt = now;
-        if (movePainters(s, ctx, now)) changed = true;
-        if (now >= s.nextSpawnAt) {
-          if (spawnPower(s, ctx)) changed = true;
-          s.nextSpawnAt = now + SPAWN_MIN_MS + Math.floor(ctx.random() * (SPAWN_MAX_MS - SPAWN_MIN_MS));
-        }
-      }
+    // A plain play tick: everyone gets a small delta instead of the whole board.
+    const d = now - s.fullAt < KEYFRAME_MS ? makeDelta(s, b) : null;
+    changedTiles(s).clear();
+    if (d) {
+      ctx.emit(d satisfies TurfWire);
+      return false;
     }
-    s.dirty = false;
-    if (changed) s.seq += 1;
+    if (s.phase === "play" && b.phase === "play") {
+      s.fullAt = now;
+      return true; // a keyframe
+    }
+    if (changed) s.fullAt = now;
     return changed;
+  },
+
+  spectatorAction(s, viewerId, action, ctx) {
+    const a: unknown = action;
+    if (!a || typeof a !== "object" || (a as { type?: unknown }).type !== "sync") return false;
+    return sendKeyframe(s, viewerId, ctx);
   },
 
   view(s, viewerId): TurfView {

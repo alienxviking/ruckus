@@ -19,6 +19,7 @@ import {
 } from "./shared";
 import { Arena } from "./arena";
 import { SnakePredictor } from "./predict";
+import { hear, isSnakeEvent, nothingHeard, rebuild, type Heard } from "./delta";
 
 type Props = GameClientProps<SnakeView, SnakeAction>;
 
@@ -118,9 +119,33 @@ function isTyping(t: EventTarget | null) {
 }
 
 export default function SnakeBrawl(props: Props) {
+  const { view, onEvent, act, me } = props;
+  // Full views come on phase changes and every few seconds; each step in between is a tiny
+  // delta event. The view shown is the newest full view with every delta since replayed.
+  const [heard, setHeard] = useState<Heard>(nothingHeard);
+  useEffect(
+    () =>
+      onEvent((e) => {
+        if (isSnakeEvent(e)) setHeard((h) => hear(h, e));
+      }),
+    [onEvent],
+  );
   // Also guards against a stale view from another game arriving before ours.
-  if (!props.view || !Array.isArray(props.view.snakes)) return <Note>Setting up the arena…</Note>;
-  return <Brawl {...props} view={props.view} />;
+  const base = view && Array.isArray(view.snakes) ? view : null;
+  const live = useMemo(() => rebuild(base, heard, me), [base, heard, me]);
+  // A step went missing (say, before we subscribed): ask for a full view, and keep asking.
+  const gap = live.gap;
+  useEffect(() => {
+    if (!gap) return;
+    const first = setTimeout(() => act({ type: "sync" }), 120);
+    const again = setInterval(() => act({ type: "sync" }), 1_100);
+    return () => {
+      clearTimeout(first);
+      clearInterval(again);
+    };
+  }, [gap, act]);
+  if (!live.view) return <Note>Setting up the arena…</Note>;
+  return <Brawl {...props} view={live.view} />;
 }
 
 function Brawl({ view, me, players, byId, isPlayer, act, serverNow, accent }: Omit<Props, "view"> & { view: SnakeView }) {

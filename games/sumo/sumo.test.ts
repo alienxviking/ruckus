@@ -836,6 +836,24 @@ for (const [up, down, jitter] of [
   assert(Math.abs(k.vx) < 1, `a refused dash vanishes from the replay (${k.vx.toFixed(1)})`);
 }
 
+// ---------- the first guess at the lead comes from the room's measured round trip ----------
+{
+  const pred = new SumoPredictor();
+  assert(pred.lead() === 80, "no measurement yet: a typical phone round trip");
+  let rtt: number | null = null;
+  pred.attachRtt(() => rtt);
+  assert(pred.lead() === 80, "still unmeasured");
+  rtt = 140;
+  assert(pred.lead() === 140 - TICK_MS / 2, `measured: one round trip less the backdated half tick (${pred.lead()})`);
+  rtt = 0;
+  assert(pred.lead() === 0, "the simulator's zero round trip");
+  // Once the server acknowledges an input, its own timing wins.
+  pred.attachClock({ ready: true, serverNow: (p) => p });
+  const seq = pred.recordInput(100, 0, 1_000);
+  pred.ack(seq, 1_000 + 66);
+  assert(pred.lead() === 66, `acknowledged timing takes over (${pred.lead()})`);
+}
+
 // ---------- adaptive playback delay ----------
 {
   const steady = new JitterDelay(55, 120, 100);
