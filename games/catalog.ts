@@ -32,9 +32,9 @@ export const CATALOG: GameMeta[] = [
     emoji: "🎨",
     accent: "#f472b6",
     how: [
-      "Each round one player draws a secret word.",
-      "Everyone else types guesses. Faster correct guesses score more.",
-      "The artist scores for every player who gets it.",
+      "Take turns drawing: pick one of three secret words and sketch it in 80 seconds.",
+      "Everyone else races to type the word. Faster guesses score more, and letter hints appear over time.",
+      "The artist earns 60 points per correct guess. Most points once everyone has drawn wins.",
     ],
   },
   {
@@ -64,9 +64,9 @@ export const CATALOG: GameMeta[] = [
     emoji: "🔤",
     accent: "#fb923c",
     how: [
-      "A random letter and a list of categories appear.",
-      "Write an answer for each category starting with that letter.",
-      "Everyone votes out bad answers. Unique answers score double.",
+      "Each round: one letter, six categories, 90 seconds to write an answer for each that starts with it.",
+      "Then review everyone's answers and 👎 veto any that don't fit. Half the others' vetoes knock one out.",
+      "Unique answers score 10, shared ones 5. Three rounds, highest total wins.",
     ],
   },
   {
@@ -80,9 +80,9 @@ export const CATALOG: GameMeta[] = [
     emoji: "🐍",
     accent: "#4ade80",
     how: [
-      "Steer with arrow keys / WASD, or swipe on mobile.",
-      "Eat food to grow. Hit a wall or another snake and you're out.",
-      "Last snake standing wins the round. Best of 3.",
+      "Steer with arrow keys or WASD. On phones, swipe the board or use the on-screen pad.",
+      "Eat glowing pellets to grow (gold stars give +3). Hit a wall or any snake, even yourself, and you're out.",
+      "Last snake standing takes the round, or the longest after 90s. First to 2 round wins takes the match.",
     ],
   },
   {
@@ -97,9 +97,9 @@ export const CATALOG: GameMeta[] = [
     accent: "#38bdf8",
     original: true,
     how: [
-      "Move around the grid. Every tile you cross turns your colour.",
-      "Close a loop of your own tiles to fill everything inside it.",
-      "Grab power-ups for speed and paint bursts. Most tiles at the end wins.",
+      "Steer with arrows/WASD, a swipe or the on-screen pad. Every tile you enter turns your colour.",
+      "Leave your turf and loop back: everything you wall off from the map edge becomes yours, rivals’ paint too.",
+      "Grab ⚡ dashes, 💣 paint bombs and 🧊 freezes. Most of the map after 60 seconds wins.",
     ],
   },
   {
@@ -113,9 +113,9 @@ export const CATALOG: GameMeta[] = [
     emoji: "🤠",
     accent: "#f87171",
     how: [
-      "Wait for the signal, then tap as fast as you can.",
-      "Tap too early and you're out for the round.",
-      "Some signals are fakes. First to 5 points wins.",
+      "Hands off until the panel turns green and says DRAW!, then tap anywhere (or press Space) as fast as you can.",
+      "Tap early, or fall for a yellow fake like DRAW? or DRAMA!, and you sit out the round.",
+      "Fastest tap scores a point and exact ties all score. First to 5 wins.",
     ],
   },
   {
@@ -197,9 +197,9 @@ export const CATALOG: GameMeta[] = [
     emoji: "🔳",
     accent: "#60a5fa",
     how: [
-      "On your turn, draw one line between two dots.",
-      "Close a box to claim it and take another turn.",
-      "Most boxes when the grid is full wins.",
+      "On your turn, draw one line between two neighbouring dots. You have 30 seconds per move.",
+      "Close the fourth side of a box to claim it and move again. Careful: a third side hands it over.",
+      "Most boxes when the grid is full wins. Idle or disconnected players' moves are auto-played.",
     ],
   },
   {
