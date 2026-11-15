@@ -17,6 +17,8 @@ export interface GameClientProps<V = unknown, A = unknown> {
   act: (action: A) => void;
   /** Current server time in ms (corrected for clock skew). Use for countdowns. */
   serverNow: () => number;
+  /** Latest measured round trip to the game server in ms (null until measured). Optional. */
+  rtt?: () => number | null;
   /** Subscribe to transient events sent via ctx.emit. Returns an unsubscribe fn. */
   onEvent: (fn: (event: unknown) => void) => () => void;
   /** Game accent colour from the catalog. */

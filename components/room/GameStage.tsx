@@ -59,6 +59,7 @@ export function GameStage({
               isHost={isHost}
               act={r.act}
               serverNow={r.serverNow}
+              rtt={r.ping.get}
               onEvent={r.onEvent}
               accent={meta?.accent ?? "#ff5d73"}
             />

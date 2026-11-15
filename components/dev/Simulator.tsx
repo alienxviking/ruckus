@@ -20,6 +20,9 @@ import type { GameDef } from "@/shared/game";
 import type { Player } from "@/shared/types";
 import { SimEngine, SPECTATOR, type AnyClient } from "./sim-engine";
 
+/** The simulator has no network. */
+const simRtt = () => 0;
+
 export function Simulator({ gameId, initialPlayers }: { gameId: string; initialPlayers: number }) {
   const meta = CATALOG_BY_ID[gameId];
   const router = useRouter();
@@ -180,6 +183,7 @@ export function Simulator({ gameId, initialPlayers }: { gameId: string; initialP
                         isHost={v.id === "p0"}
                         act={h.act}
                         serverNow={h.serverNow}
+                        rtt={simRtt}
                         onEvent={h.onEvent}
                         accent={meta.accent}
                       />
