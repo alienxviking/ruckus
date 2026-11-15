@@ -246,7 +246,6 @@ export const CATALOG: GameMeta[] = [
     minutes: 10,
     emoji: "📞",
     accent: "#fda4af",
-    isNew: true,
     how: [
       "Everyone writes a prompt. Books pass along: draw the words you get, then describe the drawing you get.",
       "You only ever see the page before yours, so the message garbles as it travels.",
@@ -263,7 +262,6 @@ export const CATALOG: GameMeta[] = [
     minutes: 12,
     emoji: "🎲",
     accent: "#a3e635",
-    isNew: true,
     how: [
       "Everyone rolls hidden dice. Bid how many of a face are on the whole table; ones are wild.",
       "On your turn, raise the bid (more dice, or a higher face) or call Liar! Whoever was wrong loses a die.",
@@ -280,7 +278,6 @@ export const CATALOG: GameMeta[] = [
     minutes: 5,
     emoji: "📈",
     accent: "#14b8a6",
-    isNew: true,
     original: true,
     how: [
       "Everyone gets a secret card. The contract pays the sum of every card: all players' plus 3 street cards.",
@@ -298,7 +295,6 @@ export const CATALOG: GameMeta[] = [
     minutes: 6,
     emoji: "💣",
     accent: "#f59e0b",
-    isNew: true,
     original: true,
     how: [
       "Drag back from your tank like a slingshot (or use the sliders), pick a shell and lock in your shot.",
@@ -316,7 +312,6 @@ export const CATALOG: GameMeta[] = [
     minutes: 3,
     emoji: "🕹️",
     accent: "#818cf8",
-    isNew: true,
     original: true,
     how: [
       "A rapid run of 12 tiny games: spot the odd emoji, quick sums, stop the clock, tap like mad and more.",
@@ -334,7 +329,6 @@ export const CATALOG: GameMeta[] = [
     minutes: 4,
     emoji: "🤼",
     accent: "#a5f3fc",
-    isNew: true,
     original: true,
     how: [
       "Slide with WASD/arrows or hold the left half of the rink; Space, DASH or a right-half tap gives a burst.",
@@ -352,7 +346,6 @@ export const CATALOG: GameMeta[] = [
     minutes: 5,
     emoji: "🏰",
     accent: "#d6a35c",
-    isNew: true,
     original: true,
     how: [
       "Each round, secretly split 100 troops across five castles worth 2–9 points.",

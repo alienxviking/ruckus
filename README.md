@@ -24,6 +24,13 @@ Real-time party games for 2–12 friends in the browser. Make a room, send the l
 | Blitz | 1–12 | Twelve microgames, a few seconds each: odd emoji out, stop the clock, tap frenzy… |
 | Ice Sumo | 2–8 | Real-time physics: shove everyone off a shrinking ice rink |
 | Warlords | 2–12 | Split 100 troops over five castles; one hides a dragon. Past moves are public |
+| Incognito | 3–8 | You're one walker in a crowd of identical bots: blend in, light landmarks, snipe the humans |
+| Mine Rush | 1–8 | Competitive minesweeper: everyone digs one shared field at once |
+| Going, Going, Gone! | 3–8 | Live auction of mystery crates; you've secretly peeked inside a few, some are cursed |
+| Hot Potato | 3–12 | A bomb with a hidden fuse: solve a micro-puzzle to throw it, don't be holding it |
+| Putt Panic | 2–8 | Mini golf where everyone putts at once and balls collide |
+| Canvas Clash | 2–8 | Paint your secret pixel emblem on a shared canvas and wreck everyone else's |
+| Double Cross | 3–10 | Split or steal, with private chats to make (and break) promises |
 
 ## Run it
 
