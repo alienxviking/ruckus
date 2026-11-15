@@ -147,9 +147,9 @@ export const CATALOG: GameMeta[] = [
     accent: "#34d399",
     original: true,
     how: [
-      "Everyone sees a weird but true fact with a blank in it.",
-      "Fill the blank with a believable fake answer.",
-      "Then find the real answer among all the fakes. Score for fooling friends.",
+      "Everyone gets a strange-but-true fact with a blank. Fill it with a fib that sounds true.",
+      "Then spot the real answer among everyone's fibs: finding the truth scores +500.",
+      "Every friend who falls for your fib earns you +250. Most points after 6 rounds wins.",
     ],
   },
   {
