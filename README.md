@@ -55,13 +55,26 @@ browser ──websocket──▶ PartyKit room (one Durable Object per room code
   interpolates between ticks, so motion is smooth at the display's refresh rate on roughly 5–11 KB/s per player.
 - **Spectators.** Anyone who joins mid-game watches; games can accept read-only requests from spectators through the
   optional `spectatorAction` hook (Sketch Storm uses it to send the drawing so far).
-- **Lazy game code.** Each game's UI is its own chunk, so a room only downloads the game being played.
+- **Lazy game code.** Each game's UI is its own chunk, so a room only downloads the game being played, and it is
+  preloaded as soon as the host picks it.
 - **Identity.** Each browser stores a random player id plus a secret key in `localStorage`. The key proves a socket owns
   that id, so refreshing or reconnecting keeps your seat, and nobody can hijack someone else's player.
 - **Host** is the first player; if the host is gone for 8 s another player takes over. Disconnected players keep their
   spot in a running game and are removed from the lobby after 60 s.
 - **Limits:** 12 players per room, per-connection message rate limits, chat throttling. Rooms live in memory and reset
   once everyone has been gone for 30 s.
+
+## Fast, and free to host
+
+- **Rooms are static pages.** `/r/CODE` is rewritten to one prerendered page (`app/room`), served from the CDN. No server
+  render per room; the browser reads the code from the address bar.
+- **Clock sync.** Clients ping the room server (a burst on connect, then every 8 s) and keep the offset from the fastest
+  round trip, so countdowns, reaction timers and replays line up across devices. The header shows the live round trip.
+- **Small messages.** Chat travels as deltas, game views are only re-sent to players whose view changed, and
+  high-frequency data (strokes, snapshots, pixels) goes out as tiny events. Real-time games interpolate between server
+  snapshots and predict your own movement locally, so your controls respond instantly.
+- **Quick recovery.** Fast reconnect backoff, plus an immediate reconnect when a phone wakes up or comes back online.
+- **Idle rooms sleep.** Timers stop once a room has been empty for 30 s, so an abandoned room stops using server time.
 
 ## Project layout
 
@@ -110,3 +123,8 @@ The e2e and browser scripts need `npm run dev` running. Browser scripts use the 
    to the site's public URL so shared links show the preview image (see `.env.example`).
 
 The website itself never needs a WebSocket server, so it runs on any static/serverless host.
+
+**Staying on free tiers.** The site is static apart from the dev-only simulator, so it fits easily in a free Vercel
+(Hobby) project. The room server keeps everything in memory (no storage). On Cloudflare's free Workers plan, Durable
+Objects allow 100k requests and 13,000 GB-s of room time per day. Incoming WebSocket messages count 20:1 and outgoing ones
+are free, so the binding limit is how long rooms stay open: roughly 29 room-hours a day, which is plenty for friends.
