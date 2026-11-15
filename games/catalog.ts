@@ -249,8 +249,8 @@ export const CATALOG: GameMeta[] = [
     isNew: true,
     how: [
       "Everyone writes a prompt. Books pass along: draw the words you get, then describe the drawing you get.",
-      "Nobody sees more than the page before theirs, so the message garbles as it travels.",
-      "Then watch every book unfold page by page and react. Most-loved pages win.",
+      "You only ever see the page before yours, so the message garbles as it travels.",
+      "Then every book is revealed page by page. React with 😂🔥😮❤️; the most-loved pages win.",
     ],
   },
   {
