@@ -12,6 +12,9 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Local screenshots and scratch scripts from the simulator/smoke tests.
+    ".shots/**",
+    ".partykit/**",
   ]),
 ]);
 
