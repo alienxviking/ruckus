@@ -15,6 +15,8 @@ import {
   ScoreStrip,
   Tracker,
   isTypingTarget,
+  ordinal,
+  rankOf,
   useRevealClock,
   type ById,
 } from "./ui";
@@ -47,12 +49,12 @@ export default function FibFinder({ view, me, players, byId, isPlayer, act, serv
       {view.shortUntil !== null && view.phase !== "final" && <ShortWarning until={view.shortUntil} serverNow={serverNow} />}
 
       {revealing ? (
-        <RevealPhase key={view.round} view={view} summary={last} me={me} byId={byId} serverNow={serverNow} accent={accent} />
+        <RevealPhase key={`reveal-${view.round}`} view={view} summary={last} me={me} byId={byId} serverNow={serverNow} accent={accent} />
       ) : (
         <>
           <div aria-live="polite" aria-atomic="true">
             <StatusBanner key={`${view.phase}-${view.round}-${statusKey(view, isPlayer)}`} accent={accent}>
-              {statusLine(view, isPlayer)}
+              {statusLine(view, isPlayer, me)}
             </StatusBanner>
           </div>
 
@@ -60,11 +62,13 @@ export default function FibFinder({ view, me, players, byId, isPlayer, act, serv
 
           {view.phase === "write" &&
             (isPlayer ? (
-              <WritePanel key={view.round} view={view} act={act} onEvent={onEvent} accent={accent} />
+              <WritePanel key={view.round} view={view} act={act} onEvent={onEvent} serverNow={serverNow} accent={accent} />
             ) : (
               <>
                 <FactCard prompt={view.prompt} round={view.round} accent={accent} />
-                <SpectatorNote />
+                <div key={`watch-${view.round}`} className="fib-in">
+                  <SpectatorNote />
+                </div>
               </>
             ))}
 
@@ -82,7 +86,11 @@ export default function FibFinder({ view, me, players, byId, isPlayer, act, serv
             />
           )}
 
-          {view.phase === "final" && <FinalScreen view={view} byId={byId} me={me} accent={accent} />}
+          {view.phase === "final" && (
+            <div key="final" className="fib-in">
+              <FinalScreen view={view} byId={byId} me={me} accent={accent} />
+            </div>
+          )}
 
           {view.phase !== "final" && <ScoreStrip scores={view.scores} byId={byId} me={me} />}
         </>
@@ -100,16 +108,28 @@ function statusKey(view: FibView, isPlayer: boolean): string {
   return "x";
 }
 
-function statusLine(view: FibView, isPlayer: boolean): ReactNode {
+function statusLine(view: FibView, isPlayer: boolean, me: string): ReactNode {
   switch (view.phase) {
     case "write":
       if (!isPlayer) return <>✍️ The players are writing fibs…</>;
       return view.myLie ? <>✅ Fib in! Waiting for the others…</> : <>✍️ Write a fib that sounds true</>;
     case "pick":
       if (!isPlayer) return <>🔍 The players are hunting for the truth…</>;
-      return view.myPick !== null ? <>🔒 Locked in! Waiting for the others…</> : <>🔍 Which one is the truth?</>;
-    case "final":
-      return <>🏁 That&apos;s the game!</>;
+      return view.myPick !== null ? <>🔒 Locked in! Now we wait…</> : <>🔍 Which one is the truth?</>;
+    case "final": {
+      if (!isPlayer || !(me in view.scores)) return <>🏁 That&apos;s the game!</>;
+      const rank = rankOf(view.scores, me);
+      const total = Object.keys(view.scores).length;
+      if (rank === 1 && (view.scores[me] ?? 0) > 0) {
+        const tied = Object.values(view.scores).filter((v) => v === view.scores[me]).length > 1;
+        return tied ? <>🏆 You tied for the win!</> : <>🏆 You won Fib Finder!</>;
+      }
+      return (
+        <>
+          🏁 You finished {ordinal(rank)} of {total}
+        </>
+      );
+    }
     default:
       return <>🎭 The reveal!</>;
   }
@@ -175,13 +195,16 @@ function WritePanel({
   view,
   act,
   onEvent,
+  serverNow,
   accent,
 }: {
   view: FibView;
   act: Props["act"];
   onEvent: Props["onEvent"];
+  serverNow: Props["serverNow"];
   accent: string;
 }) {
+  const secs = useSecondsLeft(view.endsAt, serverNow);
   const id = useId();
   const hintId = `${id}-hint`;
   const [draft, setDraft] = useState(view.myLie ?? "");
@@ -190,6 +213,7 @@ function WritePanel({
   const [error, setError] = useState<{ message: string; truth: boolean } | null>(null);
   const [shakes, setShakes] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
+  const editRef = useRef<HTMLButtonElement>(null);
 
   useEffect(
     () =>
@@ -206,16 +230,21 @@ function WritePanel({
   const showForm = editing || (view.myLie === null && pending === null);
 
   // Jump into the box when it (re)appears, unless the player is typing somewhere else (chat).
+  // After a submit the form goes away: put focus on the "tap to edit" card instead of
+  // dropping it on <body>, so keyboard and screen-reader users keep their place.
   useEffect(() => {
-    if (!showForm) return;
     const active = document.activeElement;
-    if (!active || active === document.body || active.closest("[data-fib-edit]")) inputRef.current?.focus();
+    const free = !active || active === document.body;
+    if (showForm && (free || active?.closest("[data-fib-edit]"))) inputRef.current?.focus();
+    else if (!showForm && free) editRef.current?.focus();
   }, [showForm]);
 
   const problem = draft.trim() ? lieProblem(draft) : null;
   const ready = draft.trim().length > 0 && !problem;
   const shown = error?.message ?? problem;
   const length = [...draft].length;
+  // A typed but unsent fib is lost when the timer runs out: nudge in the last seconds.
+  const hurry = ready && secs > 0 && secs <= 10 && cleanLie(draft) !== view.myLie;
 
   const submit = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -237,7 +266,8 @@ function WritePanel({
   };
 
   const sent = view.myLie !== null && (pending === null || pending === view.myLie);
-  const fibText = view.myLie ?? pending ?? "";
+  // While an edit is in flight show the new text (with "sending" dots), not the old fib.
+  const fibText = pending ?? view.myLie ?? "";
 
   return (
     <div className="flex flex-col gap-3">
@@ -253,7 +283,7 @@ function WritePanel({
         <form
           onSubmit={submit}
           noValidate
-          className="card animate-pop flex flex-col gap-1.5 p-3"
+          className="card fib-in flex flex-col gap-1.5 p-3"
           style={{ borderColor: accent, boxShadow: `0 0 0 3px ${accent}26, 0 12px 30px -12px ${accent}66` }}
         >
           <label htmlFor={id} className="label" style={{ color: accent }}>
@@ -270,7 +300,7 @@ function WritePanel({
               autoCorrect="off"
               spellCheck={false}
               enterKeyHint="send"
-              placeholder="A believable fake answer"
+              placeholder="A believable fake"
               aria-invalid={!!shown}
               aria-describedby={hintId}
               onChange={(e) => {
@@ -278,7 +308,12 @@ function WritePanel({
                 setError(null);
               }}
             />
-            <button type="submit" className="btn btn-primary min-h-11 shrink-0 px-4" disabled={!ready}>
+            {/* Neutral until there's something to send, then the bright primary style. */}
+            <button
+              type="submit"
+              className={`btn min-h-11 shrink-0 px-4 ${ready ? "btn-primary" : "text-muted"}`}
+              disabled={!ready}
+            >
               {view.myLie ? "Update" : "Submit"}
             </button>
           </div>
@@ -286,10 +321,16 @@ function WritePanel({
             <span
               id={hintId}
               aria-live="polite"
-              className={error?.truth ? "animate-pop font-semibold" : shown ? "text-brand" : "text-muted"}
+              className={error?.truth ? "animate-pop font-semibold" : shown || hurry ? "font-semibold text-brand" : "text-muted"}
               style={error?.truth ? { color: accent } : undefined}
             >
-              {error?.truth ? `🤫 ${error.message}` : shown ? `⚠️ ${shown}` : "Make it sound true. Others will try to spot it."}
+              {error?.truth
+                ? `🤫 ${error.message}`
+                : shown
+                  ? `⚠️ ${shown}`
+                  : hurry
+                    ? `⏰ ${view.myLie ? "Hit Update" : "Hit Submit"}, time's almost up!`
+                    : "Make it sound true. Others will try to spot it."}
             </span>
             <span aria-hidden className={`shrink-0 font-mono tabular-nums ${length >= MAX_LIE ? "text-brand" : "text-muted"}`}>
               {length}/{MAX_LIE}
@@ -311,13 +352,14 @@ function WritePanel({
         </form>
       ) : (
         <button
+          ref={editRef}
           type="button"
           data-fib-edit
           onClick={() => {
             setDraft(fibText);
             setEditing(true);
           }}
-          className="card animate-pop flex min-h-24 w-full flex-col gap-1 p-3 text-left transition-colors hover:border-text/40"
+          className="card fib-in flex min-h-24 w-full flex-col gap-1 p-3 text-left transition-colors hover:border-text/40"
           style={{ borderColor: accent + "88", background: `linear-gradient(135deg, ${accent}1f, transparent 70%), var(--color-panel)` }}
           aria-label={`Your fib: ${fibText}. ${sent ? "Submitted" : "Sending"}. Tap to edit.`}
         >
@@ -326,7 +368,8 @@ function WritePanel({
               Your fib
             </span>
             <span
-              className="rounded-full px-2 py-0.5 text-xs font-semibold"
+              key={sent ? "sent" : "sending"}
+              className={`rounded-full px-2 py-0.5 text-xs font-semibold ${sent ? "animate-pop" : ""}`}
               style={sent ? { color: "#06281c", background: accent } : { color: "var(--color-muted)", background: "var(--color-ink)" }}
             >
               {sent ? "Submitted ✓" : <Dots />}
@@ -413,11 +456,11 @@ function PickPanel({
                 disabled={!canPick}
                 aria-pressed={isPlayer ? mine : undefined}
                 onClick={() => choose(o.id)}
-                className={`card animate-rise relative flex min-h-14 min-w-0 items-center gap-3 px-3 py-2.5 text-left transition-[transform,border-color,background-color,box-shadow,opacity] duration-150 enabled:hover:-translate-y-0.5 enabled:active:scale-[0.98] disabled:cursor-default ${
-                  chosen !== null && !mine ? "opacity-50" : ""
+                className={`card fib-in relative flex min-h-14 min-w-0 items-center gap-3 px-3 py-2.5 text-left transition-[transform,border-color,background-color,box-shadow,opacity] duration-200 ease-out enabled:hover:-translate-y-0.5 enabled:active:scale-[0.98] disabled:cursor-default ${
+                  mine ? "fib-lock" : chosen !== null ? "opacity-50" : ""
                 }`}
                 style={{
-                  animationDelay: `${i * 45}ms`,
+                  animationDelay: mine ? undefined : `${80 + i * 55}ms`,
                   ...(mine ? { borderColor: accent, background: accent + "26", boxShadow: `0 0 0 2px ${accent}` } : {}),
                 }}
               >
@@ -431,7 +474,8 @@ function PickPanel({
                 <span className="min-w-0 flex-1 font-display text-lg leading-tight font-bold [overflow-wrap:anywhere]">{o.text}</span>
                 {mine && (
                   <span className="animate-pop shrink-0 text-xs font-bold tracking-wider uppercase" style={{ color: accent }}>
-                    🔒 Your pick
+                    <span aria-hidden>🔒</span>
+                    <span className="hidden @sm:inline"> Your pick</span>
                   </span>
                 )}
               </button>
@@ -474,8 +518,9 @@ function RevealPhase({
   serverNow: () => number;
   accent: string;
 }) {
-  const { step, done } = useRevealClock(view.revealAt, view.stepMs, summary.steps.length, serverNow);
+  const { step, beat, done } = useRevealClock(view.revealAt, view.stepMs, summary.steps.length, serverNow);
   const truthNow = summary.options[summary.steps[step]]?.kind === "truth";
+  const stage = done ? "done" : truthNow ? "truth" : "fibs";
   // Hold back this round's points until the walk-through is over, so the strip doesn't spoil it.
   const shownScores = done
     ? view.scores
@@ -484,13 +529,21 @@ function RevealPhase({
   return (
     <>
       <div aria-live="polite" aria-atomic="true">
-        <StatusBanner key={`reveal-${view.round}-${truthNow ? "truth" : "fibs"}`} accent={accent}>
-          {truthNow ? <>✨ And the truth is…</> : <>🎭 Exposing the fibs…</>}
+        <StatusBanner key={`reveal-${view.round}-${stage}`} accent={accent}>
+          {stage === "done" ? (
+            <>✨ Round {summary.round} points are in!</>
+          ) : stage === "truth" ? (
+            <>🥁 And the truth is…</>
+          ) : (
+            <>🎭 Exposing the fibs…</>
+          )}
         </StatusBanner>
       </div>
       <PhaseTimer view={view} serverNow={serverNow} accent={accent} label={last ? "Final scores in" : "Next fact in"} total={view.endsAt - view.revealAt} />
-      <RevealStage s={summary} step={step} done={done} byId={byId} me={me} accent={accent} />
-      <ScoreStrip scores={shownScores} byId={byId} me={me} gains={done ? summary.points : null} />
+      <div className="fib-in flex flex-col gap-3">
+        <RevealStage s={summary} step={step} beat={beat} done={done} byId={byId} me={me} accent={accent} />
+        <ScoreStrip scores={shownScores} byId={byId} me={me} gains={done ? summary.points : null} />
+      </div>
     </>
   );
 }

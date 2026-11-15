@@ -2,15 +2,20 @@
 
 // Presentational pieces for Fib Finder. Pure UI: everything arrives via props.
 
-import { Fragment, type CSSProperties, type ReactNode } from "react";
-import { PlayerChip, Scoreboard, useTicker } from "@/components/game-ui";
+import { Fragment, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { PlayerChip, useTicker } from "@/components/game-ui";
 import type { Player } from "@/shared/types";
 import type { Awards, FibView, RevealOption, RoundSummary } from "./server";
 import { POINTS, formatPoints, splitPrompt } from "./shared";
 
-// Small, game-scoped keyframes (hoisted and de-duplicated by React). Big motion is off
-// for prefers-reduced-motion; animate-pop / animate-rise are handled by globals.css.
+// Small, game-scoped keyframes (hoisted and de-duplicated by React). Motion follows the
+// app-wide conventions: entrances use cubic-bezier(.2,.8,.2,1) on transform + opacity,
+// playful pops use the pop curve cubic-bezier(.2,1.4,.4,1). With prefers-reduced-motion
+// every big motion is off (entrances become a short fade) and nothing is left hidden.
 const CSS = `
+@keyframes fib-in { from { opacity: 0; transform: translateY(10px) } to { opacity: 1; transform: none } }
+.fib-in { animation: fib-in .32s cubic-bezier(.2,.8,.2,1) backwards }
+@keyframes fib-fade { from { opacity: 0 } to { opacity: 1 } }
 @keyframes fib-shake { 0%,100% { transform: none } 20% { transform: translateX(-6px) } 40% { transform: translateX(5px) } 60% { transform: translateX(-3px) } 80% { transform: translateX(2px) } }
 @keyframes fib-shake-b { 0%,100% { transform: none } 20% { transform: translateX(-6px) } 40% { transform: translateX(5px) } 60% { transform: translateX(-3px) } 80% { transform: translateX(2px) } }
 .fib-shake-0 { animation: fib-shake .32s ease both }
@@ -21,19 +26,28 @@ const CSS = `
 .fib-dot:nth-child(3) { animation-delay: .3s }
 @keyframes fib-blink { 0%, 100% { opacity: .55 } 50% { opacity: 1 } }
 .fib-blank { animation: fib-blink 1.6s ease-in-out infinite }
-@keyframes fib-flip { from { transform: perspective(500px) rotateX(80deg); opacity: 0 } to { transform: none; opacity: 1 } }
-.fib-flip { animation: fib-flip .5s cubic-bezier(.2,1.25,.4,1) both }
-@keyframes fib-stamp { 0% { transform: scale(2.2) rotate(-14deg); opacity: 0 } 60% { transform: scale(.92) rotate(-8deg); opacity: 1 } 100% { transform: scale(1) rotate(-8deg); opacity: 1 } }
-.fib-stamp { animation: fib-stamp .45s cubic-bezier(.2,1.3,.4,1) both }
+@keyframes fib-flip { from { transform: perspective(700px) rotateX(70deg) translateY(8px); opacity: 0 } to { transform: none; opacity: 1 } }
+.fib-flip { animation: fib-flip .36s cubic-bezier(.2,.8,.2,1) backwards }
+@keyframes fib-stamp { 0% { transform: scale(2.4) rotate(-16deg); opacity: 0 } 55% { transform: scale(.9) rotate(-7deg); opacity: 1 } 100% { transform: scale(1) rotate(-8deg); opacity: 1 } }
+.fib-stamp { animation: fib-stamp .42s cubic-bezier(.2,1.4,.4,1) both }
 @keyframes fib-strike { from { background-size: 0% 3px } to { background-size: 100% 3px } }
-.fib-strike { background-image: linear-gradient(currentColor, currentColor); background-repeat: no-repeat; background-position: 0 55%; background-size: 100% 3px; animation: fib-strike .35s ease-out .6s both }
+.fib-strike { background-image: linear-gradient(currentColor, currentColor); background-repeat: no-repeat; background-position: 0 55%; background-size: 100% 3px; animation: fib-strike .32s cubic-bezier(.2,.8,.2,1) .08s both }
 @keyframes fib-burst { 0% { transform: translate(-50%,-50%) scale(.3); opacity: 0 } 20% { opacity: 1 } 100% { transform: translate(calc(var(--dx) - 50%), calc(var(--dy) - 50%)) scale(1.1); opacity: 0 } }
 .fib-burst { animation: fib-burst 1.2s cubic-bezier(.15,.8,.3,1) both }
 @keyframes fib-ring { 0% { box-shadow: 0 0 0 0 var(--fib-ring) } 70% { box-shadow: 0 0 0 8px transparent } 100% { box-shadow: 0 0 0 0 transparent } }
 .fib-pulse { animation: fib-ring 1.6s ease-out infinite }
+@keyframes fib-glow { from { box-shadow: 0 0 0 0 var(--fib-glow); opacity: 1 } to { box-shadow: 0 0 0 18px transparent; opacity: 0 } }
+.fib-glow { animation: fib-glow .9s cubic-bezier(.2,.8,.2,1) .12s both }
+@keyframes fib-lock { 0%, 100% { transform: none } 40% { transform: scale(1.03) } }
+.fib-lock { animation: fib-lock .32s cubic-bezier(.2,1.4,.4,1) }
+@keyframes fib-drum { 0%, 100% { transform: none; opacity: .45 } 50% { transform: translateY(-4px) scale(1.08); opacity: 1 } }
+.fib-drum > span { display: inline-block; animation: fib-drum .54s ease-in-out infinite }
+.fib-drum > span:nth-child(2) { animation-delay: .12s }
+.fib-drum > span:nth-child(3) { animation-delay: .24s }
 @media (prefers-reduced-motion: reduce) {
-  .fib-shake-0, .fib-shake-1, .fib-dot, .fib-blank, .fib-flip, .fib-stamp, .fib-strike, .fib-pulse { animation: none !important }
-  .fib-burst { display: none }
+  .fib-in, .fib-flip { animation: fib-fade .15s ease backwards !important }
+  .fib-shake-0, .fib-shake-1, .fib-dot, .fib-blank, .fib-stamp, .fib-strike, .fib-pulse, .fib-lock, .fib-drum > span { animation: none !important }
+  .fib-burst, .fib-glow { display: none }
 }
 `;
 
@@ -174,7 +188,7 @@ export function FactCard({
     blank = (
       <span
         key={fillKey}
-        className={`mx-0.5 inline rounded-md border-b-[3px] px-1.5 font-extrabold [overflow-wrap:anywhere] [box-decoration-break:clone] ${
+        className={`mx-0.5 inline rounded-md border-b-[3px] px-1.5 font-extrabold transition-[color,background-color,border-color,box-shadow] duration-300 [overflow-wrap:anywhere] [box-decoration-break:clone] ${
           fillStyle === "preview" ? "italic" : "animate-pop"
         }`}
         style={look[fillStyle]}
@@ -314,40 +328,42 @@ function KindTag({ kind, accent }: { kind: RevealOption["kind"]; accent: string 
   );
 }
 
-function StepCard({ s, index, byId, me, accent }: { s: RoundSummary; index: number; byId: ById; me: string; accent: string }) {
-  const o = s.options[index];
-  const fooledMe = o.pickers.includes(me);
-  let line: ReactNode;
-  let points: ReactNode = null;
+/** What a revealed option says about who fell for it / who found it, and who scored. */
+function stepLines(o: RevealOption, byId: ById, me: string, accent: string): { line: ReactNode; points: ReactNode } {
   if (o.kind === "truth") {
-    if (!o.pickers.length) line = <>Nobody found the truth! 😱</>;
-    else {
-      line = (
+    if (!o.pickers.length) return { line: <>Nobody found the truth! 😱</>, points: null };
+    return {
+      line: (
         <>
           <WhoList ids={o.pickers} byId={byId} me={me} /> found the truth!
         </>
-      );
-      points = (
+      ),
+      points: (
         <span className="font-mono font-bold" style={{ color: accent }}>
-          +{POINTS.truth} {o.pickers.length > 1 ? "each" : ""}
+          +{POINTS.truth}
+          {o.pickers.length > 1 ? " each" : ""}
         </span>
-      );
-    }
-  } else if (o.kind === "house") {
-    line = (
-      <>
-        <WhoList ids={o.pickers} byId={byId} me={me} /> fell for a house fib!
-      </>
-    );
-    points = <span className="text-muted">Nobody scores for that one.</span>;
-  } else {
-    line = (
+      ),
+    };
+  }
+  if (o.kind === "house") {
+    return {
+      line: (
+        <>
+          <WhoList ids={o.pickers} byId={byId} me={me} /> fell for a house fib!
+        </>
+      ),
+      points: <span className="text-muted">Nobody scores for that one.</span>,
+    };
+  }
+  const each = o.pickers.length * POINTS.fooled;
+  return {
+    line: (
       <>
         <WhoList ids={o.pickers} byId={byId} me={me} /> fell for <WhoList ids={o.authors} byId={byId} me={me} possessive /> fib!
       </>
-    );
-    const each = o.pickers.length * POINTS.fooled;
-    points = (
+    ),
+    points: (
       <span className="flex flex-wrap items-center justify-center gap-1.5">
         {o.authors.map((a) => (
           <PlayerChip key={a} player={byId[a]} size="sm">
@@ -355,38 +371,129 @@ function StepCard({ s, index, byId, me, accent }: { s: RoundSummary; index: numb
           </PlayerChip>
         ))}
       </span>
-    );
-  }
+    ),
+  };
+}
+
+/**
+ * One option under the spotlight. The beats come from the server clock (so a reconnect
+ * mid-step lands on the right beat): first the option and who picked it, then the stamp
+ * (`stamped`), then whose fib it was and the points (`told`).
+ */
+function StepCard({
+  s,
+  index,
+  byId,
+  me,
+  accent,
+  stamped,
+  told,
+}: {
+  s: RoundSummary;
+  index: number;
+  byId: ById;
+  me: string;
+  accent: string;
+  stamped: boolean;
+  told: boolean;
+}) {
+  const o = s.options[index];
   const truth = o.kind === "truth";
-  const wonPoints = truth ? fooledMe : o.kind === "lie" && o.authors.includes(me);
+  const { line, points } = stepLines(o, byId, me, accent);
+  const wonPoints = truth ? o.pickers.includes(me) : o.kind === "lie" && o.authors.includes(me);
+  const judged: CSSProperties = truth
+    ? { borderColor: accent, background: `radial-gradient(120% 120% at 50% 0%, ${accent}33, transparent 70%), var(--color-panel-2)` }
+    : o.kind === "house"
+      ? { borderColor: "var(--color-muted)", background: "var(--color-panel-2)" }
+      : { borderColor: "rgb(255 93 115 / 0.7)", background: "radial-gradient(120% 120% at 50% 0%, rgb(255 93 115 / 0.16), transparent 70%), var(--color-panel-2)" };
+  const ask: ReactNode = truth ? (
+    <span className="inline-flex items-center gap-1.5">
+      Who spotted it <Dots />
+    </span>
+  ) : (
+    <>
+      <WhoList ids={o.pickers} byId={byId} me={me} /> picked this…
+    </>
+  );
   return (
     <div
-      key={index}
-      className="fib-flip relative flex min-w-0 flex-col items-center gap-2 rounded-2xl border-2 px-3 py-4 text-center"
-      style={
-        truth
-          ? { borderColor: accent, background: `radial-gradient(120% 120% at 50% 0%, ${accent}33, transparent 70%), var(--color-panel-2)` }
-          : o.kind === "house"
-            ? { borderColor: "var(--color-line)", background: "var(--color-panel-2)" }
-            : { borderColor: "rgb(255 93 115 / 0.6)", background: "radial-gradient(120% 120% at 50% 0%, rgb(255 93 115 / 0.16), transparent 70%), var(--color-panel-2)" }
-      }
+      className="fib-flip relative flex min-h-[11.5rem] min-w-0 flex-col items-center justify-center gap-2 rounded-2xl border-2 px-3 py-4 text-center transition-[border-color] duration-300"
+      style={stamped ? judged : { borderColor: "var(--color-line)", background: "var(--color-panel-2)" }}
     >
-      <KindTag kind={o.kind} accent={accent} />
-      <p
-        className="font-display text-3xl leading-tight font-extrabold [overflow-wrap:anywhere] @md:text-4xl"
-        style={{ color: truth ? accent : undefined }}
-      >
-        “{o.text}”
-      </p>
-      <p className="animate-rise text-sm font-semibold @md:text-base" style={{ animationDelay: "350ms" }}>
-        {line}
-      </p>
-      {points && (
-        <div className="animate-pop text-sm" style={{ animationDelay: "650ms" }}>
-          {points}
+      {truth && <span aria-hidden className="fib-glow pointer-events-none absolute inset-0 rounded-2xl" style={{ "--fib-glow": accent + "aa" } as CssVars} />}
+      <div className={`flex min-w-0 flex-col items-center gap-2 ${stamped && o.kind === "lie" ? "fib-shake-0" : ""}`}>
+        <div className="flex h-8 items-center">
+          {stamped ? (
+            <KindTag kind={o.kind} accent={accent} />
+          ) : (
+            <span className="fib-blank rounded-full border border-line px-2.5 py-0.5 text-xs font-bold tracking-widest text-muted uppercase">
+              Truth or fib?
+            </span>
+          )}
         </div>
-      )}
-      {wonPoints && <Burst delay={500} />}
+        <p
+          className={`font-display text-3xl leading-tight font-extrabold transition-colors duration-300 [overflow-wrap:anywhere] @md:text-4xl ${
+            stamped && !truth ? "text-text/80" : ""
+          }`}
+          style={{ color: truth ? accent : undefined }}
+        >
+          “{o.text}”
+        </p>
+      </div>
+      <div key={told ? "told" : "ask"} className="fib-in flex min-h-[3.5rem] flex-col items-center gap-1.5">
+        <p className={`text-sm font-semibold @md:text-base ${told ? "" : "text-muted"}`}>{told ? line : ask}</p>
+        {told && points && (
+          <div className="animate-pop text-sm" style={{ animationDelay: "140ms" }}>
+            {points}
+          </div>
+        )}
+      </div>
+      {told && wonPoints && <Burst />}
+    </div>
+  );
+}
+
+/** The beat before the truth: the real answer is about to drop. */
+function Drumroll({ accent }: { accent: string }) {
+  return (
+    <div
+      className="fib-in flex min-h-[11.5rem] flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed px-3 py-4 text-center"
+      style={{ borderColor: accent + "88", background: `radial-gradient(120% 120% at 50% 0%, ${accent}1a, transparent 70%), var(--color-panel-2)` }}
+    >
+      <span className="label" style={{ color: accent }}>
+        <span aria-hidden>🥁 </span>Drumroll
+      </span>
+      <p aria-hidden className="fib-drum inline-flex gap-2 font-display text-4xl font-black" style={{ color: accent }}>
+        <span>?</span>
+        <span>?</span>
+        <span>?</span>
+      </p>
+      <p className="text-sm font-semibold text-muted">The real answer is…</p>
+    </div>
+  );
+}
+
+/** One pip per reveal step: fibs in red, the truth in the accent colour. */
+function StepPips({ s, step, done, accent }: { s: RoundSummary; step: number; done: boolean; accent: string }) {
+  const truthNow = s.options[s.steps[step]]?.kind === "truth";
+  const fibs = s.steps.length - 1;
+  return (
+    <div className="flex items-center justify-center gap-2.5 text-xs text-muted tabular-nums">
+      <span aria-hidden className="flex items-center gap-2">
+        {s.steps.map((optionIndex, i) => {
+          const isTruth = s.options[optionIndex]?.kind === "truth";
+          const lit = done || i <= step;
+          const current = !done && i === step;
+          return (
+            <span
+              key={i}
+              className={`h-1.5 w-3 rounded-full transition-[transform,background-color] duration-300 ${current ? "scale-x-[1.6]" : ""}`}
+              style={{ background: lit ? (isTruth ? accent : "var(--color-brand)") : "var(--color-line)" }}
+            />
+          );
+        })}
+      </span>
+      <span>{truthNow || done ? "The truth" : `Fib ${step + 1} of ${fibs}`}</span>
     </div>
   );
 }
@@ -415,7 +522,8 @@ function OptionRow({
       }`}
       style={{
         background: truth ? accent + "1f" : "var(--color-panel-2)",
-        borderColor: current ? (o.kind === "truth" ? accent : "rgb(255 93 115 / 0.7)") : undefined,
+        // Before its stamp lands the spotlighted row stays neutral, so the list can't spoil it.
+        borderColor: current ? (!revealed ? "var(--color-muted)" : o.kind === "truth" ? accent : "rgb(255 93 115 / 0.7)") : undefined,
       }}
     >
       <span className="flex items-center justify-between gap-2">
@@ -469,20 +577,31 @@ function OptionRow({
   );
 }
 
-/** Where the walk-through is: the current step, and whether it's over (the hold before the next round). */
+/** Beats inside one reveal step, as fractions of the step (the server sets the step length). */
+const STAMP_AT = 0.3;
+const TELL_AT = 0.48;
+/** The truth's step opens with a drumroll; the answer drops at this point. */
+const TRUTH_AT = 0.3;
+const TRUTH_TELL_AT = 0.52;
+
+/**
+ * Where the walk-through is, from the server clock: the current step, how far into it
+ * we are (`beat`, 0..1), and whether it's over (the hold before the next round).
+ */
 export function useRevealClock(revealAt: number, stepMs: number, steps: number, serverNow: () => number) {
   useTicker(100);
+  if (!revealAt || stepMs <= 0 || steps <= 0) return { step: Math.max(0, steps - 1), beat: 1, done: true };
   const elapsed = serverNow() - revealAt;
-  if (!revealAt || stepMs <= 0 || steps <= 0) return { step: Math.max(0, steps - 1), done: true };
-  return {
-    step: Math.max(0, Math.min(steps - 1, Math.floor(elapsed / stepMs))),
-    done: elapsed >= steps * stepMs,
-  };
+  const done = elapsed >= steps * stepMs;
+  const step = Math.max(0, Math.min(steps - 1, Math.floor(elapsed / stepMs)));
+  const beat = done ? 1 : Math.max(0, Math.min(1, (elapsed - step * stepMs) / stepMs));
+  return { step, beat, done };
 }
 
 export function RevealStage({
   s,
   step,
+  beat,
   done,
   byId,
   me,
@@ -490,6 +609,7 @@ export function RevealStage({
 }: {
   s: RoundSummary;
   step: number;
+  beat: number;
   done: boolean;
   byId: ById;
   me: string;
@@ -497,8 +617,18 @@ export function RevealStage({
 }) {
   const current = s.steps[step] ?? s.steps[s.steps.length - 1];
   const cur = s.options[current];
-  const truthShown = cur?.kind === "truth";
-  const shown = new Set(s.steps.slice(0, step + 1));
+  const truthNow = cur?.kind === "truth";
+  const drumroll = truthNow && !done && beat < TRUTH_AT;
+  const stamped = done || beat >= (truthNow ? TRUTH_AT : STAMP_AT);
+  const told = done || beat >= (truthNow ? TRUTH_TELL_AT : TELL_AT);
+  const truthShown = truthNow && stamped;
+  const isRevealed = (i: number) => {
+    if (done) return true;
+    const at = s.steps.indexOf(i);
+    if (at >= 0 && at < step) return true;
+    if (i === current) return stamped;
+    return truthShown && at < 0; // fibs nobody picked are exposed along with the truth
+  };
   const myPoints = s.points[me] ?? 0;
   const scorers = Object.entries(s.points)
     .filter(([, p]) => p > 0)
@@ -512,24 +642,26 @@ export function RevealStage({
           prompt={s.prompt}
           round={s.round}
           accent={accent}
-          fill={truthShown ? s.answer : cur?.text}
-          fillStyle={truthShown ? "truth" : "fib"}
-          fillKey={current}
+          fill={truthNow ? (drumroll ? null : s.answer) : cur?.text}
+          fillStyle={truthNow ? "truth" : stamped ? "fib" : "pick"}
+          fillKey={truthNow ? "truth" : current}
           compact
         />
         <section aria-label="Reveal" aria-live="polite" className="flex flex-col gap-2">
-          {cur && <StepCard key={current} s={s} index={current} byId={byId} me={me} accent={accent} />}
-          <p className="text-center text-xs text-muted tabular-nums">
-            {truthShown ? "The truth" : `Fib ${step + 1} of ${s.steps.length - 1}`}
-          </p>
+          {drumroll ? (
+            <Drumroll key="drumroll" accent={accent} />
+          ) : (
+            cur && <StepCard key={current} s={s} index={current} byId={byId} me={me} accent={accent} stamped={stamped} told={told} />
+          )}
+          <StepPips s={s} step={step} done={done} accent={accent} />
         </section>
         {done && (
-          <section aria-label="Round points" className="card animate-rise relative flex flex-col items-center gap-2 p-3">
+          <section aria-label="Round points" className="card fib-in relative flex flex-col items-center gap-2 p-3">
             <h3 className="label">Round {s.round} points</h3>
             {scorers.length ? (
               <div className="flex flex-wrap justify-center gap-1.5">
                 {scorers.map(([id, p], i) => (
-                  <span key={id} className="animate-pop" style={{ animationDelay: `${i * 70}ms` }}>
+                  <span key={id} className="animate-pop" style={{ animationDelay: `${120 + i * 70}ms` }}>
                     <PlayerChip player={byId[id]} size="sm">
                       <span className="font-mono font-bold text-green-300">+{formatPoints(p)}</span>
                       {id === me && <span className="sr-only">(you)</span>}
@@ -556,8 +688,8 @@ export function RevealStage({
             <OptionRow
               key={i}
               o={o}
-              revealed={shown.has(i) || (truthShown && !s.steps.includes(i))}
-              current={i === current}
+              revealed={isRevealed(i)}
+              current={!done && !drumroll && i === current}
               byId={byId}
               me={me}
               accent={accent}
@@ -570,6 +702,66 @@ export function RevealStage({
 }
 
 // ---------- scores ----------
+
+const prefersReducedMotion = () =>
+  typeof window !== "undefined" && typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+/** A number that counts up (or down) to its new value instead of jumping. */
+export function CountUp({ value }: { value: number }) {
+  const [shown, setShown] = useState(value);
+  const live = useRef(value);
+  useEffect(() => {
+    const from = live.current;
+    if (from === value) return;
+    const ms = prefersReducedMotion() ? 0 : 700;
+    const start = performance.now();
+    let raf = 0;
+    const frame = (now: number) => {
+      const k = ms ? Math.min(1, (now - start) / ms) : 1;
+      const v = Math.round(from + (value - from) * (1 - Math.pow(1 - k, 3)));
+      live.current = v;
+      setShown(v);
+      if (k < 1) raf = requestAnimationFrame(frame);
+    };
+    raf = requestAnimationFrame(frame);
+    return () => cancelAnimationFrame(raf);
+  }, [value]);
+  return <>{formatPoints(shown)}</>;
+}
+
+/**
+ * Animate children marked with data-flip="<id>" from their old spot to the new one
+ * whenever `order` changes (FLIP; transform only). Positions are kept relative to the
+ * container, so the whole list moving down the page doesn't count as a reorder.
+ */
+function useFlip(order: string) {
+  const box = useRef<HTMLDivElement>(null);
+  const spots = useRef(new Map<string, { x: number; y: number }>());
+  useLayoutEffect(() => {
+    const el = box.current;
+    if (!el) return;
+    const base = el.getBoundingClientRect();
+    const reduce = prefersReducedMotion();
+    const next = new Map<string, { x: number; y: number }>();
+    el.querySelectorAll<HTMLElement>("[data-flip]").forEach((item) => {
+      const id = item.dataset.flip ?? "";
+      const r = item.getBoundingClientRect();
+      const spot = { x: r.left - base.left, y: r.top - base.top };
+      next.set(id, spot);
+      const before = spots.current.get(id);
+      if (!before || reduce || typeof item.animate !== "function") return;
+      const dx = before.x - spot.x;
+      const dy = before.y - spot.y;
+      if (Math.abs(dx) < 1 && Math.abs(dy) < 1) return;
+      item.animate([{ transform: `translate(${dx}px, ${dy}px)` }, { transform: "none" }], {
+        duration: 460,
+        easing: "cubic-bezier(0.2, 0.8, 0.2, 1)",
+      });
+    });
+    spots.current = next;
+  }, [order]);
+  return box;
+}
 
 export function ScoreStrip({
   scores,
@@ -584,18 +776,22 @@ export function ScoreStrip({
   gains?: Record<string, number> | null;
 }) {
   const ids = Object.keys(scores).sort((a, b) => (scores[b] ?? 0) - (scores[a] ?? 0));
+  const box = useFlip(ids.join(","));
   return (
-    <div className="flex flex-wrap items-center gap-1.5" aria-label="Scores">
+    <div ref={box} className="flex flex-wrap items-center gap-1.5" aria-label="Scores">
       <span className="label mr-1">Scores</span>
       {ids.map((id) => {
         const p = byId[id];
         if (!p) return null;
         const gain = gains?.[id] ?? 0;
         return (
-          <span key={id} className={id === me ? "rounded-full ring-1 ring-text/30" : ""}>
+          <span key={id} data-flip={id} className={id === me ? "rounded-full ring-1 ring-text/30" : ""}>
             <PlayerChip player={p} size="sm" dim={!p.connected}>
-              <span className="font-mono font-bold text-text tabular-nums">{formatPoints(scores[id] ?? 0)}</span>
+              <span className="font-mono font-bold text-text tabular-nums">
+                <CountUp value={scores[id] ?? 0} />
+              </span>
               {gain > 0 && <span className="animate-pop font-mono text-[10px] font-bold text-green-300">+{formatPoints(gain)}</span>}
+              {id === me && <span className="sr-only">(you)</span>}
             </PlayerChip>
           </span>
         );
@@ -605,6 +801,86 @@ export function ScoreStrip({
 }
 
 // ---------- final ----------
+
+/** 1-based rank with ties sharing a place (two players on 900 are both 1st). */
+export function rankOf(scores: Record<string, number>, id: string): number {
+  const mine = scores[id] ?? 0;
+  return 1 + Object.values(scores).filter((v) => v > mine).length;
+}
+
+export function ordinal(n: number): string {
+  const tens = n % 100;
+  if (tens >= 11 && tens <= 13) return `${n}th`;
+  return `${n}${["th", "st", "nd", "rd"][n % 10] ?? "th"}`;
+}
+
+/** Per player over the whole game: players fooled by their fibs, truths found. */
+function gameStats(history: RoundSummary[]) {
+  const fooled: Record<string, number> = {};
+  const found: Record<string, number> = {};
+  for (const h of history) {
+    for (const o of h.options) {
+      if (o.kind === "lie") for (const a of o.authors) fooled[a] = (fooled[a] ?? 0) + o.pickers.length;
+      if (o.kind === "truth") for (const p of o.pickers) found[p] = (found[p] ?? 0) + 1;
+    }
+  }
+  return { fooled, found };
+}
+
+const MEDALS = ["🥇", "🥈", "🥉"];
+
+function Standings({ view, byId, me, accent }: { view: FibView; byId: ById; me: string; accent: string }) {
+  const ids = Object.keys(view.scores).sort((a, b) => (view.scores[b] ?? 0) - (view.scores[a] ?? 0));
+  const { fooled, found } = gameStats(view.history);
+  const rounds = view.history.length;
+  return (
+    <section aria-label="Final standings" className="card p-3">
+      <h3 className="label mb-2">Final standings</h3>
+      <ol className="flex flex-col gap-1.5">
+        {ids.map((id, i) => {
+          const p = byId[id];
+          if (!p) return null;
+          const rank = rankOf(view.scores, id);
+          const top = rank === 1 && (view.scores[id] ?? 0) > 0;
+          return (
+            <li
+              key={id}
+              className="fib-in flex min-w-0 items-center gap-2.5 rounded-xl px-2 py-2"
+              style={{
+                animationDelay: `${i * 60}ms`,
+                background: top ? accent + "1a" : id === me ? "var(--color-panel-2)" : undefined,
+                boxShadow: id === me ? "inset 0 0 0 1px color-mix(in oklab, var(--color-text) 25%, transparent)" : undefined,
+              }}
+            >
+              <span className="w-7 shrink-0 text-center">
+                {rank <= 3 && (view.scores[id] ?? 0) > 0 ? (
+                  <span aria-hidden className="text-xl leading-none">
+                    {MEDALS[rank - 1]}
+                  </span>
+                ) : (
+                  <span aria-hidden className="font-mono text-sm text-muted tabular-nums">
+                    {rank}
+                  </span>
+                )}
+                <span className="sr-only">{ordinal(rank)} place</span>
+              </span>
+              <span className="flex min-w-0 flex-1 flex-col items-start gap-0.5">
+                <FitChip player={p} size="sm" dim={!p.connected} />
+                <span className="pl-1 text-[11px] text-muted">
+                  🔍 {found[id] ?? 0}/{rounds} truths · 🤥 fooled {fooled[id] ?? 0}
+                  {id === me && <span className="sr-only"> (you)</span>}
+                </span>
+              </span>
+              <span className="shrink-0 font-mono text-lg font-bold tabular-nums" style={top ? { color: accent } : undefined}>
+                {formatPoints(view.scores[id] ?? 0)}
+              </span>
+            </li>
+          );
+        })}
+      </ol>
+    </section>
+  );
+}
 
 function AwardRow({
   icon,
@@ -666,10 +942,10 @@ export function FinalScreen({ view, byId, me, accent }: { view: FibView; byId: B
   const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
   return (
     <div className="grid gap-3 @2xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] @2xl:items-start">
-      <div className="animate-rise flex flex-col gap-3">
-        <Scoreboard scores={view.scores} byId={byId} order={Object.keys(view.scores)} highlight={me} title="Final standings" />
+      <div className="flex flex-col gap-3">
+        <Standings view={view} byId={byId} me={me} accent={accent} />
         {awards && (
-          <section aria-label="Awards" className="card p-3">
+          <section aria-label="Awards" className="card fib-in p-3" style={{ animationDelay: "160ms" }}>
             <h3 className="label mb-2">Awards</h3>
             <ul className="flex flex-col gap-2">
               <AwardRow
@@ -680,7 +956,7 @@ export function FinalScreen({ view, byId, me, accent }: { view: FibView; byId: B
                 empty="Nobody fooled anybody. Suspiciously honest bunch."
                 byId={byId}
                 accent={accent}
-                delay={150}
+                delay={320}
               />
               <AwardRow
                 icon="🔍"
@@ -690,14 +966,14 @@ export function FinalScreen({ view, byId, me, accent }: { view: FibView; byId: B
                 empty="Nobody found a single truth!"
                 byId={byId}
                 accent={accent}
-                delay={300}
+                delay={460}
               />
             </ul>
           </section>
         )}
         {view.endedEarly && <p className="px-1 text-xs text-muted">The game ended early: too few players stayed connected.</p>}
       </div>
-      <section aria-label="Every fact" className="card animate-rise p-3" style={{ animationDelay: "120ms" }}>
+      <section aria-label="Every fact" className="card fib-in p-3" style={{ animationDelay: "220ms" }}>
         <h3 className="label mb-2">Every fact</h3>
         {view.history.length === 0 && <p className="text-sm text-muted">No rounds were finished.</p>}
         <ol className="flex flex-col gap-1.5">
