@@ -31,7 +31,7 @@ async function player(name, viewport, isMobile = false) {
   return page;
 }
 
-async function join(page, url, name) {
+async function joinRoom(page, url, name) {
   await page.goto(url);
   await page.getByLabel("Name").fill(name);
   await page.getByRole("button", { name: "Let's go" }).click();
@@ -50,9 +50,9 @@ try {
   await host.getByText("Pick a game").waitFor();
 
   const phone = await player("phone", { width: 390, height: 844 }, true);
-  await join(phone, roomUrl, "Phone");
+  await joinRoom(phone, roomUrl, "Phone");
   const tablet = await player("tablet", { width: 820, height: 1180 }, true);
-  await join(tablet, roomUrl, "Tablet");
+  await joinRoom(tablet, roomUrl, "Tablet");
   await host.getByText("Tablet").first().waitFor();
   await shot(host, "01-lobby-host");
   await shot(phone, "02-lobby-phone");
