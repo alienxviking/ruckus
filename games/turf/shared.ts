@@ -6,6 +6,14 @@ export const COUNTDOWN_MS = 3_000;
 export const PLAY_MS = 60_000;
 /** Owner digits in the tile string are 0-7. */
 export const MAX_PAINTERS = 8;
+/** Pending turns per painter (a third press replaces the last one). */
+export const QUEUE_MAX = 2;
+/**
+ * A turn may name the tick it should land on (`at`), so the client can show it before the
+ * server confirms it. The server holds an early turn until then (never longer than this many
+ * ticks); a late one lands on the next tick.
+ */
+export const MAX_HOLD = 4;
 
 export const DIRS = ["up", "right", "down", "left"] as const;
 export type Dir = (typeof DIRS)[number];

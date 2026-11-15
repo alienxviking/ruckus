@@ -8,10 +8,15 @@
 // under them. Settled territory lives on an offscreen layer rebuilt only when playback
 // reaches the next frame; heads, power-ups, rollers, fill flashes and score pops are
 // drawn on top every frame.
+//
+// Your own painter is the exception: it's drawn by the predictor (predict.ts) on its own clock,
+// a network trip ahead, so it turns at the very next tile boundary after you press and the paint
+// rolls out under it right away. Its arrow swings to a queued turn on the frame you press.
 
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useEffectEvent, useRef, type ReactNode } from "react";
 import type { PainterTuple, TurfEvent, TurfView } from "./server";
 import { DX, DY, POWER_INFO, POWER_KINDS, TICK_MS, type PowerKind } from "./shared";
+import type { Head, TurfPredictor } from "./predict";
 
 export interface Painter {
   id: string;
@@ -276,6 +281,8 @@ interface Scene {
   startAt: number;
   overAt: number;
   idleKey: string;
+  /** Your head this frame, from the predictor. */
+  myHead: Head;
 }
 
 function newScene(): Scene {
@@ -297,6 +304,7 @@ function newScene(): Scene {
     startAt: -1e9,
     overAt: -1e9,
     idleKey: "",
+    myHead: { x: 0, y: 0, dir: 0, next: 0 },
   };
 }
 
@@ -454,7 +462,7 @@ interface Data {
   away: boolean[];
   me: number;
   winners: string[] | null;
-  pending: { dir: number; at: number } | null;
+  pred: TurfPredictor;
   serverNow: () => number;
   reduced: boolean;
 }
@@ -606,6 +614,28 @@ function drawChevron(g: CanvasRenderingContext2D, cx: number, cy: number, dir: n
   g.stroke();
 }
 
+/** Fill tile `ti` from the side facing tile `from`, `prog` (0..1) of the way across. */
+function rollTile(g: CanvasRenderingContext2D, ti: number, from: number, w: number, ts: number, prog: number) {
+  const x = ti % w;
+  const y = (ti - x) / w;
+  const fx = from % w;
+  const fy = (from - fx) / w;
+  let rx = x * ts;
+  let ry = y * ts;
+  let rw = ts;
+  let rh = ts;
+  if (x > fx) rw = ts * prog;
+  else if (x < fx) {
+    rw = ts * prog;
+    rx += ts - rw;
+  } else if (y > fy) rh = ts * prog;
+  else if (y < fy) {
+    rh = ts * prog;
+    ry += ts - rh;
+  }
+  g.fillRect(rx, ry, rw + 0.5, rh + 0.5);
+}
+
 function drawFrame(
   cv: HTMLCanvasElement,
   size: Size,
@@ -661,6 +691,9 @@ function drawFrame(
   const w = view.w;
   // Where each painter is along its step: moves finish at the next frame's tick.
   const tEnd = b ? b.tick : a.tick;
+  // Your painter runs on the predictor's clock (ahead of this playback).
+  const tau = d.pred.advance(now, sNow);
+  const mineOn = d.me >= 0 && d.me < a.painters.length && d.pred.head(tau, sc.myHead);
 
   // Fills & bomb splashes flash white, then settle.
   if (sc.flashes.length) {
@@ -677,6 +710,7 @@ function drawFrame(
 
   // Paint rolls out from under each head as it crosses a fresh tile.
   for (const f of sc.fresh) {
+    if (f.who === d.me && mineOn) continue; // yours is drawn below, on your own clock
     const m = sc.moves[f.who];
     const pal = palettes[f.who];
     if (!m || !pal) continue;
@@ -700,6 +734,30 @@ function drawFrame(
     }
     g.fillStyle = f.trail ? pal.trail : pal.fill;
     g.fillRect(rx, ry, rw + 0.5, rh + 0.5);
+  }
+
+  // Your paint, rolling out under your (predicted) head: every tile it has entered since the
+  // frame the territory layer shows, unless that tile was already yours there.
+  if (mineOn) {
+    const pal = palettes[d.me];
+    const mine = 48 + d.me;
+    const K = Math.floor(tau);
+    const f = tau - K;
+    g.fillStyle = pal.trail;
+    let prev = d.pred.cellAt(a.tick);
+    for (let t = a.tick + 1; t <= K + 1 && prev >= 0; t++) {
+      const end = d.pred.cellAt(t);
+      if (end < 0) break;
+      const mid = d.pred.midAt(t);
+      const cells = mid >= 0 ? [mid, end] : [end];
+      cells.forEach((ti, k) => {
+        const from = k === 0 ? prev : mid;
+        if (ti === from) return;
+        const prog = t <= K ? 1 : mid >= 0 ? clamp01(f * 2 - k) : f;
+        if (prog > 0 && view.tiles.charCodeAt(ti) !== mine) rollTile(g, ti, from, w, ts, prog);
+      });
+      prev = end;
+    }
   }
 
   // Power-ups.
@@ -744,7 +802,16 @@ function drawFrame(
     const pal = palettes[i];
     const m = sc.moves[i];
     if (!p || !pal || !m) continue;
-    headAt(m, clamp01((pb.t - (tEnd - m.ticks)) / m.ticks));
+    let arrow: number;
+    if (i === d.me && mineOn) {
+      PX = sc.myHead.x;
+      PY = sc.myHead.y;
+      PDIR = sc.myHead.dir;
+      arrow = sc.myHead.next; // swings to a queued turn the moment you press it
+    } else {
+      headAt(m, clamp01((pb.t - (tEnd - m.ticks)) / m.ticks));
+      arrow = PDIR;
+    }
     const cx = (PX + 0.5) * ts;
     const cy = (PY + 0.5) * ts;
     const dir = PDIR;
@@ -776,7 +843,7 @@ function drawFrame(
       }
     }
 
-    if (!over) drawChevron(g, cx, cy, dir, rr, isMe ? "#ffffff" : pal.base, pal.edge);
+    if (!over) drawChevron(g, cx, cy, arrow, rr, isMe ? "#ffffff" : pal.base, pal.edge);
 
     // Soft shadow, body, outline.
     g.fillStyle = "rgba(0, 0, 0, 0.35)";
@@ -854,10 +921,11 @@ function drawFrame(
       g.fill();
       g.textBaseline = "middle";
     }
-    if (isMe && d.pending && d.pending.dir !== dir && now - d.pending.at < 450 && latest.phase === "play") {
+    if (isMe && arrow !== dir && latest.phase === "play") {
+      // Still travelling the old way until the next tile: a faint arrow shows that heading too.
       g.save();
-      g.globalAlpha = 0.55;
-      drawChevron(g, cx, cy, d.pending.dir, rr, "#ffffff", pal.edge);
+      g.globalAlpha = 0.35;
+      drawChevron(g, cx, cy, dir, rr * 0.8, "#ffffff", pal.edge);
       g.restore();
     }
   }
@@ -923,7 +991,8 @@ export interface TurfBoardProps {
   me: number;
   /** Swipe handler; null disables swiping. */
   steer: ((dir: number) => void) | null;
-  pending: { dir: number; at: number } | null;
+  /** Your painter's prediction (fed every frame here; turns go in through the client). */
+  pred: TurfPredictor;
   serverNow: () => number;
   onEvent: (fn: (e: unknown) => void) => () => void;
   label: string;
@@ -931,7 +1000,7 @@ export interface TurfBoardProps {
 }
 
 export function TurfBoard(props: TurfBoardProps) {
-  const { view, colors, avatars, away, me, steer, pending, serverNow, onEvent, label, children } = props;
+  const { view, colors, avatars, away, me, steer, pred, serverNow, onEvent, label, children } = props;
   const wrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const sizeRef = useRef<Size>({ cssW: 0, cssH: 0, dpr: 1 });
@@ -950,8 +1019,8 @@ export function TurfBoard(props: TurfBoardProps) {
       avatars,
       away,
       me,
-      winners: view.winners,
-      pending,
+      winners: view.winners ?? null,
+      pred,
       serverNow,
       reduced: reducedRef.current,
     };
@@ -961,19 +1030,21 @@ export function TurfBoard(props: TurfBoardProps) {
     }
   });
 
-  // Feed each new server frame into the playback buffer.
-  useEffect(() => {
+  // Feed each new server frame into the playback buffer and your painter's predictor.
+  const onFrame = useEffectEvent((v: TurfView) => {
     const sc = sceneRef.current;
     const now = performance.now();
     const before = sc.pb.snaps[sc.pb.snaps.length - 1]?.view;
-    if (sc.pb.push(view, now)) {
+    if (sc.pb.push(v, now)) {
       sc.shown = null;
       sc.pending.length = 0;
       sc.pops.length = 0;
-      if (!before || before.phase === "over" || view.seq < before.seq) sc.startAt = view.phase === "countdown" ? now : -1e9;
+      if (!before || before.phase === "over" || v.seq < before.seq) sc.startAt = v.phase === "countdown" ? now : -1e9;
     }
-    if (view.phase === "over" && before?.phase !== "over") sc.overAt = before ? now : -1e9;
-  }, [view]);
+    if (v.phase === "over" && before?.phase !== "over") sc.overAt = before ? now : -1e9;
+    pred.ingest(v, serverNow(), now);
+  });
+  useEffect(() => onFrame(view), [view]);
 
   // Score pops from transient server events, held until playback reaches the step that caused them.
   useEffect(

@@ -8,7 +8,9 @@ import {
   DX,
   DY,
   FREEZE_MS,
+  MAX_HOLD,
   MAX_PAINTERS,
+  QUEUE_MAX,
   PLAY_MS,
   TICK_MS,
   boardSize,
@@ -20,6 +22,12 @@ import {
 // Every tick each painter moves one tile in its direction (two while dashing),
 // paints the tile it enters and, when it steps back onto its own turf after
 // painting new ground, fills every tile it has walled off from the board edge.
+//
+// Latency: a turn can name the tick it should land on (`at`, numbered like `tick`).
+// The owner's client runs its own painter about one network trip ahead and stamps each
+// turn for the next tile boundary on its screen; the server holds an early turn until that
+// tick (a late one lands on the next tick). Each player's view carries their own input
+// status (`me`), from which the client learns how far ahead to run.
 
 const SPAWN_FIRST_MS = 2_500;
 const SPAWN_MIN_MS = 5_000;
@@ -29,10 +37,18 @@ const MAX_POWERS = 3;
 const POWER_CLEARANCE = 3;
 /** With fewer than two painters online for this long, the game ends. */
 export const ABANDON_MS = 8_000;
-const QUEUE_MAX = 2;
 
 export type Phase = "countdown" | "play" | "over";
 export type EndReason = "time" | "abandoned";
+
+/** A queued turn: applied on the first step of tick `at` or later (one per step, in order). */
+interface QueuedTurn {
+  /** Index into DIRS. */
+  d: number;
+  at: number;
+  /** The client's input number (0 = none given). */
+  seq: number;
+}
 
 interface Painter {
   id: string;
@@ -40,8 +56,12 @@ interface Painter {
   y: number;
   /** Index into DIRS. */
   dir: number;
-  /** Pending turns, applied one per step. Private: never sent to clients. */
-  queue: number[];
+  /** Pending turns, applied one per step. Private: never sent to other players. */
+  queue: QueuedTurn[];
+  /** Input bookkeeping for the owner's prediction: last applied input number, last received, and how early (ms). */
+  applied: number;
+  rx: number;
+  slack: number;
   /** Tiles painted since this painter last stood on its own turf. */
   out: number;
   dashUntil: number;
@@ -72,6 +92,8 @@ export interface TurfState {
   nextSpawnAt: number;
   /** Play ticks so far (rotates who moves first, for fairness). */
   tick: number;
+  /** Server time of the latest play tick (or of the start of play). */
+  stepAt: number;
   /** Bumped whenever clients have something new to see. */
   seq: number;
   /** A countdown turn is waiting for the next tick to broadcast it. */
@@ -82,7 +104,11 @@ export interface TurfState {
   endReason: EndReason | null;
 }
 
-export type TurfAction = { type: "turn"; dir: Dir };
+/**
+ * `seq` numbers the client's inputs and `at` names the tick the turn should land on
+ * (both optional; without `at` the turn happens on the next step).
+ */
+export type TurfAction = { type: "turn"; dir: Dir; seq?: number; at?: number };
 
 /** Compact painter, to keep each tick's view small. */
 export type PainterTuple = [
@@ -111,10 +137,18 @@ export interface TurfView {
   seq: number;
   /** Movement steps so far (clients interpolate between consecutive ones). */
   tick: number;
-  /** The game ends early at this time unless another painter reconnects. */
-  abandonAt: number | null;
-  winners: string[] | null;
-  endReason: EndReason | null;
+  /** Server time of tick `tick` (play only): lets the owner's client run its painter ahead. */
+  at?: number;
+  /** The game ends early at this time unless another painter reconnects (omitted when not). */
+  abandonAt?: number | null;
+  /** Set once the game is over. */
+  winners?: string[] | null;
+  endReason?: EndReason | null;
+  /**
+   * The viewer's own input status (painters only, until the end):
+   * [last applied input, last received input, ms it arrived before its tick].
+   */
+  me?: [number, number, number];
 }
 
 /** `tick` is the movement step that caused it, so clients can show it when that step is on screen. */
@@ -219,6 +253,19 @@ function clamp(v: number, lo: number, hi: number) {
   return Math.min(hi, Math.max(lo, v));
 }
 
+/** A non-negative integer small enough to be a tick or input number. */
+const isCount = (v: unknown): v is number => typeof v === "number" && Number.isInteger(v) && v >= 0 && v <= 2 ** 31;
+
+/** Apply the painter's next turn if it is due on tick `tick`. True when the heading changed. */
+function popTurn(p: Painter, tick: number): boolean {
+  const q = p.queue[0];
+  if (!q || q.at > tick) return false;
+  p.queue.shift();
+  p.dir = q.d;
+  if (q.seq) p.applied = q.seq;
+  return true;
+}
+
 const round1 = (v: number) => Math.round(v * 10) / 10;
 
 /** (A function, so TypeScript doesn't keep a stale narrowing of `phase` across calls that end the game.) */
@@ -309,18 +356,12 @@ function movePainters(s: TurfState, ctx: GameCtx, now: number): boolean {
     if (ctx.player(p.id)?.connected === false) continue; // away painters wait in place
     if (now < p.frozenUntil) {
       // Frozen painters can still aim.
-      if (p.queue.length) {
-        p.dir = p.queue.shift()!;
-        changed = true;
-      }
+      if (popTurn(p, s.tick)) changed = true;
       continue;
     }
     const steps = now < p.dashUntil ? 2 : 1;
     for (let st = 0; st < steps; st++) {
-      if (p.queue.length) {
-        p.dir = p.queue.shift()!;
-        changed = true;
-      }
+      if (popTurn(p, s.tick)) changed = true;
       if (step(s, idx, ctx, now)) changed = true;
     }
   }
@@ -421,6 +462,9 @@ export const turf: GameDef<TurfState, TurfAction> = {
         y: spots[i].y,
         dir: spots[i].dir,
         queue: [],
+        applied: 0,
+        rx: 0,
+        slack: 0,
         out: 0,
         dashUntil: 0,
         frozenUntil: 0,
@@ -429,6 +473,7 @@ export const turf: GameDef<TurfState, TurfAction> = {
       powers: [],
       nextSpawnAt: 0,
       tick: 0,
+      stepAt: 0,
       seq: 0,
       dirty: false,
       aloneSince: null,
@@ -444,21 +489,29 @@ export const turf: GameDef<TurfState, TurfAction> = {
     return s;
   },
 
-  action(s, playerId, action) {
+  action(s, playerId, action, ctx) {
     if (s.phase === "over") return false;
     const idx = s.painters.findIndex((p) => p.id === playerId);
     if (idx === -1) return false;
     const a: unknown = action;
     if (typeof a !== "object" || a === null || Array.isArray(a)) return false;
-    const { type, dir } = a as { type?: unknown; dir?: unknown };
+    const { type, dir, seq, at } = a as { type?: unknown; dir?: unknown; seq?: unknown; at?: unknown };
     if (type !== "turn" || typeof dir !== "string" || dir.length > 5) return false;
+    if (seq !== undefined && !isCount(seq)) return false;
+    if (at !== undefined && !isCount(at)) return false;
     const d = (DIRS as readonly string[]).indexOf(dir);
     if (d === -1) return false;
     const p = s.painters[idx];
+    const n = typeof seq === "number" ? seq : 0;
 
     if (s.phase === "countdown") {
-      // Aim before the start; the next tick broadcasts it.
+      // Aim before the start (applied at once); the next tick broadcasts it.
       p.queue = [];
+      if (n) {
+        p.rx = n;
+        p.applied = n;
+        p.slack = 0;
+      }
       if (p.dir !== d) {
         p.dir = d;
         s.dirty = true;
@@ -466,12 +519,19 @@ export const turf: GameDef<TurfState, TurfAction> = {
       return false;
     }
 
-    // Play: queue it for the next steps (reversals allowed; this is not a snake).
-    const last = p.queue.length ? p.queue[p.queue.length - 1] : p.dir;
+    // Play: queue it for the tick it asks for (never far ahead), else the next steps.
+    const when = typeof at === "number" ? Math.min(at, s.tick + 1 + MAX_HOLD) : 0;
+    if (n) {
+      p.rx = n;
+      p.slack = when > 0 ? clamp(Math.round(s.stepAt + (when - s.tick) * TICK_MS - ctx.now()), -999, 999) : 0;
+    }
+    // Reversals allowed; this is not a snake.
+    const last = p.queue.length ? p.queue[p.queue.length - 1].d : p.dir;
     if (d === last) return false;
-    if (p.queue.length < QUEUE_MAX) p.queue.push(d);
-    else if (p.queue[0] === d) p.queue.length = 1;
-    else p.queue[QUEUE_MAX - 1] = d;
+    const turn: QueuedTurn = { d, at: when, seq: n };
+    if (p.queue.length < QUEUE_MAX) p.queue.push(turn);
+    else if (p.queue[0].d === d) p.queue.length = 1;
+    else p.queue[QUEUE_MAX - 1] = turn;
     // Nothing visible changed yet: the next tick moves and broadcasts.
     return false;
   },
@@ -485,6 +545,7 @@ export const turf: GameDef<TurfState, TurfAction> = {
         if (now >= s.endsAt) {
           s.phase = "play";
           s.endsAt = now + PLAY_MS;
+          s.stepAt = now;
           s.nextSpawnAt = now + SPAWN_FIRST_MS;
           changed = true;
         } else if (s.dirty) {
@@ -495,6 +556,7 @@ export const turf: GameDef<TurfState, TurfAction> = {
         changed = true;
       } else {
         s.tick += 1;
+        s.stepAt = now;
         if (movePainters(s, ctx, now)) changed = true;
         if (now >= s.nextSpawnAt) {
           if (spawnPower(s, ctx)) changed = true;
@@ -508,7 +570,8 @@ export const turf: GameDef<TurfState, TurfAction> = {
   },
 
   view(s, viewerId): TurfView {
-    return {
+    const you = s.painters.findIndex((p) => p.id === viewerId);
+    const v: TurfView = {
       phase: s.phase,
       w: s.w,
       h: s.h,
@@ -516,13 +579,20 @@ export const turf: GameDef<TurfState, TurfAction> = {
       tiles: encodeTiles(s),
       players: s.painters.map((p): PainterTuple => [p.id, p.x, p.y, p.dir, p.count, p.out, p.dashUntil, p.frozenUntil]),
       powers: s.powers.map((q) => ({ x: q.x, y: q.y, kind: q.kind })),
-      you: s.painters.findIndex((p) => p.id === viewerId),
+      you,
       seq: s.seq,
       tick: s.tick,
-      abandonAt: s.aloneSince === null ? null : s.aloneSince + ABANDON_MS,
-      winners: s.winners,
-      endReason: s.endReason,
     };
+    // Optional fields only when they say something (this view goes out ~8 times a second).
+    if (s.phase === "play") v.at = s.stepAt;
+    if (s.aloneSince !== null) v.abandonAt = s.aloneSince + ABANDON_MS;
+    if (s.winners) v.winners = s.winners;
+    if (s.endReason) v.endReason = s.endReason;
+    if (you >= 0 && s.phase !== "over") {
+      const p = s.painters[you];
+      v.me = [p.applied, p.rx, p.slack];
+    }
+    return v;
   },
 
   playerLeft(s, playerId, ctx) {

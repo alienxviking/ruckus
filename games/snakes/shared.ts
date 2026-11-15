@@ -13,6 +13,12 @@ export const MAX_ROUNDS = 5;
 export const START_LEN = 4;
 export const GOLDEN_VALUE = 3;
 export const MAX_QUEUE = 3;
+/**
+ * A turn may name the step it should happen on (`at`), so the client can show it before the
+ * server confirms it. The server holds an early turn until then (never longer than this many
+ * steps); a late one simply happens on the next step.
+ */
+export const MAX_HOLD = 4;
 /** With fewer than two players online between rounds, wait this long for someone to come back. */
 export const REJOIN_MS = 10_000;
 /** Dead snakes stay in the view this long so clients can flash them. */

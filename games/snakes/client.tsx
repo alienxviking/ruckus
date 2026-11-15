@@ -18,6 +18,7 @@ import {
   type RoundReason,
 } from "./shared";
 import { Arena } from "./arena";
+import { SnakePredictor } from "./predict";
 
 type Props = GameClientProps<SnakeView, SnakeAction>;
 
@@ -126,8 +127,10 @@ function Brawl({ view, me, players, byId, isPlayer, act, serverNow, accent }: Om
   const reduced = useReducedMotion();
   const colorKey = players.map((p) => `${p.id}\t${p.color}`).join("\n");
   const colors = useMemo(() => assignColors(colorKey), [colorKey]);
-  // Last direction you pressed, with the frame it was pressed on: shown until the server moves you.
+  // Last direction you pressed, with the frame it was pressed on: lights up the D-pad until the server moves you.
   const [intent, setIntent] = useState<{ dir: Dir; round: number; tick: number } | null>(null);
+  // Runs your own snake a network trip ahead so turns show at once (see predict.ts).
+  const [pred] = useState(() => new SnakePredictor());
   const secs = useSecondsLeft(view.endsAt, serverNow);
 
   const { phase, round } = view;
@@ -140,15 +143,18 @@ function Brawl({ view, me, players, byId, isPlayer, act, serverNow, accent }: Om
 
   const steer = (dir: Dir) => {
     if (!steerable) return;
+    // The predictor drops presses the server would ignore and stamps the step the turn lands on.
+    const stamp = pred.press(dir, serverNow(), performance.now());
+    if (!stamp) return;
     setIntent({ dir, round, tick: view.tick });
-    act({ type: "turn", dir });
+    act({ type: "turn", dir, ...stamp });
   };
   // Shown until the server has turned you (or a tick later, if the turn just missed a tick).
   const heading =
     mine?.alive &&
     intent &&
     intent.round === round &&
-    view.tick <= intent.tick + 1 &&
+    view.tick <= intent.tick + 4 &&
     intent.dir !== mine.dir &&
     intent.dir !== OPPOSITE[mine.dir]
       ? intent.dir
@@ -263,7 +269,7 @@ function Brawl({ view, me, players, byId, isPlayer, act, serverNow, accent }: Om
         me={me}
         colors={colors}
         byId={byId}
-        intent={heading}
+        pred={pred}
         serverNow={serverNow}
         reduced={reduced}
         steerable={steerable}

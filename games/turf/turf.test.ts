@@ -10,7 +10,8 @@ import game, {
   type TurfState,
   type TurfView,
 } from "./server";
-import { BOMB_RADIUS, COUNTDOWN_MS, DASH_MS, FREEZE_MS, PLAY_MS, TICK_MS, boardSize, type Dir } from "./shared";
+import { BOMB_RADIUS, COUNTDOWN_MS, DASH_MS, FREEZE_MS, MAX_HOLD, PLAY_MS, TICK_MS, boardSize, type Dir } from "./shared";
+import { TurfPredictor } from "./predict";
 
 // ---------- helpers ----------
 
@@ -200,7 +201,7 @@ for (const n of [2, 3, 4, 5, 6, 7, 8]) {
   place(s, 0, 20, 10, "right");
   game.action(s, t.ids[0], { type: "turn", dir: "up" }, t.ctx);
   game.action(s, t.ids[0], { type: "turn", dir: "left" }, t.ctx);
-  check(p.queue.join() === "0,3", "two turns queued");
+  check(p.queue.map((q) => q.d).join() === "0,3", "two turns queued");
   tick(t, s);
   check(p.x === 20 && p.y === 9, "first queued turn");
   tick(t, s);
@@ -213,12 +214,12 @@ for (const n of [2, 3, 4, 5, 6, 7, 8]) {
   check(p.queue.length === 0, "same direction is not queued");
   game.action(s, t.ids[0], { type: "turn", dir: "up" }, t.ctx);
   game.action(s, t.ids[0], { type: "turn", dir: "up" }, t.ctx);
-  check(p.queue.join() === "0", "repeat of the last queued turn ignored");
+  check(p.queue.map((q) => q.d).join() === "0", "repeat of the last queued turn ignored");
   game.action(s, t.ids[0], { type: "turn", dir: "left" }, t.ctx);
   game.action(s, t.ids[0], { type: "turn", dir: "down" }, t.ctx);
-  check(p.queue.join() === "0,2", "third input replaces the second");
+  check(p.queue.map((q) => q.d).join() === "0,2", "third input replaces the second");
   game.action(s, t.ids[0], { type: "turn", dir: "up" }, t.ctx);
-  check(p.queue.join() === "0", "replacing with the first collapses the queue");
+  check(p.queue.map((q) => q.d).join() === "0", "replacing with the first collapses the queue");
 }
 
 // Players pass through each other and can repaint each other's turf.
@@ -595,7 +596,7 @@ for (const n of [2, 8]) {
   tick(t, s, 3_000);
   t.ctx.player(t.ids[1])!.connected = true;
   game.playerReturned!(s, t.ids[1], t.ctx);
-  check(s.aloneSince === null && view(s, t.ids[0], t).abandonAt === null, "timer cleared on return");
+  check(s.aloneSince === null && (view(s, t.ids[0], t).abandonAt ?? null) === null, "timer cleared on return");
   // Leave again, for good this time.
   t.ctx.player(t.ids[1])!.connected = false;
   game.playerLeft!(s, t.ids[1], t.ctx);
@@ -689,5 +690,172 @@ function fuzz(n: number, seed: number) {
 }
 for (let n = 2; n <= 8; n++) for (const seed of [1, 2, 3]) fuzz(n, seed * 31 + n);
 check(fuzz(5, 77) === fuzz(5, 77), "same seed + inputs -> same game");
+
+// ---------- stamped turns: held until their tick, late ones land on the next step ----------
+{
+  const { t, s } = playing(2);
+  clearBoard(s);
+  place(s, 0, 20, 12, "right");
+  solo(s, 0);
+  const p = s.painters[0];
+  const t0 = s.tick;
+  t.advance(40);
+  game.action(s, t.ids[0], { type: "turn", dir: "up", seq: 3, at: t0 + 2 }, t.ctx);
+  check(view(s, t.ids[0], t).me?.join() === `0,3,${2 * TICK_MS - 40}`, "received, early by 200ms");
+  check(view(s, t.ids[1], t).me?.join() !== "0,3,200", "only the owner sees their status");
+  check(view(s, "spectator", t).me === undefined, "spectators get none");
+  tick(t, s, TICK_MS - 40);
+  check(p.dir === 1 && p.x === 21, "held on the tick before its own");
+  tick(t, s);
+  check(p.dir === 0 && p.y === 11 && s.tick === t0 + 2, "applied on exactly its tick");
+  check(view(s, t.ids[0], t).me?.[0] === 3, "reported as applied");
+  t.advance(30);
+  game.action(s, t.ids[0], { type: "turn", dir: "left", seq: 4, at: s.tick }, t.ctx);
+  check(view(s, t.ids[0], t).me?.[2] === -30, "late by 30ms");
+  tick(t, s, TICK_MS - 30);
+  check(p.dir === 3, "late turn lands on the next tick");
+  game.action(s, t.ids[0], { type: "turn", dir: "down", seq: 5, at: s.tick + 99 }, t.ctx);
+  check(p.queue[0]?.at === s.tick + 1 + MAX_HOLD, "hold capped at MAX_HOLD ticks");
+  for (const bad of [-1, 2.5, "7", null, 2 ** 40]) {
+    check(game.action(s, t.ids[0], { type: "turn", dir: "up", seq: bad } as never, t.ctx) === false, `bad seq ${String(bad)}`);
+    check(game.action(s, t.ids[0], { type: "turn", dir: "up", at: bad } as never, t.ctx) === false, `bad at ${String(bad)}`);
+  }
+  check(p.queue.length === 1 && p.rx === 5, "bad stamps changed nothing");
+  // Countdown aims apply at once and say so.
+  const g = newGame(2);
+  game.action(g.s, g.t.ids[0], { type: "turn", dir: "down", seq: 9, at: 5 }, g.t.ctx);
+  check(g.s.painters[0].dir === 2 && view(g.s, g.t.ids[0], g.t).me?.join() === "9,9,0", "countdown aim applied at once");
+  check(view(g.s, g.t.ids[0], g.t).at === undefined, "no step clock before play");
+}
+
+// ---------- the predictor against the real server, over a simulated network ----------
+interface NetResult {
+  accepted: number;
+  latency: number[];
+  corrections: number;
+  late: number;
+  lead: number;
+}
+
+/** Painter 0 zigzags through the predictor with `up`/`down` ms of delay and a clock `skew` ms off. */
+function netGame(up: number, down: number, skew: number, dash: boolean): NetResult {
+  const { t, s } = playing(2);
+  clearBoard(s);
+  place(s, 0, 8, 12, "right");
+  place(s, 1, 3, 3, "down");
+  solo(s, 0);
+  if (dash) s.painters[0].dashUntil = FOREVER;
+  const me = t.ids[0];
+  const pred = new TurfPredictor();
+  const toClient: { at: number; v: TurfView }[] = [];
+  const toServer: { at: number; a: unknown }[] = [];
+  const send = () => toClient.push({ at: t.ctx.now() + down, v: JSON.parse(JSON.stringify(view(s, me, t))) });
+  send();
+  let rnd = 12345;
+  const rand = () => ((rnd = (rnd * 1103515245 + 12345) % 2147483648) / 2147483648);
+  // A zigzag that stays on the board: right, up, right, down, ... (and back left when near the edge).
+  const res: NetResult = { accepted: 0, latency: [], corrections: 0, late: 0, lead: 0 };
+  const watching: { dir: number; at: number }[] = [];
+  const head = { x: 0, y: 0, dir: 0, next: 0 };
+  let nextTick = t.ctx.now() + TICK_MS;
+  let nextPress = t.ctx.now() + 200;
+  let k = 0;
+  let lastRx = 0;
+  const end = t.ctx.now() + 7_000;
+  for (let now = t.ctx.now(); now < end; now += 2) {
+    t.advance(now - t.ctx.now());
+    const cnow = now + skew;
+    while (toServer.length && toServer[0].at <= now) game.action(s, me, toServer.shift()!.a as never, t.ctx);
+    if (now >= nextTick) {
+      nextTick += TICK_MS;
+      if (game.tick!(s, t.ctx)) send();
+    }
+    const calibrated = res.accepted >= 3;
+    while (toClient.length && toClient[0].at <= now) {
+      const { v } = toClient.shift()!;
+      const tau = pred.advance(now, cnow);
+      pred.head(tau, head);
+      const [bx, by] = [head.x, head.y];
+      pred.ingest(v, cnow, now);
+      pred.head(tau, head);
+      if (calibrated && Math.hypot(head.x - bx, head.y - by) > 0.01) res.corrections += 1;
+      if (v.me && v.me[1] > lastRx) {
+        lastRx = v.me[1];
+        if (calibrated && v.me[2] < 0) res.late += 1;
+      }
+    }
+    pred.head(pred.advance(now, cnow), head);
+    for (let i = watching.length - 1; i >= 0; i--) {
+      if (head.dir === watching[i].dir) {
+        if (res.accepted > 5) res.latency.push(now - watching[i].at);
+        watching.splice(i, 1);
+      }
+    }
+    if (now >= nextPress) {
+      nextPress = now + (dash ? 200 : 300) + Math.floor(rand() * 150);
+      const p = s.painters[0];
+      const goingRight = Math.floor(k / 2) % 12 < 6;
+      const sideways = goingRight ? 1 : 3;
+      const dir = k % 2 === 0 ? sideways : p.y > 12 ? 0 : 2;
+      k += 1;
+      const stamp = pred.press(dir, cnow, now);
+      if (stamp) {
+        res.accepted += 1;
+        watching.length = 0;
+        watching.push({ dir, at: now });
+        toServer.push({ at: now + up, a: { type: "turn", dir: ["up", "right", "down", "left"][dir], ...stamp } });
+      }
+    }
+  }
+  res.lead = pred.lead.value(end);
+  return res;
+}
+
+for (const [up, down, skew, dash] of [
+  [50, 50, 0, false],
+  [20, 80, 0, false],
+  [75, 75, -75, false],
+  [50, 50, 0, true],
+] as const) {
+  const r = netGame(up, down, skew, dash);
+  const label = `net up=${up} down=${down} skew=${skew}${dash ? " dash" : ""}`;
+  const max = Math.max(...r.latency);
+  const mean = r.latency.reduce((x, y) => x + y, 0) / r.latency.length;
+  if (process.env.NET_VERBOSE) console.log(label, { mean: Math.round(mean), max, ...r, latency: r.latency.length });
+  check(r.accepted >= 12 && r.latency.length >= 8, `${label}: enough turns (${r.accepted}, ${r.latency.length})`);
+  check(max <= TICK_MS + 8, `${label}: turn visible within a tick (max ${max}ms)`);
+  check(mean <= TICK_MS * 0.7, `${label}: about half a tick on average (${mean.toFixed(0)}ms)`);
+  check(r.corrections === 0, `${label}: no corrections once calibrated (${r.corrections})`);
+  check(r.late === 0, `${label}: turns arrive in time (${r.late} late)`);
+  check(r.lead >= up - skew && r.lead <= up - skew + 40, `${label}: lead tracks clock error + uplink (${r.lead.toFixed(0)})`);
+}
+
+// ---------- the predictor: local queue mirror, countdown aim, walls ----------
+{
+  const { t, s } = playing(2);
+  clearBoard(s);
+  place(s, 0, s.w - 2, 12, "right");
+  solo(s, 0);
+  const pred = new TurfPredictor();
+  const now = t.ctx.now();
+  pred.ingest(JSON.parse(JSON.stringify(view(s, t.ids[0], t))), now, now);
+  check(pred.press(1, now, now) === null, "repeat refused locally");
+  const head = { x: 0, y: 0, dir: 0, next: 0 };
+  pred.head(s.tick + 3.5, head);
+  check(head.x === s.w - 1 && head.y === 12, "the walk stops at the wall");
+  check(pred.press(0, now, now) !== null && pred.press(3, now, now) !== null, "two turns queue");
+  check(pred.press(2, now, now) !== null && pred.pending.map((q) => q.d).join() === "0,2", "a third replaces the second");
+  check(pred.press(0, now, now) !== null && pred.pending.map((q) => q.d).join() === "0", "repeating the first collapses");
+  pred.head(pred.advance(now, now), head);
+  check(head.next === 0, "the arrow swings to the queued turn at once");
+  const g = newGame(2);
+  const p2 = new TurfPredictor();
+  const t2 = g.t.ctx.now();
+  p2.ingest(JSON.parse(JSON.stringify(view(g.s, g.t.ids[0], g.t))), t2, t2);
+  const aim = (g.s.painters[0].dir + 1) % 4;
+  check(p2.press(aim, t2, t2)?.at === undefined, "countdown aims are untimed");
+  p2.head(p2.advance(t2, t2), head);
+  check(head.next === aim, "countdown aim shows at once");
+}
 
 console.log("turf: all tests passed");

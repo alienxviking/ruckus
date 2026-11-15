@@ -3,16 +3,24 @@
 // Canvas renderer, playback buffer and touch stick for Ice Sumo.
 //
 // The server sends a physics frame every 50ms. Drawing frames as they land would stutter,
-// so the renderer keeps a short buffer and draws the world ~100ms in the past, blending
+// so the renderer keeps a short buffer and draws the world a little in the past, blending
 // the two frames around that moment with a cubic Hermite curve (positions + velocities),
 // so discs glide on smooth curves at display refresh rate. The playback clock maps the
 // frames' server timestamps onto performance.now(): it follows the fastest deliveries
-// and slews gently, so network jitter never shows up as a jerk. If frames run late it
-// extrapolates for a moment. Effects (sparks, falls, dashes) ride in the frames and fire
-// when playback reaches them, so they line up exactly with the motion.
+// and slews gently, so network jitter never shows up as a jerk. How far in the past adapts
+// to the measured jitter (55-120ms, see JitterDelay). If frames run late it extrapolates
+// for a moment. Effects (sparks, falls, dashes) ride in the frames and fire when playback
+// reaches them, so they line up exactly with the motion.
+//
+// Your own disc is the exception: predict.ts replays your inputs on top of its newest
+// snapshot, so it moves on the very frame you steer or dash. Server corrections (a hit you
+// didn't see coming) are blended out over ~120ms, it never sinks into another disc as drawn,
+// and your own dashes and falls show the moment they happen for you.
 
 import { useEffect, useEffectEvent, useRef, type PointerEvent, type ReactNode, type RefObject } from "react";
 import type { SumoView } from "./server";
+import type { Kin } from "./physics";
+import { JitterDelay, type SumoPredictor } from "./predict";
 import {
   CENTER,
   DASH_CD_MS,
@@ -41,8 +49,12 @@ import {
 } from "./shared";
 
 const TAU = Math.PI * 2;
-/** Playback sits this far behind the newest frame the network could have delivered. */
+/** Playback starts this far behind the newest frame the network could have delivered (then adapts). */
 const DELAY_MS = 100;
+/** Your disc: server corrections fade out with this time constant (ms; ~95% gone in 3x)... */
+const CORR_MS = 40;
+/** ...unless they're this big (units): then it just jumps. */
+const CORR_SNAP = 160;
 /** Late frames: keep sliding along the last known velocity for at most this long. */
 const EXTRAP_MS = 150;
 const TRAIL_MS = 150;
@@ -63,20 +75,25 @@ const easeOutBack = (t: number) => 1 + 2.4 * Math.pow(t - 1, 3) + 1.4 * Math.pow
 
 // ---------- frames & clock ----------
 
+/** A disc tuple with the trailing zeros put back. */
+type Full = [number, number, number, number, number, number, number];
+
 interface Frame {
   n: number;
   t: number;
   r: number;
   /** Disc tuple per slot (undefined = not on the ice). */
-  d: (DiscTuple | undefined)[];
+  d: (Full | undefined)[];
   u: Snap["u"];
   fx: FxTuple[] | null;
+  /** Input acknowledgements carried by the snapshot (see Snap.a). */
+  fxAcks?: [number, number, number][];
 }
 
 function toFrame(s: Snap): Frame {
-  const d: (DiscTuple | undefined)[] = [];
-  for (const p of s.p) {
-    if (Array.isArray(p) && p.length >= 7 && p[0] >= 0 && p[0] < 16) d[p[0]] = p;
+  const d: (Full | undefined)[] = [];
+  for (const p of s.p as DiscTuple[]) {
+    if (Array.isArray(p) && p.length >= 5 && p[0] >= 0 && p[0] < 16) d[p[0]] = [p[0], p[1], p[2], p[3], p[4], p[5] ?? 0, p[6] ?? 0];
   }
   return {
     n: s.n,
@@ -96,6 +113,9 @@ class Clock {
   offset = 0;
   ready = false;
   at = -1;
+  /** How far behind the quickest delivery playback runs: follows the measured jitter, gently. */
+  readonly jitter = new JitterDelay(55, 120, DELAY_MS);
+  delay = DELAY_MS;
 
   observe(t: number, now: number) {
     const s = now - t;
@@ -107,9 +127,10 @@ class Clock {
     }
     // Trust a quicker delivery at once; let a slower trend creep in.
     this.target = s < this.target ? s : this.target + (s - this.target) * 0.03;
+    this.jitter.add(s - this.target);
   }
 
-  /** Server time on screen (DELAY_MS behind). */
+  /** Server time on screen (`delay` behind the quickest delivery). */
   tick(now: number) {
     const dt = this.at < 0 ? 0 : Math.min(100, Math.max(0, now - this.at));
     this.at = now;
@@ -119,7 +140,10 @@ class Clock {
       const max = dt * 0.08; // playback never runs more than 8% fast or slow
       this.offset += Math.max(-max, Math.min(max, diff));
     }
-    return now - this.offset - DELAY_MS;
+    const dd = this.jitter.value - this.delay;
+    const maxd = dt * 0.04; // and the delay itself changes by at most 4%
+    this.delay += Math.max(-maxd, Math.min(maxd, dd));
+    return now - this.offset - this.delay;
   }
 
   serverNow(now: number) {
@@ -254,6 +278,26 @@ interface Scene {
   coarse: boolean;
   stillKey: string;
   wall: number;
+  /** performance.now() of the frame being drawn. */
+  perf: number;
+  /** Your disc: predicted this frame (world units), the correction still fading out, where it was drawn. */
+  my: Kin;
+  myOn: boolean;
+  corrX: number;
+  corrY: number;
+  myX: number;
+  myY: number;
+  /** Where your disc was drawn lately (for its trail). */
+  myTrail: { at: number; x: number; y: number }[];
+  /** Round in which your fall was already shown (as soon as the server reported it). */
+  myGone: number;
+  /** Local dashes already given their instant effect, and when the last one was shown (performance.now()). */
+  dashSeen: number;
+  myDashAt: number;
+  /** Other discs as drawn this frame (world units), so yours never sinks into one. */
+  wx: number[];
+  wy: number[];
+  wr: number[];
 }
 
 export function newScene(): Scene {
@@ -292,14 +336,82 @@ export function newScene(): Scene {
     coarse: false,
     stillKey: "",
     wall: -1,
+    perf: 0,
+    my: { x: 0, y: 0, vx: 0, vy: 0 },
+    myOn: false,
+    corrX: 0,
+    corrY: 0,
+    myX: NaN,
+    myY: NaN,
+    myTrail: [],
+    myGone: -1,
+    dashSeen: 0,
+    myDashAt: -1e9,
+    wx: [],
+    wy: [],
+    wr: [],
   };
 }
 
-/** Add a server frame to the playback buffer. */
-export function pushFrame(sc: Scene, snap: Snap, now: number) {
+/** Your side of a frame: the predictor and who you are (players only). */
+export interface Mine {
+  pred: SumoPredictor;
+  slot: number;
+  data: RinkData;
+}
+
+const scratch: Kin = { x: 0, y: 0, vx: 0, vy: 0 };
+const scratch2: Kin = { x: 0, y: 0, vx: 0, vy: 0 };
+
+/** Hand a frame to your predictor: acknowledgements, your disc's newest state, your fall. */
+function feedMine(sc: Scene, f: Frame, newest: boolean, prev: Frame | undefined, me: Mine, now: number) {
+  const { pred, slot } = me;
+  if (Array.isArray(f.fxAcks)) for (const a of f.fxAcks) if (a[0] === slot) pred.ack(a[1], f.t + a[2]);
+  if (!newest) return;
+  const dt = f.d[slot];
+  if (!dt) {
+    // Gone from the ice: show your fall now (you've been running ahead of the playback).
+    if (prev && prev.n === f.n && prev.d[slot] && sc.myGone !== f.n && !Number.isNaN(sc.myX)) {
+      const fall = f.fx?.find((e) => e[0] === FX_FALL && e[1] === slot);
+      const vx = fall ? fall[4] : sc.my.vx;
+      const vy = fall ? fall[5] : sc.my.vy;
+      sc.myGone = f.n;
+      fallFx(sc, slot, sc.myX, sc.myY, vx, vy, sc.rt, me.data);
+    }
+    pred.setBase(null);
+    return;
+  }
+  pred.serverReadyAt = f.t + dt[6] * 100 - 60;
+  pred.turbo = (dt[5] & F_TURBO) !== 0;
+  const base = { n: f.n, t: f.t, x: dt[1], y: dt[2], vx: dt[3], vy: dt[4], heavy: (dt[5] & F_HEAVY) !== 0, r: f.r };
+  const old = pred.base;
+  if (!old || old.n !== f.n || !sc.clock.ready) {
+    pred.setBase(base);
+    sc.corrX = 0;
+    sc.corrY = 0;
+    return;
+  }
+  // Same moment, two answers: keep showing the old one and fade the difference out.
+  const T = sc.clock.serverNow(now) + pred.lead();
+  const had = pred.predict(T, scratch);
+  pred.setBase(base);
+  if (had && pred.predict(T, scratch2)) {
+    sc.corrX += scratch.x - scratch2.x;
+    sc.corrY += scratch.y - scratch2.y;
+    if (Math.hypot(sc.corrX, sc.corrY) > CORR_SNAP) {
+      sc.corrX = 0;
+      sc.corrY = 0;
+    }
+  }
+}
+
+/** Add a server frame to the playback buffer (and, for a player, to their predictor). */
+export function pushFrame(sc: Scene, snap: Snap, now: number, me?: Mine) {
   const f = toFrame(snap);
+  if (Array.isArray(snap.a)) f.fxAcks = snap.a;
   const frames = sc.frames;
-  let last: Frame | undefined = frames[frames.length - 1];
+  const newestBefore: Frame | undefined = frames[frames.length - 1];
+  let last: Frame | undefined = newestBefore;
   if (!last) {
     // First frame ever: whatever happened before we arrived is history.
     sc.fxCursor = f.t;
@@ -322,6 +434,7 @@ export function pushFrame(sc: Scene, snap: Snap, now: number) {
     frames.splice(i, 0, f);
   }
   if (frames.length > MAX_FRAMES) frames.splice(0, frames.length - MAX_FRAMES);
+  if (me && me.slot >= 0) feedMine(sc, f, frames[frames.length - 1] === f, newestBefore, me, now);
 }
 
 /** Where a disc is at server time `time`. False when it isn't on the ice. */
@@ -681,21 +794,8 @@ function applyFx(sc: Scene, f: Frame, d: RinkData) {
         sc.pops.push({ slot: -1, x, y, t0: f.t, text: j > 1100 ? "💥 WHAM!" : "💥", color: "#fde047", big: j > 1100 });
     } else if (type === FX_FALL) {
       const [, slot, x, y, vx, vy] = e;
-      sc.ghosts.push({ slot, x, y, vx, vy, t0: f.t });
-      const len = Math.hypot(x - CENTER, y - CENTER) || 1;
-      const ex = CENTER + ((x - CENTER) / len) * sampleRadius(sc.frames, f.t);
-      const ey = CENTER + ((y - CENTER) / len) * sampleRadius(sc.frames, f.t);
-      sc.rings.push({ x: ex, y: ey, t0: f.t + 150, dur: 700, r0: 20, r1: 110, w: 8, color: "#a5f3fc" });
-      sc.rings.push({ x: ex, y: ey, t0: f.t + 320, dur: 700, r0: 10, r1: 70, w: 5, color: "#a5f3fc" });
-      if (!reduced) spark(sc, ex, ey, 14, 260, "#cff6ff", 1, 1.6, (x - CENTER) / len, (y - CENTER) / len);
-      if (slot === d.mySlot) {
-        sc.hurtAt = f.t;
-        try {
-          if (window.matchMedia("(pointer: coarse)").matches) navigator.vibrate?.(120);
-        } catch {
-          /* no vibration */
-        }
-      }
+      if (slot === d.mySlot && sc.myGone === f.n) continue; // already shown, the moment it happened for you
+      fallFx(sc, slot, x, y, vx, vy, f.t, d);
     } else if (type === FX_PICKUP) {
       const [, slot, k] = e;
       const kind = POWER_KINDS[k] ?? "heavy";
@@ -716,6 +816,7 @@ function applyFx(sc: Scene, f: Frame, d: RinkData) {
       }
     } else if (type === FX_DASH) {
       const [, slot, dx, dy] = e;
+      if (slot === d.mySlot && sc.perf - sc.myDashAt < 900) continue; // shown when you pressed it
       sc.dashAt[slot] = f.t;
       sc.dashDir[slot] = [dx / 100, dy / 100];
       if (sampleDisc(sc.frames, slot, f.t, tmp)) {
@@ -725,6 +826,26 @@ function applyFx(sc: Scene, f: Frame, d: RinkData) {
     } else if (type === FX_MELT) {
       const [, x, y] = e;
       sc.rings.push({ x, y, t0: f.t, dur: 600, r0: 10, r1: 60, w: 5, color: "#a5f3fc" });
+    }
+  }
+}
+
+/** A disc slides into the water: ghost, splash rings, ice chips, and a red flash if it's you. */
+function fallFx(sc: Scene, slot: number, x: number, y: number, vx: number, vy: number, t0: number, d: RinkData) {
+  sc.ghosts.push({ slot, x, y, vx, vy, t0 });
+  const len = Math.hypot(x - CENTER, y - CENTER) || 1;
+  const r = sampleRadius(sc.frames, t0);
+  const ex = CENTER + ((x - CENTER) / len) * r;
+  const ey = CENTER + ((y - CENTER) / len) * r;
+  sc.rings.push({ x: ex, y: ey, t0: t0 + 150, dur: 700, r0: 20, r1: 110, w: 8, color: "#a5f3fc" });
+  sc.rings.push({ x: ex, y: ey, t0: t0 + 320, dur: 700, r0: 10, r1: 70, w: 5, color: "#a5f3fc" });
+  if (!d.reduced) spark(sc, ex, ey, 14, 260, "#cff6ff", 1, 1.6, (x - CENTER) / len, (y - CENTER) / len);
+  if (slot === d.mySlot) {
+    sc.hurtAt = t0;
+    try {
+      if (window.matchMedia("(pointer: coarse)").matches) navigator.vibrate?.(120);
+    } catch {
+      /* no vibration */
     }
   }
 }
@@ -754,12 +875,21 @@ function busy(sc: Scene) {
   );
 }
 
-function drawScene(g: CanvasRenderingContext2D, sc: Scene, s: Surface, d: RinkData, input: InputState, now: number) {
+function drawScene(
+  g: CanvasRenderingContext2D,
+  sc: Scene,
+  s: Surface,
+  d: RinkData,
+  input: InputState,
+  now: number,
+  pred: SumoPredictor | null,
+) {
   const frames = sc.frames;
   const rt = sc.clock.tick(now);
   const wallDt = sc.wall < 0 ? 16 : Math.min(60, Math.max(0, now - sc.wall));
   sc.wall = now;
   sc.rt = rt;
+  sc.perf = now;
   const { W, H, dpr } = s;
   const reduced = d.reduced;
   const phase = d.view.phase;
@@ -786,6 +916,20 @@ function drawScene(g: CanvasRenderingContext2D, sc: Scene, s: Surface, d: RinkDa
     sc.heavyAt.length = 0;
     sc.turboAt.length = 0;
     sc.dashAt.length = 0;
+    sc.myTrail.length = 0;
+  }
+
+  // ----- your disc: replayed from its newest snapshot up to where your inputs are landing -----
+  sc.myOn = false;
+  const myNewest = latest && mySlot >= 0 ? latest.d[mySlot] : undefined;
+  if (pred && myNewest && phase !== "countdown" && pred.base && pred.base.n === latest!.n && sc.myGone !== latest!.n) {
+    pred.decided = phase !== "fight";
+    if (pred.predict(sc.clock.serverNow(now) + pred.lead(), sc.my)) {
+      const k = Math.exp(-wallDt / CORR_MS);
+      sc.corrX *= k;
+      sc.corrY *= k;
+      sc.myOn = true;
+    }
   }
 
   // ----- camera: zoom in as the rink shrinks -----
@@ -1034,11 +1178,86 @@ function drawScene(g: CanvasRenderingContext2D, sc: Scene, s: Surface, d: RinkDa
   if (mySlot >= 0) order.push(mySlot);
   for (let slot = 0; slot < slots; slot++) {
     sc.sx[slot] = NaN;
+    sc.wx[slot] = NaN;
+  }
+
+  // Where everyone is: the others from playback, yours from the predictor.
+  for (const slot of order) {
+    if (slot === mySlot && sc.myOn) continue;
+    if (!sampleDisc(frames, slot, rt, tmp)) continue;
+    sc.wx[slot] = tmp.x;
+    sc.wy[slot] = tmp.y;
+    sc.wr[slot] = sc.radius[slot] ?? DISC_R;
+  }
+  if (sc.myOn) {
+    let x = sc.my.x + sc.corrX;
+    let y = sc.my.y + sc.corrY;
+    const R = sc.radius[mySlot] ?? DISC_R;
+    // Collisions are the server's call; as drawn, your disc just never sinks into another one.
+    for (let slot = 0; slot < slots; slot++) {
+      if (slot === mySlot || Number.isNaN(sc.wx[slot])) continue;
+      const min = R + sc.wr[slot];
+      let dx = x - sc.wx[slot];
+      let dy = y - sc.wy[slot];
+      let dist = Math.hypot(dx, dy);
+      if (dist >= min) continue;
+      if (dist < 1e-3) {
+        // Dead centre: back out the way you came.
+        dx = (Number.isNaN(sc.myX) ? x : sc.myX) - sc.wx[slot];
+        dy = (Number.isNaN(sc.myY) ? y + 1 : sc.myY) - sc.wy[slot];
+        dist = Math.hypot(dx, dy) || 1;
+      }
+      x = sc.wx[slot] + (dx / dist) * min;
+      y = sc.wy[slot] + (dy / dist) * min;
+    }
+    sc.myX = x;
+    sc.myY = y;
+    sc.wx[mySlot] = x;
+    sc.wy[mySlot] = y;
+    sc.myTrail.push({ at: now, x, y });
+    while (sc.myTrail.length > 2 && now - sc.myTrail[0].at > TRAIL_MS + 60) sc.myTrail.shift();
+  } else if (sc.myTrail.length) sc.myTrail.length = 0;
+
+  // Your dash shows the moment you press it.
+  if (pred && pred.dashes !== sc.dashSeen) {
+    sc.dashSeen = pred.dashes;
+    if (mySlot >= 0 && !Number.isNaN(sc.wx[mySlot]) && phase === "fight") {
+      const v = sc.myOn ? sc.my : { x: 0, y: 0, vx: 0, vy: 0 };
+      const [dx, dy] = pred.dashDir(input.x, input.y, v);
+      const x = sc.wx[mySlot];
+      const y = sc.wy[mySlot];
+      sc.myDashAt = now;
+      sc.dashAt[mySlot] = rt;
+      sc.dashDir[mySlot] = [dx, dy];
+      sc.rings.push({ x, y, t0: rt, dur: 300, r0: 30, r1: 70, w: 6, color: d.colors[mySlot] ?? "#fff" });
+      if (!reduced) spark(sc, x - dx * 26, y - dy * 26, 8, 300, "#ffffff", 0, 0.9, -dx, -dy);
+    }
   }
 
   // Trails first, so every disc sits on top of every trail.
   if (!reduced) {
     for (const slot of order) {
+      if (slot === mySlot && sc.myOn) {
+        // Yours: through where it was actually drawn.
+        const speed = Math.hypot(sc.my.vx, sc.my.vy);
+        const dashing = now - sc.myDashAt < 300;
+        if (speed < 140 && !dashing) continue;
+        const R = sc.radius[slot] ?? DISC_R;
+        const tr = sc.myTrail;
+        g.lineCap = "round";
+        for (let k = tr.length - 2, n = 1; k >= 0 && now - tr[k].at <= TRAIL_MS; k--, n++) {
+          const f = 1 - (now - tr[k].at) / (TRAIL_MS + 20);
+          g.globalAlpha = (dashing ? 0.6 : 0.42) * f * clamp01((speed - 100) / 220 + (dashing ? 0.6 : 0));
+          g.strokeStyle = dashing ? "#ffffff" : (d.colors[slot] ?? "#ffffff");
+          g.lineWidth = R * 1.7 * f;
+          g.beginPath();
+          g.moveTo(tr[k + 1].x, tr[k + 1].y);
+          g.lineTo(tr[k].x, tr[k].y);
+          g.stroke();
+        }
+        g.globalAlpha = 1;
+        continue;
+      }
       if (!sampleDisc(frames, slot, rt, tmp)) continue;
       const speed = Math.hypot(tmp.vx, tmp.vy);
       const dashing = (tmp.flags & F_DASH) !== 0;
@@ -1070,8 +1289,17 @@ function drawScene(g: CanvasRenderingContext2D, sc: Scene, s: Surface, d: RinkDa
   let myCdAt = 0;
   let myTurbo = false;
   for (const slot of order) {
-    if (!sampleDisc(frames, slot, rt, tmp)) continue;
     const isMe = slot === mySlot;
+    if (isMe && latest && sc.myGone === latest.n) continue; // fallen in: the ghost has it
+    if (isMe && sc.myOn && myNewest) {
+      tmp.x = sc.myX;
+      tmp.y = sc.myY;
+      tmp.vx = sc.my.vx;
+      tmp.vy = sc.my.vy;
+      tmp.flags = (myNewest[5] & ~F_DASH) | (now - sc.myDashAt < 260 ? F_DASH : 0);
+      tmp.cd = myNewest[6];
+      tmp.cdAt = latest!.t;
+    } else if (!sampleDisc(frames, slot, rt, tmp)) continue;
     const color = d.colors[slot] ?? "#94a3b8";
     const heavy = (tmp.flags & F_HEAVY) !== 0;
     const turbo = (tmp.flags & F_TURBO) !== 0;
@@ -1086,6 +1314,8 @@ function drawScene(g: CanvasRenderingContext2D, sc: Scene, s: Surface, d: RinkDa
       myCd = tmp.cd;
       myCdAt = tmp.cdAt;
       myTurbo = turbo;
+      sc.myX = x;
+      sc.myY = y;
     }
     const grow = spawn < 1 ? Math.max(0.05, easeOutBack(spawn)) : 1;
     const Rd = R * grow;
@@ -1197,9 +1427,11 @@ function drawScene(g: CanvasRenderingContext2D, sc: Scene, s: Surface, d: RinkDa
           g.fill();
         }
       }
-      // Recharge arc (counted on the server clock, so it matches the DASH button).
+      // Recharge arc (the server's word, or your own press if that's newer; matches the DASH button).
       const total = turbo ? TURBO_CD_MS : DASH_CD_MS;
-      const left = Math.max(0, tmp.cd * 100 - (sc.clock.serverNow(now) - tmp.cdAt));
+      const left = pred
+        ? pred.dashLeft(now, total)
+        : Math.max(0, tmp.cd * 100 - (sc.clock.serverNow(now) - tmp.cdAt));
       if (left > 0 && phase !== "final") {
         g.strokeStyle = d.accent;
         g.lineWidth = 4;
@@ -1472,7 +1704,10 @@ function drawScene(g: CanvasRenderingContext2D, sc: Scene, s: Surface, d: RinkDa
     g.globalAlpha = 1;
   }
 
-  return { myCd, myCdAt, myTurbo };
+  const myTotal = myTurbo ? TURBO_CD_MS : DASH_CD_MS;
+  const myLeft =
+    myCd < 0 ? -1 : pred ? pred.dashLeft(now, myTotal) : Math.max(0, myCd * 100 - (sc.clock.serverNow(now) - myCdAt));
+  return { myLeft, myTotal };
 }
 
 const stickRadius = (cssW: number) => Math.max(34, Math.min(56, cssW * 0.12));
@@ -1482,6 +1717,7 @@ const stickRadius = (cssW: number) => Math.max(34, Math.min(56, cssW * 0.12));
 export function Rink({
   data,
   input,
+  pred,
   onEvent,
   onStick,
   onDash,
@@ -1493,6 +1729,8 @@ export function Rink({
   data: RinkData;
   /** Your current stick direction (written by the client's input handling). */
   input: RefObject<InputState>;
+  /** Your disc's predictor (players only); the client records inputs into it. */
+  pred: SumoPredictor | null;
   onEvent: (fn: (e: unknown) => void) => () => void;
   /** Touch stick moved: direction with magnitude <= 1 (0, 0 = released). */
   onStick: (x: number, y: number) => void;
@@ -1512,19 +1750,23 @@ export function Rink({
   const { view } = data;
 
   // Frames arrive two ways: snapshot events (20/s) and the view (on big moments).
+  const onSnap = useEffectEvent((snap: Snap) => {
+    const mine = pred && data.mySlot >= 0 ? { pred, slot: data.mySlot, data } : undefined;
+    pushFrame(scene.current, snap, performance.now(), mine);
+  });
   useEffect(() => {
-    if (view.snap && typeof view.snap === "object") pushFrame(scene.current, view.snap, performance.now());
+    if (view.snap && typeof view.snap === "object") onSnap(view.snap);
   }, [view]);
   useEffect(
     () =>
       onEvent((e) => {
         const s = e as Snap | null;
-        if (s && typeof s === "object" && s.k === "s" && typeof s.t === "number" && Array.isArray(s.p)) {
-          pushFrame(scene.current, s, performance.now());
-        }
+        if (s && typeof s === "object" && s.k === "s" && typeof s.t === "number" && Array.isArray(s.p)) onSnap(s);
       }),
     [onEvent],
   );
+  // Your inputs are stamped with the playback clock's idea of server time.
+  useEffect(() => pred?.attachClock(scene.current.clock), [pred]);
 
   // Crisp backing store at any devicePixelRatio.
   useEffect(() => {
@@ -1589,15 +1831,14 @@ export function Rink({
     if (!g) return;
     g.imageSmoothingEnabled = true;
     g.imageSmoothingQuality = "high";
-    const me = drawScene(g, sc, s, data, input.current ?? { x: 0, y: 0 }, now);
+    const me = drawScene(g, sc, s, data, input.current ?? { x: 0, y: 0 }, now, pred);
     const meter = meterRef.current;
     if (meter) {
-      const total = me.myTurbo ? TURBO_CD_MS : DASH_CD_MS;
-      const left = me.myCd < 0 ? 0 : Math.max(0, me.myCd * 100 - (sc.clock.serverNow(now) - me.myCdAt));
-      const frac = Math.min(1, left / total);
+      const left = Math.max(0, me.myLeft);
+      const frac = Math.min(1, left / me.myTotal);
       const v = frac.toFixed(3);
       if (meter.style.getPropertyValue("--sumo-cd") !== v) meter.style.setProperty("--sumo-cd", v);
-      const ready = left <= 0 && me.myCd >= 0 ? "1" : "0";
+      const ready = left <= 0 && me.myLeft >= 0 ? "1" : "0";
       if (meter.getAttribute("data-ready") !== ready) meter.setAttribute("data-ready", ready);
     }
   });

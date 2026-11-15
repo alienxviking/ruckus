@@ -15,6 +15,7 @@ import { Note, PlayerChip, TimerBar, useSecondsLeft } from "@/components/game-ui
 import type { GameClientProps } from "@/shared/client-game";
 import type { Player } from "@/shared/types";
 import type { FoulKind, Phase, ReflexAction, ReflexView, RoundEntry, RoundSummary } from "./server";
+import { timeTap, type Painted } from "./timing";
 
 type Props = GameClientProps<ReflexView, ReflexAction>;
 type SignalPhase = Extract<Phase, "ready" | "wait" | "fake" | "go">;
@@ -95,7 +96,7 @@ const CSS = `
 export default function QuickDraw({ view, me, byId, isPlayer, act, serverNow, accent }: Props) {
   const rootRef = useRef<HTMLDivElement>(null);
   /** Frame timestamp (performance clock) at which "DRAW!" was painted, per game+round. */
-  const painted = useRef<{ key: string; at: number } | null>(null);
+  const painted = useRef<Painted | null>(null);
   /** Game+round we last sent a tap for: one tap per round, even with two fingers. */
   const sentKey = useRef("");
   /** When the last keyboard tap happened, so the click a key can synthesise isn't counted twice. */
@@ -131,11 +132,11 @@ export default function QuickDraw({ view, me, byId, isPlayer, act, serverNow, ac
         if (sentKey.current === k || view.you?.status !== "none") return true;
         sentKey.current = k;
         buzz();
-        const p = painted.current;
-        if (view.phase === "go" && p && p.key === k && at >= p.at) {
-          const rt = Math.round(at - p.at);
-          setMine({ key: k, kind: "drew", rt, during: "wait" });
-          act({ type: "tap", round: r, rt });
+        // Timed from the frame that painted DRAW! to the tap's own timestamp (see timing.ts).
+        const tap = timeTap(view.phase, k, painted.current, at);
+        if (tap.kind === "drew") {
+          setMine({ key: k, kind: "drew", rt: tap.rt, during: "wait" });
+          act({ type: "tap", round: r, rt: tap.rt });
         } else {
           // Tapped before this screen showed the signal: honest clients own up.
           setMine({ key: k, kind: "early", rt: null, during: view.phase === "fake" ? "fake" : "wait" });
@@ -381,7 +382,9 @@ function lookFor(p: {
       sub: "Bang! Waiting for the others…",
       subColor: "#dcfce7",
       countColor: "#dcfce7",
-      anim: "animate-pop",
+      // Fully visible on the very frame of the tap (a fade-in would hide it for a frame or two).
+      anim: "rx-slam",
+      flash: true,
     };
   }
   switch (p.phase) {

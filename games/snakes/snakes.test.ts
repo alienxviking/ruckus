@@ -1,12 +1,14 @@
 import { assert, makeTestCtx } from "../../shared/testing";
 import type { GameResult } from "../../shared/types";
 import game, { buildView, spawnLayout, type Snake, type SnakeAction, type SnakeState, type SnakeView } from "./server";
+import { SnakePredictor, emptyShape } from "./predict";
 import {
   COUNTDOWN_MS,
   DELTA,
   DIRS,
   GHOST_MS,
   GOLDEN_VALUE,
+  MAX_HOLD,
   MAX_QUEUE,
   REJOIN_MS,
   ROUND_MS,
@@ -454,7 +456,7 @@ for (const [w, hh, counts] of [
   quiet(h);
   place(h, a, [[5, 5], [6, 5], [6, 6], [5, 6], [4, 6], [4, 7]], "left");
   place(h, b, line(20, 15, "left"), "left");
-  assert(turn(h, a, "down") === false && snakeOf(h, a).queue.join() === "down", "queued");
+  assert(turn(h, a, "down") === false && snakeOf(h, a).queue.map((q) => q.dir).join() === "down", "queued");
   tick(h);
   assert(!snakeOf(h, a).alive && h.s.feed[0].cause === "self", "own body kills");
 }
@@ -635,12 +637,12 @@ for (const [w, hh, counts] of [
   const p = perp(d0);
   assert(turn(h, a, OPPOSITE[d0]) === false && num(sn.queue.length) === 0, "reversal ignored");
   assert(turn(h, a, d0) === false && num(sn.queue.length) === 0, "same direction ignored");
-  assert(turn(h, a, p) === false && sn.queue.join() === p, "turn queued during the countdown (no broadcast)");
+  assert(turn(h, a, p) === false && sn.queue.map((q) => q.dir).join() === p, "turn queued during the countdown (no broadcast)");
   assert(turn(h, a, p) === false && num(sn.queue.length) === 1, "duplicate of the last queued ignored");
   assert(turn(h, a, OPPOSITE[p]) === false && num(sn.queue.length) === 1, "reversal of the last queued ignored");
   turn(h, a, d0);
   turn(h, a, p);
-  assert(sn.queue.join() === [p, d0, p].join(), "three queued");
+  assert(sn.queue.map((q) => q.dir).join() === [p, d0, p].join(), "three queued");
   turn(h, a, d0);
   turn(h, a, OPPOSITE[d0]);
   assert(num(sn.queue.length) === 3, "queue capped at three");
@@ -725,20 +727,25 @@ for (const [w, hh, counts] of [
   const h = start(3);
   const [a, b] = h.t.ids;
   toPlay(h);
-  const v0 = JSON.stringify(viewOf(h, b));
+  // Everyone shares one view; each player also gets their own tiny input status ("me").
+  const shared = (v: SnakeView) => JSON.stringify({ ...v, me: undefined });
+  const v0 = shared(viewOf(h, b));
   const spec0 = JSON.stringify(viewOf(h, "spectator"));
-  assert(JSON.stringify(viewOf(h, a)) === v0 && spec0 === v0, "all viewers get the same view");
+  assert(shared(viewOf(h, a)) === v0 && spec0 === v0, "all viewers get the same view");
+  assert(viewOf(h, "spectator").me === undefined, "spectators get no input status");
+  assert(viewOf(h, a).me?.join() === "0,0,0", "a player sees their own input status");
   const sn = snakeOf(h, a);
   turn(h, a, perp(sn.dir));
   assert(sn.queue.length === 1, "queued");
-  assert(JSON.stringify(viewOf(h, b)) === v0, "other players can't see a queued turn");
+  assert(JSON.stringify(viewOf(h, b)) === JSON.stringify(viewOf(h, b)) && shared(viewOf(h, b)) === v0, "other players can't see a queued turn");
   assert(JSON.stringify(viewOf(h, "spectator")) === spec0, "spectators can't either");
   const fresh = JSON.stringify(buildView(h.s, h.t.ctx.now()));
   assert(fresh === v0, "the queue isn't part of the view at all");
-  for (const key of ["queue", "spawn", "spawnDir", "away", "grow", "goldenAt", "rev"]) {
+  for (const key of ["queue", "spawn", "spawnDir", "away", "grow", "goldenAt", "rev", "applied", "slack"]) {
     assert(!fresh.includes(`"${key}"`), `view leaks ${key}`);
   }
   assertPlain(viewOf(h, b));
+  assertPlain(viewOf(h, a));
 }
 
 // ---------- disconnects: countdown ----------
@@ -939,10 +946,11 @@ for (const [n, seed, wild, idle] of [
   let maxView = 0;
   let steps = 0;
   const sameView = (label: string) => {
-    const cached = JSON.stringify(game.view(h.s, h.t.ids[0], h.t.ctx));
+    const cached = JSON.stringify(game.view(h.s, "spectator", h.t.ctx));
     assert(cached === JSON.stringify(buildView(h.s, h.t.ctx.now())), `${label}: stale cached view`);
-    assert(JSON.stringify(game.view(h.s, "spectator", h.t.ctx)) === cached, `${label}: spectator view differs`);
-    maxView = Math.max(maxView, cached.length);
+    const mine = game.view(h.s, h.t.ids[0], h.t.ctx) as SnakeView;
+    assert(JSON.stringify({ ...mine, me: undefined }) === cached, `${label}: player view differs beyond "me"`);
+    maxView = Math.max(maxView, JSON.stringify(mine).length);
   };
   for (; steps < 9000 && phaseOf(h) !== "final"; steps++) {
     for (const id of h.t.ids) {
@@ -976,6 +984,216 @@ function toPlayFromRoundOver(h: H) {
   h.t.advance(h.s.endsAt - h.t.ctx.now());
   game.tick!(h.s, h.t.ctx);
   toPlay(h);
+}
+
+// ---------- stamped turns: held until their step, late ones land on the next step ----------
+
+{
+  const h = start(2);
+  const [a] = h.t.ids;
+  quiet(h);
+  toPlay(h);
+  place(h, a, line(10, 12, "right"), "right");
+  const s0 = h.s.tick;
+  // Arrives 50ms after the last step, asking for the step after next: held for one step.
+  h.t.advance(50);
+  assert(act(h, a, { type: "turn", dir: "up", seq: 5, at: s0 + 2 }) === false, "stamped turn: no broadcast");
+  assert(viewOf(h, a).me?.join() === `0,5,${TICK_MS * 2 - 50}`, "received, applied nothing yet, early by 170ms");
+  tick(h, TICK_MS - 50);
+  assert(dirOf(snakeOf(h, a)) === "right", "held: not applied on the step before its own");
+  tick(h);
+  assert(dirOf(snakeOf(h, a)) === "up" && h.s.tick === s0 + 2, "applied on exactly the stamped step");
+  assert(viewOf(h, a).me?.[0] === 5, "reported as applied");
+  // A late one (its step already ran) happens on the next step and reports how late it was.
+  h.t.advance(20);
+  act(h, a, { type: "turn", dir: "left", seq: 6, at: h.s.tick });
+  assert(viewOf(h, a).me?.join() === "5,6,-20", "late by 20ms");
+  tick(h, TICK_MS - 20);
+  assert(dirOf(snakeOf(h, a)) === "left", "late turn lands on the next step");
+  // A stamp far in the future is clamped to MAX_HOLD steps.
+  act(h, a, { type: "turn", dir: "down", seq: 7, at: h.s.tick + 50 });
+  const q = snakeOf(h, a).queue[0];
+  assert(q && q.at === h.s.tick + 1 + MAX_HOLD, "hold capped");
+  // Bad stamps and input numbers are rejected outright.
+  for (const bad of [-1, 1.5, "3", null, 2 ** 40, Number.NaN]) {
+    assert(act(h, a, { type: "turn", dir: "up", seq: bad }) === false, `bad seq ${String(bad)}`);
+    assert(act(h, a, { type: "turn", dir: "up", at: bad }) === false, `bad at ${String(bad)}`);
+  }
+  assert(snakeOf(h, a).queue.length === 1 && snakeOf(h, a).rx === 7, "bad stamps changed nothing");
+  // Countdown turns ignore stamps (there are no steps yet) and are not timed.
+  const h2 = start(2);
+  const [c] = h2.t.ids;
+  const sc = snakeOf(h2, c);
+  act(h2, c, { type: "turn", dir: perp(sc.dir), seq: 1, at: 999 });
+  assert(sc.queue[0]?.at === 0 && viewOf(h2, c).me?.join() === "0,1,0", "countdown turns are untimed");
+}
+
+// ---------- the predictor against the real server, over a simulated network ----------
+
+interface NetResult {
+  presses: number;
+  accepted: number;
+  /** ms from each accepted press until your head is visibly heading the new way (after calibration). */
+  latency: number[];
+  /** Server frames that moved your drawn head (the prediction was wrong), after calibration. */
+  corrections: number;
+  late: number;
+  lead: number;
+}
+
+/**
+ * Two snakes; yours (p0) is steered in a small square through the predictor with `up`/`down` ms
+ * of one-way delay and a client clock that is `skew` ms off. The other snake drives safely.
+ */
+function netGame(up: number, down: number, skew: number, seed: number): NetResult {
+  const h = start(2, seed);
+  const [me, other] = h.t.ids;
+  quiet(h);
+  place(h, me, line(14, 13, "right"), "right");
+  place(h, other, line(3, 3, "down"), "down");
+  const pred = new SnakePredictor();
+  const toClient: { at: number; v: SnakeView }[] = [];
+  const toServer: { at: number; a: SnakeAction }[] = [];
+  const send = () => toClient.push({ at: h.t.ctx.now() + down, v: JSON.parse(JSON.stringify(viewOf(h, me))) });
+  send();
+  let rnd = seed * 9301 + 49297;
+  const rand = () => ((rnd = (rnd * 233280 + 49297) % 2147483647) / 2147483647);
+  const square: Dir[] = ["up", "left", "down", "right"];
+  const res: NetResult = { presses: 0, accepted: 0, latency: [], corrections: 0, late: 0, lead: 0 };
+  const watching: { dir: Dir; at: number }[] = [];
+  let nextTick = h.t.ctx.now() + TICK_MS;
+  let nextPress = h.t.ctx.now() + 3_300;
+  let turn = 0;
+  let lastRx = 0;
+  const sh = emptyShape();
+  const end = h.t.ctx.now() + 3_000 + 7_000;
+  for (let now = h.t.ctx.now(); now < end && h.s.phase !== "final"; now += 2) {
+    h.t.advance(now - h.t.ctx.now());
+    const cnow = now + skew;
+    while (toServer.length && toServer[0].at <= now) game.action(h.s, me, toServer.shift()!.a, h.t.ctx);
+    if (now >= nextTick) {
+      nextTick += TICK_MS;
+      // The other snake idles far away (put back every step) so the round never ends.
+      place(h, other, line(5, 20, "right"), "right");
+      if (game.tick!(h.s, h.t.ctx)) send();
+      if (h.s.phase === "roundOver") break;
+    }
+    const calibrated = res.accepted >= 3;
+    while (toClient.length && toClient[0].at <= now) {
+      const { v } = toClient.shift()!;
+      const tau = pred.advance(now, cnow);
+      const had = pred.shape(tau, sh);
+      const [bx, by] = [sh.hx, sh.hy];
+      pred.ingest(v, me, cnow, now);
+      if (had && pred.shape(tau, sh) && calibrated && Math.hypot(sh.hx - bx, sh.hy - by) > 0.01) res.corrections += 1;
+      if (v.me && v.me[1] > lastRx) {
+        lastRx = v.me[1];
+        if (calibrated && v.me[2] < 0) res.late += 1;
+      }
+    }
+    const tau = pred.advance(now, cnow);
+    if (pred.shape(tau, sh)) {
+      for (let i = watching.length - 1; i >= 0; i--) {
+        const [dx, dy] = DELTA[watching[i].dir];
+        if (sh.dx === dx && sh.dy === dy) {
+          if (res.accepted > 5) res.latency.push(now - watching[i].at);
+          watching.splice(i, 1);
+        }
+      }
+    }
+    if (h.s.phase === "play" && now >= nextPress) {
+      nextPress = now + 280 + Math.floor(rand() * 160);
+      const dir = square[turn % 4];
+      res.presses += 1;
+      const stamp = pred.press(dir, cnow, now);
+      if (stamp) {
+        turn += 1;
+        res.accepted += 1;
+        watching.push({ dir, at: now });
+        toServer.push({ at: now + up, a: { type: "turn", dir, ...stamp } });
+      }
+    }
+  }
+  assert(snakeOf(h, me).alive, `net ${up}/${down}/${skew}: your snake survived the square dance`);
+  res.lead = pred.lead.value(end);
+  return res;
+}
+
+for (const [up, down, skew] of [
+  [50, 50, 0],
+  [20, 80, 0],
+  [75, 75, -75],
+  [10, 10, 30],
+] as const) {
+  const r = netGame(up, down, skew, 3);
+  const label = `net up=${up} down=${down} skew=${skew}`;
+  const max = Math.max(...r.latency);
+  const mean = r.latency.reduce((x, y) => x + y, 0) / r.latency.length;
+  if (process.env.NET_VERBOSE) console.log(label, { mean: mean.toFixed(0), max, ...r, latency: r.latency.length });
+  assert(r.accepted >= 12 && r.latency.length >= 8, `${label}: enough turns (${r.accepted}, ${r.latency.length})`);
+  // A turn shows at the next cell boundary: never more than one step away (local-game feel).
+  assert(max <= TICK_MS + 8, `${label}: turn visible within a step (max ${max}ms)`);
+  assert(mean <= TICK_MS * 0.7, `${label}: about half a step on average (${mean.toFixed(0)}ms)`);
+  assert(r.corrections === 0, `${label}: no corrections once calibrated (${r.corrections})`);
+  assert(r.late === 0, `${label}: turns arrive in time (${r.late} late)`);
+  assert(r.lead >= up - skew && r.lead <= up - skew + 40, `${label}: lead tracks clock error + uplink (${r.lead.toFixed(0)})`);
+}
+
+// ---------- the predictor: validation, eyes and hint at once, predicted crash ----------
+
+{
+  const h = start(2);
+  const [a] = h.t.ids;
+  quiet(h);
+  toPlay(h);
+  place(h, a, line(29, 10, "right"), "right");
+  const pred = new SnakePredictor();
+  const now = h.t.ctx.now();
+  pred.ingest(JSON.parse(JSON.stringify(viewOf(h, a))), a, now, now);
+  assert(pred.press("left", now, now) === null, "reversal refused locally");
+  assert(pred.press("right", now, now) === null, "repeat refused locally");
+  const sh = emptyShape();
+  pred.shape(pred.advance(now, now), sh);
+  assert(sh.eyes === "right" && sh.hint === null, "looking ahead, nothing queued");
+  const st = pred.press("down", now, now);
+  assert(st && st.seq === 1 && typeof st.at === "number" && st.at > h.s.tick, "stamped for a future step");
+  pred.shape(pred.advance(now, now), sh);
+  assert(String(sh.eyes) === "down", "eyes turn the instant you press");
+  assert(String(sh.hint) === "down", "the turn is hinted at the next cell");
+  assert(pred.press("up", now, now) === null, "reversal of a queued turn refused");
+  assert(pred.press("left", now, now) !== null && pred.press("up", now, now) !== null, "queue fills");
+  assert(pred.press("right", now, now) === null, "queue full (MAX_QUEUE)");
+
+  // Heading into the wall two cells away with nothing queued: the head lunges into the wall on
+  // your screen before the server has even made that step.
+  const h2 = start(2);
+  const [b] = h2.t.ids;
+  quiet(h2);
+  toPlay(h2);
+  place(h2, b, line(h2.s.w - 2, 10, "right"), "right");
+  const p2 = new SnakePredictor();
+  const t0 = h2.t.ctx.now();
+  p2.ingest(JSON.parse(JSON.stringify(viewOf(h2, b))), b, t0, t0);
+  assert(p2.deathAt === h2.s.tick + 2, "crash predicted two steps ahead");
+  p2.shape(h2.s.tick + 1.5, sh);
+  assert(sh.lunge === "right" && sh.lungeAmt > 0 && sh.hx === h2.s.w - 1, "lunging into the wall at the last cell");
+  // Food on the way is eaten in the walk (the tail stays put for a step).
+  const h3 = start(2);
+  const [c] = h3.t.ids;
+  quiet(h3);
+  toPlay(h3);
+  place(h3, c, line(10, 10, "right"), "right");
+  h3.s.food[0] = at(h3, 11, 10);
+  const p3 = new SnakePredictor();
+  const t3 = h3.t.ctx.now();
+  p3.ingest(JSON.parse(JSON.stringify(viewOf(h3, c))), c, t3, t3);
+  for (let k = 1; k <= 3; k++) {
+    tick(h3);
+    p3.shape(h3.s.tick, sh);
+    const body = snakeOf(h3, c).body;
+    assert(sh.pts.length / 2 === body.length, `walk length matches the server after ${k} steps (food)`);
+    assert(sh.hx === body[0] % h3.s.w && sh.hy === Math.floor(body[0] / h3.s.w), `walk head matches after ${k}`);
+  }
 }
 
 console.log("snakes: all tests passed");

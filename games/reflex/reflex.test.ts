@@ -1,6 +1,7 @@
 import { assert, makeTestCtx } from "../../shared/testing";
 import type { GameResult } from "../../shared/types";
 import game, { TARGET, TIMING, type Phase, type ReflexState, type ReflexView } from "./server";
+import { timeTap } from "./timing";
 
 // ---------- helpers ----------
 
@@ -567,6 +568,30 @@ function assertNoLeaks(t: Harness, s: ReflexState, ids: string[]) {
   assert(results[0].winners.join() === "constructor" && results[0].scores?.["constructor"] === TARGET, "odd ids score");
   const json = JSON.stringify(view(t, s, "__proto__"));
   assert(json.includes('"__proto__":0') && json.includes('"constructor":5'), "odd ids survive serialisation");
+}
+
+// ---------- client timing: from the frame that painted DRAW! to the tap's own timestamp ----------
+{
+  const painted = { key: "g:3", at: 10_000 };
+  const drew = timeTap("go", "g:3", painted, 10_187.6);
+  assert(drew.kind === "drew" && drew.rt === 188, "reaction time = tap timestamp - paint frame, rounded");
+  assert(timeTap("go", "g:3", painted, 10_000).rt === 0, "a tap on the paint frame itself counts (0ms)");
+  // Tapped before the frame that showed the signal started: jumped the gun, whatever the network did.
+  assert(timeTap("go", "g:3", painted, 9_999).kind === "early", "tap stamped before the paint frame is early");
+  // DRAW! is in the page but not painted yet (no frame timestamp): you couldn't have seen it.
+  assert(timeTap("go", "g:3", null, 10_100).kind === "early", "no paint yet: early");
+  assert(timeTap("go", "g:4", painted, 10_100).kind === "early", "a paint from another round doesn't count");
+  assert(timeTap("wait", "g:3", painted, 10_100).kind === "early", "outside the go phase: early");
+  assert(timeTap("go", "g:3", painted, Number.NaN).kind === "early", "no timestamp: early");
+  // The server still clamps a client's number against its own clock.
+  const t = makeTestCtx(2);
+  const s = game.setup(t.ctx);
+  s.phase = "go";
+  s.signalAt = t.ctx.now();
+  s.endsAt = t.ctx.now() + TIMING.goWindowMs;
+  t.advance(150);
+  game.action(s, t.ids[0], { type: "tap", round: s.round, rt: 400 }, t.ctx);
+  assert(s.taps[t.ids[0]]?.rt === 150 + TIMING.rtSlackMs, "an impossible client time is clamped to the server's");
 }
 
 console.log("reflex: all tests passed");

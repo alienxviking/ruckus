@@ -59,8 +59,11 @@ export const F_TURBO = 2;
 export const F_DASH = 4;
 export const F_OFFLINE = 8;
 
-/** [slot, x, y, vx, vy, flags, dash cooldown left in tenths of a second]; all ints. */
-export type DiscTuple = [number, number, number, number, number, number, number];
+/**
+ * [slot, x, y, vx, vy, flags, dash cooldown left in tenths of a second]; all ints.
+ * Trailing zeros are left off (most discs, most frames: just the first five).
+ */
+export type DiscTuple = [number, number, number, number, number, number?, number?];
 
 /**
  * Something that happened during a tick, played back when the snapshot is on screen:
@@ -93,6 +96,11 @@ export interface Snap {
   fx?: FxTuple[];
   /** Nothing moved since the previous frame we sent until one tick before this one. */
   q?: 1;
+  /**
+   * Inputs received since the previous snapshot, for client prediction:
+   * [slot, input number, ms from this frame's time to the sim time it took effect from].
+   */
+  a?: [number, number, number][];
 }
 
 // ---------- helpers ----------

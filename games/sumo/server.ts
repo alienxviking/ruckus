@@ -37,6 +37,7 @@ import {
   type PowerKind,
   type Snap,
 } from "./shared";
+import { BRAKE_FRICTION, FRICTION, SUB_MS, applyDash, integrate, keepOnIce } from "./physics";
 
 // Ice Sumo: real-time shoving on a shrinking ice rink (Ruckus original).
 // The server owns the physics: 3 fixed substeps of 1/60s per 50ms tick, driven by
@@ -44,23 +45,15 @@ import {
 // tick it sends everyone a compact snapshot event and returns false; the full view
 // only goes out when something big happens (a phase change or someone falling in).
 // Nothing is secret, so every viewer gets the same view.
+//
+// Latency: each input may carry a number (`s`). The next snapshot acknowledges it with
+// the sim time it took effect from (`a`), so the owner's client can replay its own inputs
+// on top of the server's state with exactly the server's timing (see predict.ts), and
+// learn how far ahead of the server it has to run. The motion code itself is shared with
+// the client (physics.ts).
 
 // ---------- tuning ----------
 
-const SUB_MS = TICK_MS / SUBSTEPS;
-const DT = SUB_MS / 1000;
-/** Acceleration at full stick (units/s²). */
-const ACCEL = 1000;
-/** A heavy disc is a little slower off the mark. */
-const HEAVY_ACCEL = 0.8;
-/** Ice friction per substep. */
-const FRICTION = 0.992;
-const MAX_SPEED = 480;
-/** Above MAX_SPEED (after a dash or a big hit) speed bleeds off at most this fast per substep. */
-const OVERSPEED_KEEP = 0.95;
-/** Absolute cap so nothing can ever explode. */
-const HARD_SPEED = 1_600;
-const DASH_IMPULSE = 650;
 /** Restitution blends from soft (slow shoves) to bouncy (real hits). */
 const E_SOFT = 0.35;
 const E_BOUNCY = 1.15;
@@ -77,8 +70,6 @@ const MAX_CATCHUP = 6;
 /** Even when nothing moves, a snapshot goes out this often. */
 const HEARTBEAT_MS = 1_000;
 const MAX_FX = 16;
-/** Once a round is decided the survivors brake to a stop (and can't slide off any more). */
-const BRAKE_FRICTION = 0.93;
 
 // ---------- state ----------
 
@@ -104,6 +95,11 @@ interface Disc {
   /** Who last shoved this disc, and when (knockout credit). */
   hitBy: number;
   hitAt: number;
+  /** Newest input number received from the owner (0 = none), the sim time it took effect from... */
+  seq: number;
+  ackT: number;
+  /** ...and whether the next snapshot still has to acknowledge it. */
+  ackDirty: boolean;
 }
 
 interface Power {
@@ -162,7 +158,8 @@ export interface SumoState {
   rev: number;
 }
 
-export type SumoAction = { type: "input"; x: number; y: number } | { type: "dash" };
+/** `s` numbers the client's inputs (optional): the next snapshot acknowledges it. */
+export type SumoAction = { type: "input"; x: number; y: number; s?: number } | { type: "dash"; s?: number };
 
 export interface SumoView {
   phase: Phase;
@@ -218,6 +215,9 @@ function newDisc(slot: number, id: string): Disc {
     turboUntil: 0,
     hitBy: -1,
     hitAt: 0,
+    seq: 0,
+    ackT: 0,
+    ackDirty: false,
   };
 }
 
@@ -319,59 +319,13 @@ export function collide(s: SumoState, a: Disc, b: Disc, t: number) {
 function moveDisc(s: SumoState, d: Disc, t: number, friction: number, steer: boolean) {
   if (d.dashQueued) {
     d.dashQueued = false;
-    let ux = d.ix;
-    let uy = d.iy;
-    let m = Math.hypot(ux, uy);
-    if (m < 0.15) {
-      const sp = Math.hypot(d.vx, d.vy);
-      if (sp > 40) [ux, uy, m] = [d.vx, d.vy, sp];
-      else [ux, uy, m] = [d.fx, d.fy, 1];
-    }
-    ux /= m;
-    uy /= m;
-    d.vx += ux * DASH_IMPULSE;
-    d.vy += uy * DASH_IMPULSE;
+    const [ux, uy] = applyDash(d, d.ix, d.iy, d.fx, d.fy);
     d.fx = ux;
     d.fy = uy;
     d.dashUntil = t + DASH_FX_MS;
     pushFx(s, [FX_DASH, d.slot, Math.round(ux * 100), Math.round(uy * 100)]);
   }
-  const moving = steer && (d.ix !== 0 || d.iy !== 0);
-  if (moving) {
-    const a = ACCEL * (d.heavyUntil > t ? HEAVY_ACCEL : 1) * DT;
-    d.vx += d.ix * a;
-    d.vy += d.iy * a;
-  }
-  d.vx *= friction;
-  d.vy *= friction;
-  const sp = Math.hypot(d.vx, d.vy);
-  if (sp > MAX_SPEED) {
-    const k = Math.min(HARD_SPEED, Math.max(MAX_SPEED, sp * OVERSPEED_KEEP)) / sp;
-    d.vx *= k;
-    d.vy *= k;
-  } else if (!moving && sp < 3) {
-    d.vx = 0;
-    d.vy = 0;
-  }
-  d.x += d.vx * DT;
-  d.y += d.vy * DT;
-}
-
-function keepOnIce(d: Disc, r: number) {
-  const dx = d.x - CENTER;
-  const dy = d.y - CENTER;
-  const dist = Math.hypot(dx, dy);
-  const lim = Math.max(0, r - 4);
-  if (dist <= lim || dist === 0) return;
-  const nx = dx / dist;
-  const ny = dy / dist;
-  d.x = CENTER + nx * lim;
-  d.y = CENTER + ny * lim;
-  const out = d.vx * nx + d.vy * ny;
-  if (out > 0) {
-    d.vx -= out * nx;
-    d.vy -= out * ny;
-  }
+  integrate(d, d.ix, d.iy, d.heavyUntil > t, friction, steer);
 }
 
 /** Off the edge? Records the fall (and knockout credit while the round is live). */
@@ -477,7 +431,18 @@ function makeSnap(s: SumoState, ctx: GameCtx): Snap {
     if (d.dashUntil > t) flags |= F_DASH;
     if (!connected(ctx, d.id)) flags |= F_OFFLINE;
     const cd = Math.max(0, Math.min(99, Math.ceil((d.dashReadyAt - now) / 100)));
-    p.push([d.slot, Math.round(d.x), Math.round(d.y), Math.round(d.vx), Math.round(d.vy), flags, cd]);
+    // Trailing zeros (no flags, no cooldown) are left off: most frames, most discs.
+    const tuple: DiscTuple = [d.slot, Math.round(d.x), Math.round(d.y), Math.round(d.vx), Math.round(d.vy)];
+    if (flags || cd) tuple.push(flags);
+    if (cd) tuple.push(cd);
+    p.push(tuple);
+  }
+  // Inputs received since the last snapshot: [slot, input number, ms from this frame to when it took effect].
+  const acks: [number, number, number][] = [];
+  for (const d of s.discs) {
+    if (!d.ackDirty) continue;
+    d.ackDirty = false;
+    acks.push([d.slot, d.seq, d.ackT ? Math.round(d.ackT - t) : 0]);
   }
   const snap: Snap = {
     k: "s",
@@ -488,13 +453,14 @@ function makeSnap(s: SumoState, ctx: GameCtx): Snap {
     u: s.power ? [POWER_KINDS.indexOf(s.power.kind), Math.round(s.power.x), Math.round(s.power.y)] : 0,
   };
   if (s.fx.length) snap.fx = s.fx;
+  if (acks.length) snap.a = acks;
   s.fx = [];
   return snap;
 }
 
 /** Same picture as the last frame sent (nothing moved, nothing happened)? */
 function sameFrame(a: Snap, b: Snap) {
-  if (b.fx || a.r !== b.r || a.p.length !== b.p.length) return false;
+  if (b.fx || b.a || a.r !== b.r || a.p.length !== b.p.length) return false;
   if (a.u === 0 ? b.u !== 0 : b.u === 0 || a.u[0] !== b.u[0] || a.u[1] !== b.u[1] || a.u[2] !== b.u[2]) return false;
   for (let i = 0; i < a.p.length; i++) {
     const x = a.p[i];
@@ -688,9 +654,19 @@ export const sumo: GameDef<SumoState, SumoAction> = {
     if (slot < 0) return false;
     const d = s.discs[slot];
     const rec = a as Record<string, unknown>;
+    const seq = rec.s;
+    if (seq !== undefined && !(typeof seq === "number" && Number.isInteger(seq) && seq > 0 && seq <= 2 ** 31)) return false;
+    /** Remember the input number; it takes effect from the next substep simulated. */
+    const ack = () => {
+      if (typeof seq !== "number") return;
+      d.seq = seq;
+      d.ackT = s.fightAt && s.phase !== "countdown" ? s.fightAt + (s.steps + 1) * SUB_MS : 0;
+      d.ackDirty = true;
+    };
     if (rec.type === "input") {
       const v = readInput(rec);
       if (!v) return false;
+      ack();
       [d.ix, d.iy] = v;
       const m = Math.hypot(v[0], v[1]);
       if (m > 0.05) {
@@ -700,6 +676,8 @@ export const sumo: GameDef<SumoState, SumoAction> = {
       return false; // shows up in the next snapshot
     }
     if (rec.type === "dash") {
+      // Acknowledged even when refused, so the client stops predicting it.
+      ack();
       if (s.phase !== "fight") return false;
       const now = ctx.now();
       if (!d.alive || d.dashQueued || now < d.dashReadyAt) return false;

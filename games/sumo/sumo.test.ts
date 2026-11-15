@@ -2,6 +2,7 @@
 import { assert, makeTestCtx } from "../../shared/testing";
 import sumo, { collide, type SumoState, type SumoView } from "./server";
 import { newScene, pushFrame, sampleDisc, type Sample } from "./rink";
+import { JitterDelay, SumoPredictor } from "./predict";
 import {
   ABANDON_MS,
   CENTER,
@@ -257,7 +258,7 @@ function steer(s: SumoState, t: T, slot: number, x: number, y: number) {
     "frames sit on the 50ms grid",
   );
   assert(
-    live.every((e) => e.p.every((d) => d.length === 7 && d.every(Number.isInteger))),
+    live.every((e) => e.p.every((d) => d.length >= 5 && d.length <= 7 && d.every(Number.isInteger))),
     "ints only",
   );
   const env = (e: Snap) => JSON.stringify({ t: "ev", e, now: e.t }).length;
@@ -287,7 +288,7 @@ function steer(s: SumoState, t: T, slot: number, x: number, y: number) {
   assert((d.vx * fx + d.vy * fy) / sp > 0.99, "with no stick, dash goes where the disc faces");
   const dashFx = snaps(t)[0]?.fx?.find((f) => f[0] === FX_DASH);
   assert(dashFx && dashFx[1] === 0, "dash effect in the snapshot");
-  assert(snaps(t)[0].p.find((p) => p[0] === 0)![6] > 20, "cooldown sent in the snapshot");
+  assert((snaps(t)[0].p.find((p) => p[0] === 0)![6] ?? 0) > 20, "cooldown sent in the snapshot");
   run(s, t, 600);
   assert(Math.hypot(d.vx, d.vy) <= 480, "dash speed bleeds back to the cap");
   Object.assign(d, { x: CENTER, y: CENTER, vx: 0, vy: 0 }); // before it coasts into the water
@@ -422,9 +423,9 @@ function steer(s: SumoState, t: T, slot: number, x: number, y: number) {
   d.heavyUntil = t.ctx.now() + POWER_INFO.heavy.ms;
   d.turboUntil = 0;
   step(s, t);
-  assert((s.snap.p.find((x) => x[0] === 0)![5] & F_HEAVY) !== 0, "heavy flag");
+  assert(((s.snap.p.find((x) => x[0] === 0)![5] ?? 0) & F_HEAVY) !== 0, "heavy flag");
   run(s, t, POWER_INFO.heavy.ms + 100);
-  assert((s.snap.p.find((x) => x[0] === 0)![5] & F_HEAVY) === 0, "heavy wears off");
+  assert(((s.snap.p.find((x) => x[0] === 0)![5] ?? 0) & F_HEAVY) === 0, "heavy wears off");
 }
 
 // ---------- hostile actions ----------
@@ -560,7 +561,7 @@ function steer(s: SumoState, t: T, slot: number, x: number, y: number) {
   t.ctx.players[1].connected = false;
   sumo.playerLeft!(s, "p1", t.ctx);
   assert(s.discs[1].ix === 0 && s.discs[1].alive, "offline disc stays, input zeroed");
-  assert((s.snap.p.find((p) => p[0] === 1)![5] & F_OFFLINE) !== 0, "offline flag");
+  assert(((s.snap.p.find((p) => p[0] === 1)![5] ?? 0) & F_OFFLINE) !== 0, "offline flag");
   assert(s.aloneSince === null, "two still online");
   // Down to one online: the match waits 10s, then ends with the last player standing.
   t.ctx.players[2].connected = false;
@@ -665,6 +666,187 @@ function steer(s: SumoState, t: T, slot: number, x: number, y: number) {
       `even motion frame to frame (jitter ${jitter}ms: worst change ${(worst / mean).toFixed(3)})`,
     );
   }
+}
+
+// ---------- input acknowledgements in snapshots; compact disc tuples ----------
+{
+  const { s, t } = setup(2);
+  startFight(s, t);
+  step(s, t);
+  t.events.length = 0;
+  const before = s.steps;
+  sumo.action(s, "p0", { type: "input", x: 100, y: 0, s: 7 }, t.ctx);
+  assert(sumo.action(s, "p0", { type: "input", x: 1, y: 0, s: 1.5 }, t.ctx) === false && s.discs[0].seq === 7, "bad input numbers rejected");
+  assert(sumo.action(s, "p0", { type: "input", x: 1, y: 0, s: "8" } as never, t.ctx) === false, "string input number rejected");
+  step(s, t);
+  const f = snaps(t)[0];
+  const ack = f?.a?.find((a) => a[0] === 0);
+  assert(ack && ack[1] === 7, "the next snapshot acknowledges the input");
+  assert(f.t + ack[2] === Math.round(s.fightAt + (before + 1) * (TICK_MS / 3)), "with the sim time it took effect from");
+  t.events.length = 0;
+  step(s, t);
+  assert(!snaps(t)[0]?.a, "acknowledged once");
+  // Even a still disc gets its acknowledgement out (identical frames are otherwise skipped).
+  sumo.action(s, "p0", { type: "input", x: 0, y: 0, s: 8 }, t.ctx);
+  run(s, t, 2000);
+  t.events.length = 0;
+  sumo.action(s, "p1", { type: "input", x: 0, y: 0, s: 3 }, t.ctx);
+  step(s, t);
+  assert(snaps(t)[0]?.a?.[0]?.[1] === 3, "acks beat the idle-frame skip");
+  // A refused dash is acknowledged too (so the client stops predicting it).
+  s.discs[0].dashReadyAt = t.ctx.now() + 5_000;
+  t.events.length = 0;
+  sumo.action(s, "p0", { type: "dash", s: 9 }, t.ctx);
+  step(s, t);
+  assert(!s.discs[0].dashQueued && snaps(t)[0]?.a?.some((a) => a[0] === 0 && a[1] === 9), "refused dash acknowledged");
+  // Most discs need only five numbers.
+  assert(s.snap.p.some((d) => d.length === 5) || snaps(t)[0]?.p.some((d) => d.length === 5), "trailing zeros left off");
+}
+
+// ---------- your disc's prediction against the real server, over a simulated network ----------
+interface NetStats {
+  /** How far each snapshot moved your predicted disc (units), once the lead had settled. */
+  corr: number[];
+  /** Velocity gained toward a new stick direction within 20ms of moving the stick (units/s). */
+  response: number[];
+  lead: number;
+}
+
+function sumoNet(up: number, down: number, jitter: number, seed: number): NetStats {
+  const { s, t } = setup(2, seed);
+  startFight(s, t);
+  Object.assign(s.discs[0], { x: CENTER, y: CENTER + 60, vx: 0, vy: 0 });
+  const pred = new SumoPredictor();
+  // The client's clock reads server time minus the quickest one-way trip (like the renderer's).
+  pred.attachClock({ ready: true, serverNow: (perf) => perf - down });
+  let rnd = seed * 7919 + 13;
+  const rand = () => ((rnd = (rnd * 1103515245 + 12345) % 2147483648) / 2147483648);
+  const toServer: { at: number; a: unknown }[] = [];
+  const toClient: { at: number; snap: Snap }[] = [];
+  let lastAt = 0;
+  const deliver = (snap: Snap) => {
+    lastAt = Math.max(lastAt, t.ctx.now() + down + rand() * jitter);
+    toClient.push({ at: lastAt, snap: JSON.parse(JSON.stringify(snap)) });
+  };
+  deliver(s.snap);
+  const stats: NetStats = { corr: [], response: [], lead: 0 };
+  const k = { x: 0, y: 0, vx: 0, vy: 0 };
+  const k2 = { x: 0, y: 0, vx: 0, vy: 0 };
+  const probes: { at: number; v0: [number, number]; dir: [number, number] }[] = [];
+  const t0 = t.ctx.now();
+  let nextTick = t0 + TICK_MS;
+  let nextInput = t0 + 100;
+  let target: [number, number] = [CENTER, CENTER];
+  for (let now = t0; now < t0 + 5_000; now += 1) {
+    t.advance(now - t.ctx.now());
+    while (toServer.length && toServer[0].at <= now) sumo.action(s, "p0", toServer.shift()!.a as never, t.ctx);
+    if (now >= nextTick) {
+      nextTick += TICK_MS;
+      t.events.length = 0;
+      if (sumo.tick!(s, t.ctx)) deliver(s.snap);
+      for (const e of snaps(t)) deliver(e);
+    }
+    const T = now - down + pred.lead();
+    while (toClient.length && toClient[0].at <= now) {
+      const { snap } = toClient.shift()!;
+      for (const a of snap.a ?? []) if (a[0] === 0) pred.ack(a[1], snap.t + a[2]);
+      const d = snap.p.find((p) => p[0] === 0);
+      if (!d) continue;
+      const had = pred.predict(T, k);
+      pred.setBase({ n: snap.n, t: snap.t, x: d[1], y: d[2], vx: d[3], vy: d[4], heavy: false, r: snap.r });
+      if (had && pred.predict(T, k2) && now - t0 > 1_500) stats.corr.push(Math.hypot(k.x - k2.x, k.y - k2.y));
+    }
+    for (let i = probes.length - 1; i >= 0; i--) {
+      if (now - probes[i].at < 20) continue;
+      pred.predict(now - down + pred.lead(), k);
+      const [dx, dy] = probes[i].dir;
+      stats.response.push((k.vx - probes[i].v0[0]) * dx + (k.vy - probes[i].v0[1]) * dy);
+      probes.splice(i, 1);
+    }
+    if (now >= nextInput) {
+      // Steer (from what you see: your predicted disc) toward a fresh point near the centre.
+      nextInput = now + 150 + Math.floor(rand() * 200);
+      if (rand() < 0.4) {
+        const a = rand() * Math.PI * 2;
+        target = [CENTER + Math.cos(a) * 120, CENTER + Math.sin(a) * 120];
+      }
+      if (!pred.predict(now - down + pred.lead(), k)) continue;
+      let ix = (target[0] - k.x) * 0.9 - k.vx * 0.45;
+      let iy = (target[1] - k.y) * 0.9 - k.vy * 0.45;
+      const m = Math.hypot(ix, iy) || 1;
+      [ix, iy] = [Math.round((ix / m) * 100), Math.round((iy / m) * 100)];
+      const seq = pred.recordInput(ix, iy, now);
+      toServer.push({ at: now + up, a: { type: "input", x: ix, y: iy, s: seq } });
+      if (now - t0 > 1_500) probes.push({ at: now, v0: [k.vx, k.vy], dir: [ix / 100, iy / 100] });
+    }
+  }
+  assert(s.discs.every((d) => d.alive) && s.phase === "fight", "nobody fell during the run");
+  stats.lead = pred.lead();
+  return stats;
+}
+
+for (const [up, down, jitter] of [
+  [50, 50, 0],
+  [25, 75, 10],
+  [75, 75, 30],
+] as const) {
+  const r = sumoNet(up, down, jitter, 5);
+  const label = `sumo net up=${up} down=${down} jitter=${jitter}`;
+  const mean = r.corr.reduce((a, b) => a + b, 0) / r.corr.length;
+  const max = Math.max(...r.corr);
+  const resp = Math.min(...r.response);
+  if (process.env.NET_VERBOSE) console.log(label, { mean: mean.toFixed(2), max: max.toFixed(2), resp: resp.toFixed(1), lead: r.lead.toFixed(0), n: r.corr.length });
+  assert(r.corr.length > 40 && r.response.length > 6, `${label}: enough samples`);
+  // A disc is 72 units across; corrections are a few units and get blended out anyway.
+  assert(mean < 1.5 && max < 8, `${label}: snapshots barely move your disc (mean ${mean.toFixed(2)}, max ${max.toFixed(2)})`);
+  // 20ms of a full stick is ~20 units/s: your disc answers at once, not a round trip later.
+  assert(resp > 8, `${label}: your disc answers the stick at once (${resp.toFixed(1)} units/s after 20ms)`);
+  const rtt = up + down;
+  assert(r.lead > rtt - TICK_MS - 5 && r.lead < rtt + jitter + 5, `${label}: lead ~ one round trip (${r.lead.toFixed(0)})`);
+}
+
+// ---------- dash: predicted at once; a refused one disappears once acknowledged ----------
+{
+  const { s, t } = setup(2);
+  startFight(s, t);
+  Object.assign(s.discs[0], { x: CENTER - 150, y: CENTER, vx: 0, vy: 0, fx: 1, fy: 0 });
+  step(s, t);
+  const pred = new SumoPredictor();
+  pred.attachClock({ ready: true, serverNow: (perf) => perf });
+  const base = () => {
+    const d = s.snap.p.find((p) => p[0] === 0)!;
+    return { n: s.snap.n, t: s.snap.t, x: d[1], y: d[2], vx: d[3], vy: d[4], heavy: false, r: s.snap.r };
+  };
+  pred.setBase(base());
+  const k = { x: 0, y: 0, vx: 0, vy: 0 };
+  const now = t.ctx.now();
+  const seq = pred.recordDash(now);
+  pred.predict(now + pred.lead() + 20, k);
+  assert(k.vx > 600, `the dash shows at once (${k.vx.toFixed(0)} units/s)`);
+  assert(pred.dashLeft(now, DASH_CD_MS) > DASH_CD_MS - 10, "and the recharge starts at once");
+  // The server refuses it (still cooling down) and says so; the next replay drops it.
+  s.discs[0].dashReadyAt = now + 5_000;
+  sumo.action(s, "p0", { type: "dash", s: seq }, t.ctx);
+  t.events.length = 0;
+  step(s, t);
+  const f = snaps(t)[0] ?? s.snap;
+  for (const a of f.a ?? []) if (a[0] === 0) pred.ack(a[1], f.t + a[2]);
+  pred.setBase(base());
+  pred.predict(t.ctx.now() + pred.lead(), k);
+  assert(Math.abs(k.vx) < 1, `a refused dash vanishes from the replay (${k.vx.toFixed(1)})`);
+}
+
+// ---------- adaptive playback delay ----------
+{
+  const steady = new JitterDelay(55, 120, 100);
+  for (let i = 0; i < 40; i++) steady.add(i % 5);
+  assert(steady.value >= 55 && steady.value <= 70, `low jitter: short delay (${steady.value})`);
+  const rough = new JitterDelay(55, 120, 100);
+  for (let i = 0; i < 40; i++) rough.add((i * 37) % 90);
+  assert(rough.value === 120, `heavy jitter: capped (${rough.value})`);
+  const mid = new JitterDelay(55, 120, 100);
+  for (let i = 0; i < 40; i++) mid.add((i * 13) % 30);
+  assert(mid.value > 70 && mid.value < 100, `some jitter: in between (${mid.value})`);
 }
 
 console.log("✓ sumo tests passed");

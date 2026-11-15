@@ -7,15 +7,22 @@ import { Note, StatusBanner, TimerBar, useSecondsLeft } from "@/components/game-
 import type { FallRec, SumoAction, SumoView } from "./server";
 import {
   COUNTDOWN_MS,
+  DASH_CD_MS,
   MAX_ROUNDS,
   POWER_INFO,
   ROUND_OVER_MS,
   SHRINK_END_MS,
   SHRINK_START_MS,
+  TURBO_CD_MS,
   WINS_NEEDED,
   isSnap,
 } from "./shared";
 import { Rink, type InputState, type RinkData } from "./rink";
+import { SumoPredictor } from "./predict";
+
+/** Stick changes go out at once; only a burst of them (a thumb sweeping the stick) is spaced out. */
+const SEND_BURST = 3;
+const SEND_RATE = 20;
 
 type Props = GameClientProps<SumoView, SumoAction>;
 
@@ -154,7 +161,9 @@ interface Ctl {
   keys: Set<string>;
   stick: [number, number] | null;
   sent: [number, number];
-  sentAt: number;
+  /** Send budget (token bucket): SEND_BURST deep, refilling at SEND_RATE per second. */
+  tokens: number;
+  tokensAt: number;
   timer: ReturnType<typeof setTimeout> | null;
 }
 
@@ -190,11 +199,21 @@ function Game({
   const abandonIn = view.abandonAt ? Math.max(0, Math.ceil((view.abandonAt - now) / 1000)) : null;
   const name = (id: string | null | undefined) => (id ? (byId[id]?.name ?? "Someone") : "Someone");
 
-  // ----- input: keys + touch stick, sent on change at most every 50ms -----
+  // ----- input: keys + touch stick, sent the moment they change (bursts spaced to 20/s) -----
   const input = useRef<InputState>({ x: 0, y: 0 });
-  const ctl = useRef<Ctl>({ keys: new Set(), stick: null, sent: [0, 0], sentAt: 0, timer: null });
+  const ctl = useRef<Ctl>({ keys: new Set(), stick: null, sent: [0, 0], tokens: SEND_BURST, tokensAt: 0, timer: null });
   const [dashes, setDashes] = useState(0);
+  // Replays your inputs on your own disc so it moves the instant you steer (see predict.ts).
+  const [pred] = useState(() => new SumoPredictor());
 
+  /** Refill the send budget; returns ms until one more send is allowed (0 = now). */
+  const budget = () => {
+    const c = ctl.current;
+    const now = performance.now();
+    c.tokens = Math.min(SEND_BURST, c.tokens + ((now - c.tokensAt) * SEND_RATE) / 1000);
+    c.tokensAt = now;
+    return c.tokens >= 1 ? 0 : ((1 - c.tokens) * 1000) / SEND_RATE;
+  };
   const sendInput = (force = false) => {
     const c = ctl.current;
     if (c.timer) clearTimeout(c.timer);
@@ -202,9 +221,11 @@ function Game({
     const x = Math.round(input.current.x * 100);
     const y = Math.round(input.current.y * 100);
     if (!force && x === c.sent[0] && y === c.sent[1]) return;
+    budget();
+    c.tokens = Math.max(0, c.tokens - 1);
     c.sent = [x, y];
-    c.sentAt = performance.now();
-    act({ type: "input", x, y });
+    const s = pred.recordInput(x, y, performance.now());
+    act({ type: "input", x, y, s });
   };
   const refreshInput = () => {
     const c = ctl.current;
@@ -222,13 +243,15 @@ function Game({
     input.current.x = x;
     input.current.y = y;
     if (!canInput) return;
-    const since = performance.now() - c.sentAt;
-    if (since >= 50) sendInput();
-    else if (!c.timer) c.timer = setTimeout(() => sendInput(), 50 - since);
+    const wait = budget();
+    if (wait <= 0) sendInput();
+    else if (!c.timer) c.timer = setTimeout(() => sendInput(), Math.ceil(wait));
   };
   const dash = () => {
     if (!canDash) return;
-    act({ type: "dash" });
+    // Still recharging (by the server's word or your own last dash): the server would refuse it.
+    if (pred.dashLeft(performance.now(), pred.turbo ? TURBO_CD_MS : DASH_CD_MS) > 50) return;
+    act({ type: "dash", s: pred.recordDash(performance.now()) });
     setDashes((n) => n + 1);
   };
   const onStick = (x: number, y: number) => {
@@ -407,6 +430,7 @@ function Game({
       <Rink
         data={data}
         input={input}
+        pred={mySlot >= 0 ? pred : null}
         onEvent={onEvent}
         onStick={onStick}
         onDash={dash}

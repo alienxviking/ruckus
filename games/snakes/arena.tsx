@@ -8,11 +8,17 @@
 // cell to cell at display refresh rate. The playback rate nudges itself so the buffer
 // never runs dry (no stalls) and never drifts far behind (no extra lag). React only
 // re-renders when a frame arrives; everything here runs in one requestAnimationFrame loop.
+//
+// Your own snake is the exception: it's drawn by the predictor (predict.ts) on its own clock,
+// a network trip ahead, so a turn shows up at the very next cell boundary and the eyes and a
+// turn hint react on the frame you press. Eating and crashing are shown as your snake does
+// them on your screen, not when the delayed playback gets there.
 
 import { useEffect, useEffectEvent, useRef, type PointerEvent, type ReactNode } from "react";
 import type { Player } from "@/shared/types";
 import type { SnakeView } from "./server";
-import { DELTA, GHOST_MS, ROUND_MS, TICK_MS, type Dir } from "./shared";
+import { DELTA, GHOST_MS, GOLDEN_VALUE, ROUND_MS, TICK_MS, type Dir } from "./shared";
+import { LUNGE, emptyShape, type Shape, type SnakePredictor } from "./predict";
 
 const TAU = Math.PI * 2;
 const POP_MS = 850;
@@ -27,9 +33,9 @@ const SANS = "ui-sans-serif, system-ui, sans-serif";
 const LAG_TARGET = 1.3;
 /** Bigger jumps than this between frames aren't animated (missed frames, a new round). */
 const MAX_GAP = 3;
-/** A crashing head keeps moving this far into the obstacle before it stops. */
-const LUNGE = 0.32;
 const SPAWN_MS = 520;
+/** A pellet your snake just ate stays hidden this long while the delayed board catches up. */
+const EATEN_MS = 1_500;
 
 // ---------- playback clock ----------
 
@@ -291,6 +297,27 @@ function traceSnake(
   }
 }
 
+/** Trace your predicted snake (see predict.ts) the same way, setting HX/HY/HDX/HDY. */
+function traceShape(g: CanvasRenderingContext2D, sh: Shape, cell: number) {
+  const pts = sh.pts;
+  HX = sh.hx;
+  HY = sh.hy;
+  HDX = sh.dx;
+  HDY = sh.dy;
+  let from = 2;
+  if (sh.lunge) {
+    const [dx, dy] = DELTA[sh.lunge];
+    HX += dx * sh.lungeAmt;
+    HY += dy * sh.lungeAmt;
+    HDX = dx;
+    HDY = dy;
+    from = 0;
+  }
+  g.beginPath();
+  g.moveTo((HX + 0.5) * cell, (HY + 0.5) * cell);
+  for (let i = from; i + 1 < pts.length; i += 2) g.lineTo((pts[i] + 0.5) * cell, (pts[i + 1] + 0.5) * cell);
+}
+
 function strokeBody(g: CanvasRenderingContext2D, cell: number, color: string, dark: string) {
   g.lineCap = "round";
   g.lineJoin = "round";
@@ -452,6 +479,26 @@ function drawChevron(g: CanvasRenderingContext2D, hx: number, hy: number, dir: D
   g.globalAlpha = 1;
 }
 
+/** Your queued turn, shown the moment you press it: an arrow in the cell where the turn happens. */
+function drawTurnHint(g: CanvasRenderingContext2D, x: number, y: number, dir: Dir, cell: number, alpha: number) {
+  const [dx, dy] = DELTA[dir];
+  const px = -dy;
+  const py = dx;
+  const cx = (x + 0.5 + dx * 0.55) * cell;
+  const cy = (y + 0.5 + dy * 0.55) * cell;
+  g.globalAlpha = alpha;
+  g.strokeStyle = "#ffffff";
+  g.lineWidth = Math.max(1.5, cell * 0.14);
+  g.lineCap = "round";
+  g.lineJoin = "round";
+  g.beginPath();
+  g.moveTo(cx - dx * cell * 0.16 + px * cell * 0.26, cy - dy * cell * 0.16 + py * cell * 0.26);
+  g.lineTo(cx + dx * cell * 0.16, cy + dy * cell * 0.16);
+  g.lineTo(cx - dx * cell * 0.16 - px * cell * 0.26, cy - dy * cell * 0.16 - py * cell * 0.26);
+  g.stroke();
+  g.globalAlpha = 1;
+}
+
 // ---------- scene state ----------
 
 /** A live snake as it is drawn between the frame on screen (a) and the next one (b). */
@@ -515,6 +562,17 @@ interface Scene {
   ahead: Map<string, Dir>;
   /** Last drawn state once the match is over, to skip identical redraws. */
   stillKey: string;
+  /** Your predicted snake this frame. */
+  mine: Shape;
+  /** Drawn from the predictor this frame (so the playback copy is skipped). */
+  minePredicted: boolean;
+  /** Round in which your crash was already shown (as soon as the server reported it). */
+  myCrashRound: number;
+  /** Last step whose cell your head has reached on screen (for eating). */
+  eatStep: number;
+  eatRound: number;
+  /** Pellets your snake ate on screen: cell -> hide until (performance.now()). */
+  eaten: Map<number, number>;
 }
 
 function newScene(): Scene {
@@ -536,6 +594,12 @@ function newScene(): Scene {
     aheadOf: null,
     ahead: new Map(),
     stillKey: "",
+    mine: emptyShape(),
+    minePredicted: false,
+    myCrashRound: -1,
+    eatStep: -1,
+    eatRound: -1,
+    eaten: new Map(),
   };
 }
 
@@ -544,7 +608,7 @@ interface Props {
   me: string;
   colors: Record<string, string>;
   byId: Record<string, Player>;
-  intent: Dir | null;
+  pred: SnakePredictor;
   reduced: boolean;
   serverNow: number;
 }
@@ -583,19 +647,28 @@ function applyFrame(sc: Scene, view: SnakeView, p: Props, now: number) {
     if (!old || !old.alive) continue;
     const color = colorOf(p, sn.id);
     if (!sn.alive) {
-      const body = sn.body.length >= 4 ? sn.body : old.body;
-      const crashed = !view.feed.some((f) => f.id === sn.id && f.cause === "left");
-      if (body.length >= 4) sc.ghosts.set(sn.id, { body, dir: sn.dir, crashed, color, dark: shade(color, 0.55), at: now });
-      if (sn.id === p.me) {
-        sc.myDeathAt = now;
-        if (window.matchMedia("(pointer: coarse)").matches) navigator.vibrate?.(90);
-      }
+      if (sn.id === p.me && sc.myCrashRound === view.round) continue; // already shown
+      crashFx(sc, sn, old.body, view, p, color, now);
+    } else if (sn.id === p.me) {
+      continue; // your bites pop as your (predicted) head reaches them
     } else if (sn.len > old.len && sn.body.length >= 2) {
       const n = sn.len - old.len;
       const big = n >= 3;
       sc.fx.push({ kind: "ring", x: sn.body[0], y: sn.body[1], text: "", color: big ? GOLD : color, big, at: now });
       sc.fx.push({ kind: "pop", x: sn.body[0], y: sn.body[1], text: `+${n}`, color: big ? GOLD : color, big, at: now });
     }
+  }
+}
+
+/** A snake crashed (or left): its ghost flashes where it died; your own crash shakes the screen. */
+function crashFx(sc: Scene, sn: SnakeView["snakes"][number], oldBody: number[], view: SnakeView, p: Props, color: string, now: number) {
+  const body = sn.body.length >= 4 ? sn.body : oldBody;
+  const crashed = !view.feed.some((f) => f.id === sn.id && f.cause === "left");
+  if (body.length >= 4) sc.ghosts.set(sn.id, { body, dir: sn.dir, crashed, color, dark: shade(color, 0.55), at: now });
+  if (sn.id === p.me) {
+    sc.myDeathAt = now;
+    sc.myCrashRound = view.round;
+    if (window.matchMedia("(pointer: coarse)").matches) navigator.vibrate?.(90);
   }
 }
 
@@ -671,6 +744,34 @@ function drawScene(g: CanvasRenderingContext2D, sc: Scene, s: Surface, p: Props,
   }
   const { cell, dpr } = s;
   const reduced = p.reduced;
+
+  // Your snake, from the predictor: where it is on your clock, and the pellets it reaches.
+  const pred = p.pred;
+  const tau = pred.advance(now, p.serverNow);
+  sc.minePredicted = pred.shape(tau, sc.mine);
+  if (sc.eaten.size) for (const [c, until] of sc.eaten) if (until <= now) sc.eaten.delete(c);
+  if (sc.minePredicted) {
+    const reached = Math.floor(sc.mine.lunge ? pred.deathAt - 1 : tau);
+    if (sc.eatRound !== latest.round || reached < sc.eatStep || reached - sc.eatStep > 4) {
+      sc.eatRound = latest.round;
+      sc.eatStep = reached;
+    }
+    for (let t = sc.eatStep + 1; t <= reached; t++) {
+      const c = pred.headAt(t);
+      if (c < 0 || sc.eaten.has(c)) continue;
+      const x = c % view.w;
+      const y = (c - x) / view.w;
+      const gold = isAt(view.golden, x, y) || isAt(latest.golden, x, y);
+      if (!gold && !hasFood(view, x, y) && !hasFood(latest, x, y)) continue;
+      sc.eaten.set(c, now + EATEN_MS);
+      const color = gold ? GOLD : colorOf(p, p.me);
+      const n = gold ? GOLDEN_VALUE : 1;
+      sc.fx.push({ kind: "ring", x, y, text: "", color, big: gold, at: now });
+      sc.fx.push({ kind: "pop", x, y, text: `+${n}`, color, big: gold, at: now });
+    }
+    sc.eatStep = Math.max(sc.eatStep, reached);
+  }
+
   g.setTransform(1, 0, 0, 1, 0, 0);
   g.clearRect(0, 0, s.W, s.H);
 
@@ -687,6 +788,7 @@ function drawScene(g: CanvasRenderingContext2D, sc: Scene, s: Surface, p: Props,
   for (let i = 0; i < view.food.length; i += 2) {
     const x = view.food[i];
     const y = view.food[i + 1];
+    if (sc.eaten.has(y * view.w + x)) continue;
     const born = sc.foodSeen.get(y * view.w + x) ?? 0;
     const t = reduced ? 1 : clamp01((now - born) / 260);
     if (t <= 0) continue;
@@ -703,7 +805,7 @@ function drawScene(g: CanvasRenderingContext2D, sc: Scene, s: Surface, p: Props,
   g.globalAlpha = 1;
 
   // Golden pellet: spinning star with a pulsing halo.
-  if (view.golden) {
+  if (view.golden && !sc.eaten.has(view.golden[1] * view.w + view.golden[0])) {
     const [x, y] = view.golden;
     const cx = (x + 0.5) * cell;
     const cy = (y + 0.5) * cell;
@@ -774,50 +876,24 @@ function drawScene(g: CanvasRenderingContext2D, sc: Scene, s: Surface, p: Props,
   const spawn = reduced ? 1 : clamp01((now - sc.roundAt) / SPAWN_MS);
   const headScale = spawn < 1 ? Math.max(0.2, easeOutBack(spawn)) : 1;
   sc.myAlive = false;
+  const live: LiveStyle = { spawn, headScale, phase: latest.phase, w: view.w, reduced, now };
   for (const pr of sc.pairs) {
-    const champ = crowned(pr.id);
+    if (pr.isMe && sc.minePredicted) continue;
     const back = pr.retract * (1 - k);
     const lunge = pr.lunge ? Math.min(k, LUNGE) : 0;
     traceSnake(g, pr.body, cell, back, pr.lunge, lunge, pr.ext, pr.extFrom, pr.extCount, pr.extCount * (1 - k));
-    if (spawn < 1) g.globalAlpha = spawn;
-    if (champ) {
-      g.save();
-      g.shadowColor = pr.color;
-      g.shadowBlur = cell * (1.2 + (reduced ? 0 : 0.5 * Math.sin(now / 200)));
-      strokeBody(g, cell, pr.color, pr.dark);
-      g.restore();
-    } else {
-      strokeBody(g, cell, pr.color, pr.dark);
-    }
-    const hx = HX;
-    const hy = HY;
-    // Eyes look where the snake is about to go (the newest frame is a moment ahead of the
-    // glide), and your own snake looks where you just steered before the server turns it.
-    const eyes = pr.lunge ?? (pr.isMe && p.intent ? p.intent : (sc.ahead.get(pr.id) ?? dirOf(HDX, HDY)));
-    drawHead(g, hx, hy, eyes, cell, pr.color, pr.dark, false, headScale);
-    g.globalAlpha = 1;
-    if (pr.isMe) {
-      sc.myX = hx;
-      sc.myY = hy;
-      sc.myAlive = !pr.lunge;
-      if (latest.phase !== "countdown") {
-        g.globalAlpha = 0.9;
-        g.strokeStyle = "#ffffff";
-        g.lineWidth = Math.max(1, cell * 0.09);
-        g.beginPath();
-        g.arc((hx + 0.5) * cell, (hy + 0.5) * cell, cell * 0.68, 0, TAU);
-        g.stroke();
-        g.globalAlpha = 1;
-      }
-    }
-    if (champ) {
-      g.font = s.crownFont;
-      g.textAlign = "center";
-      g.textBaseline = "middle";
-      const lift = 1.2 + (reduced ? 0 : Math.sin(now / 240) * 0.12);
-      const [vx, vy] = PLACE[placeFor(hx, hy, pr.dir, view.w)];
-      g.fillText("👑", (hx + 0.5 + vx * lift) * cell, (hy + 0.5 + vy * lift) * cell);
-    }
+    // Eyes look where the snake is about to go (the newest frame is a moment ahead of the glide).
+    const eyes = pr.lunge ?? sc.ahead.get(pr.id) ?? dirOf(HDX, HDY);
+    paintLive(g, s, sc, live, pr.color, pr.dark, pr.isMe, crowned(pr.id), eyes, pr.dir, !pr.lunge);
+  }
+  if (sc.minePredicted) {
+    // Yours, on top: on your own clock, eyes on the turn you just pressed.
+    const sh = sc.mine;
+    const color = colorOf(p, p.me);
+    traceShape(g, sh, cell);
+    const travel = dirOf(HDX, HDY);
+    paintLive(g, s, sc, live, color, shade(color, 0.55), true, crowned(p.me), sh.eyes, travel, !sh.lunge);
+    if (sh.hint) drawTurnHint(g, sh.hintX, sh.hintY, sh.hint, cell, 0.85);
   }
 
   // Who's who: arrows and labels before the round starts (and the YOU tag a moment after).
@@ -833,7 +909,7 @@ function drawScene(g: CanvasRenderingContext2D, sc: Scene, s: Surface, p: Props,
       const hy = isMe && sc.myAlive ? sc.myY : sn.body[1];
       const place = placeFor(hx, hy, sn.dir, view.w);
       if (latest.phase === "countdown") {
-        const heading = isMe && p.intent ? p.intent : sn.dir;
+        const heading = isMe && sc.minePredicted ? sc.mine.eyes : sn.dir;
         g.globalAlpha = 1;
         drawChevron(g, hx, hy, heading, cell, color, (reduced ? 0.9 : 0.6 + 0.35 * Math.sin(now / 160)) * spawn);
       }
@@ -900,6 +976,74 @@ function drawScene(g: CanvasRenderingContext2D, sc: Scene, s: Surface, p: Props,
   }
 }
 
+interface LiveStyle {
+  spawn: number;
+  headScale: number;
+  phase: SnakeView["phase"];
+  w: number;
+  reduced: boolean;
+  now: number;
+}
+
+/** Stroke the snake just traced (body, head, your ring, a champion's glow and crown). */
+function paintLive(
+  g: CanvasRenderingContext2D,
+  s: Surface,
+  sc: Scene,
+  st: LiveStyle,
+  color: string,
+  dark: string,
+  isMe: boolean,
+  champ: boolean,
+  eyes: Dir,
+  dir: Dir,
+  alive: boolean,
+) {
+  const { cell } = s;
+  if (st.spawn < 1) g.globalAlpha = st.spawn;
+  if (champ) {
+    g.save();
+    g.shadowColor = color;
+    g.shadowBlur = cell * (1.2 + (st.reduced ? 0 : 0.5 * Math.sin(st.now / 200)));
+    strokeBody(g, cell, color, dark);
+    g.restore();
+  } else {
+    strokeBody(g, cell, color, dark);
+  }
+  const hx = HX;
+  const hy = HY;
+  drawHead(g, hx, hy, eyes, cell, color, dark, false, st.headScale);
+  g.globalAlpha = 1;
+  if (isMe) {
+    sc.myX = hx;
+    sc.myY = hy;
+    sc.myAlive = alive;
+    if (st.phase !== "countdown") {
+      g.globalAlpha = 0.9;
+      g.strokeStyle = "#ffffff";
+      g.lineWidth = Math.max(1, cell * 0.09);
+      g.beginPath();
+      g.arc((hx + 0.5) * cell, (hy + 0.5) * cell, cell * 0.68, 0, TAU);
+      g.stroke();
+      g.globalAlpha = 1;
+    }
+  }
+  if (champ) {
+    g.font = s.crownFont;
+    g.textAlign = "center";
+    g.textBaseline = "middle";
+    const lift = 1.2 + (st.reduced ? 0 : Math.sin(st.now / 240) * 0.12);
+    const [vx, vy] = PLACE[placeFor(hx, hy, dir, st.w)];
+    g.fillText("👑", (hx + 0.5 + vx * lift) * cell, (hy + 0.5 + vy * lift) * cell);
+  }
+}
+
+const isAt = (cell: [number, number] | null, x: number, y: number) => !!cell && cell[0] === x && cell[1] === y;
+function hasFood(v: SnakeView, x: number, y: number) {
+  for (let i = 0; i + 1 < v.food.length; i += 2) if (v.food[i] === x && v.food[i + 1] === y) return true;
+  return false;
+}
+
 /** True while something on the board is still animating (so the final screen can go idle). */
 function busy(sc: Scene, now: number) {
   return sc.fx.length > 0 || sc.ghosts.size > 0 || now - sc.myDeathAt < 700 || sc.pb.snaps.length > 1;
@@ -910,7 +1054,7 @@ export function Arena({
   me,
   colors,
   byId,
-  intent,
+  pred,
   serverNow,
   reduced,
   steerable,
@@ -923,8 +1067,8 @@ export function Arena({
   me: string;
   colors: Record<string, string>;
   byId: Record<string, Player>;
-  /** Direction you just steered, until the server applies it (null = none). */
-  intent: Dir | null;
+  /** Your snake's prediction (fed every frame here; turns go in through the client). */
+  pred: SnakePredictor;
   serverNow: () => number;
   reduced: boolean;
   /** True when the viewer has a live snake and input matters. */
@@ -937,20 +1081,33 @@ export function Arena({
   const holderRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const scene = useRef<Scene>(newScene());
-  const live = useRef<Props>({ me, colors, byId, intent, reduced, serverNow: 0 });
+  const live = useRef<Props>({ me, colors, byId, pred, reduced, serverNow: 0 });
   const surface = useRef<Surface | null>(null);
   const gesture = useRef<{ id: number; x: number; y: number; moved: boolean; last: Dir | null; touch: boolean } | null>(null);
   const { w, h } = view;
 
-  // Feed each new server frame into the playback buffer.
-  useEffect(() => {
+  // Feed each new server frame into the playback buffer and your snake's predictor.
+  const onFrame = useEffectEvent((v: SnakeView) => {
     const sc = scene.current;
-    if (sc.pb.push(view, performance.now())) {
-      const roundChanged = !sc.shown || sc.shown.round !== view.round;
+    const perf = performance.now();
+    const before = sc.pb.snaps[sc.pb.snaps.length - 1]?.view;
+    if (sc.pb.push(v, perf)) {
+      const roundChanged = !sc.shown || sc.shown.round !== v.round;
       sc.shown = roundChanged ? null : sc.shown;
-      if (roundChanged) sc.roundAt = view.phase === "countdown" ? performance.now() : -1e9;
+      if (roundChanged) sc.roundAt = v.phase === "countdown" ? perf : -1e9;
     }
-  }, [view]);
+    pred.ingest(v, me, serverNow(), perf);
+    // Your crash shows the moment the server reports it: your snake runs ahead of the playback.
+    const was = before?.round === v.round ? before.snakes.find((x) => x.id === me) : undefined;
+    const now = v.snakes.find((x) => x.id === me);
+    if (was?.alive && now && !now.alive && sc.myCrashRound !== v.round) {
+      const p = live.current;
+      p.me = me;
+      p.colors = colors;
+      crashFx(sc, now, was.body, v, p, colors[me] ?? "#94a3b8", perf);
+    }
+  });
+  useEffect(() => onFrame(view), [view]);
 
   // Match the backing store to the element's size (crisp at any devicePixelRatio).
   useEffect(() => {
@@ -1021,7 +1178,7 @@ export function Arena({
     p.me = me;
     p.colors = colors;
     p.byId = byId;
-    p.intent = intent;
+    p.pred = pred;
     p.reduced = reduced;
     p.serverNow = serverNow();
     drawScene(g, sc, s, p, now);
@@ -1091,7 +1248,7 @@ export function Arena({
     const r = holder.getBoundingClientRect();
     const hx = r.left + (sc.myX + 0.5) * s.cssCell;
     const hy = r.top + (sc.myY + 0.5) * s.cssCell;
-    const heading = intent ?? mine.dir;
+    const heading = pred.upcoming();
     const horizontal = heading === "left" || heading === "right";
     onSteer(horizontal ? (e.clientY < hy ? "up" : "down") : e.clientX < hx ? "left" : "right");
   };

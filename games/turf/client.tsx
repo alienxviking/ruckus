@@ -7,6 +7,7 @@ import { PLAYER_COLORS, type Player } from "@/shared/types";
 import type { TurfAction, TurfEvent, TurfView } from "./server";
 import { DIRS, FREEZE_MS, PLAY_MS, POWER_INFO } from "./shared";
 import { TurfBoard, parsePainters, rgba, textureCss, type Painter } from "./board";
+import { TurfPredictor } from "./predict";
 
 type Props = GameClientProps<TurfView, TurfAction>;
 
@@ -114,13 +115,19 @@ function TurfGame({ view, byId, isPlayer, act, serverNow, onEvent, accent }: Pro
   const place = ranks(painters);
 
   // ----- steering -----
-  const [pending, setPending] = useState<{ dir: number; at: number } | null>(null);
+  // Runs your own painter a network trip ahead so turns show at once (see predict.ts).
+  const [pred] = useState(() => new TurfPredictor());
+  // Last direction you pressed (lights up the D-pad until the server has turned you).
+  const [pressed, setPressed] = useState<{ dir: number; tick: number } | null>(null);
   const steer = useCallback(
     (dir: number) => {
-      setPending({ dir, at: performance.now() });
-      act({ type: "turn", dir: DIRS[dir] });
+      // The predictor drops presses the server would ignore and stamps the tick the turn lands on.
+      const stamp = pred.press(dir, serverNow(), performance.now());
+      if (!stamp) return;
+      setPressed({ dir, tick: pred.tick });
+      act({ type: "turn", dir: DIRS[dir], ...stamp });
     },
-    [act],
+    [act, pred, serverNow],
   );
 
   useEffect(() => {
@@ -240,7 +247,7 @@ function TurfGame({ view, byId, isPlayer, act, serverNow, onEvent, accent }: Pro
         away={away}
         me={meIdx}
         steer={canSteer ? steer : null}
-        pending={pending}
+        pred={pred}
         serverNow={serverNow}
         onEvent={onEvent}
         label={boardLabel}
@@ -281,7 +288,7 @@ function TurfGame({ view, byId, isPlayer, act, serverNow, onEvent, accent }: Pro
           <div className="flex items-stretch gap-3 @xl:shrink-0">
             <DPad
               className="hidden @max-xl:grid pointer-coarse:grid"
-              current={mine.dir}
+              current={pressed && view.tick <= pressed.tick + 4 ? pressed.dir : mine.dir}
               color={colors[meIdx]}
               avatar={avatars[meIdx]}
               onTurn={steer}
@@ -310,7 +317,7 @@ function TurfGame({ view, byId, isPlayer, act, serverNow, onEvent, accent }: Pro
           total={total}
           place={place}
           final={view.phase === "over"}
-          winners={view.winners}
+          winners={view.winners ?? null}
         />
       </div>
 

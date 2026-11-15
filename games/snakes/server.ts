@@ -4,6 +4,7 @@ import {
   DELTA,
   GHOST_MS,
   GOLDEN_VALUE,
+  MAX_HOLD,
   MAX_QUEUE,
   MAX_ROUNDS,
   OPPOSITE,
@@ -23,7 +24,14 @@ import {
 // Snake Brawl: real-time, last snake standing. The server owns the grid and moves
 // every snake one cell per tick. The whole board is public, so every connection
 // gets the same view; the only hidden information is each player's queued turns,
-// which never leave the server.
+// which no other player ever sees.
+//
+// Latency: a turn can name the step it should land on (`at`, numbered like `tick`).
+// The owner's client runs its own snake a little ahead of the server and stamps each
+// turn for the step it is showing next, so the turn appears at once on their screen
+// and the server applies it on exactly that step (holding it if it arrives early).
+// A late turn just lands on the next step and the client corrects itself. Each player's
+// view carries their own input status (`me`), which is how the client tunes its lead.
 
 const SMALL_GRID = { w: 32, h: 24 }; // up to 3 players
 const LARGE_GRID = { w: 40, h: 30 }; // 4-8 players
@@ -51,14 +59,28 @@ const SLOTS: Record<number, [Side, number][]> = {
   8: [["L", 0.55], ["T", 0.3], ["R", 0.7], ["B", 0.15], ["L", 0.2], ["T", 0.55], ["R", 0.2], ["B", 0.65]],
 };
 
+/** A queued turn: applied on the first step numbered `at` or later (one per step, in order). */
+export interface QueuedTurn {
+  dir: Dir;
+  at: number;
+  /** The client's input number (0 = none given). */
+  seq: number;
+}
+
 export interface Snake {
   id: string;
   /** Cell indices (y * w + x), head first. */
   body: number[];
   /** Direction of the last move. */
   dir: Dir;
-  /** Pending turns, consumed one per tick. Never sent to clients. */
-  queue: Dir[];
+  /** Pending turns, consumed one per tick. Never sent to other players. */
+  queue: QueuedTurn[];
+  /** Input bookkeeping for the owner's prediction: last applied input number... */
+  applied: number;
+  /** ...the last one received... */
+  rx: number;
+  /** ...and how many ms before its step it arrived (negative = late). */
+  slack: number;
   alive: boolean;
   /** Cells still to grow (the tail stays put while this is > 0). */
   grow: number;
@@ -105,6 +127,8 @@ export interface SnakeState {
   feed: FeedItem[];
   /** Movement steps so far (clients use it to spot fresh frames). */
   tick: number;
+  /** Server time of the latest step (or of the start of play). */
+  stepAt: number;
   champions: string[] | null;
   /**
    * Set when a round ended with fewer than two players online: the next round waits
@@ -115,7 +139,11 @@ export interface SnakeState {
   rev: number;
 }
 
-export type SnakeAction = { type: "turn"; dir: Dir };
+/**
+ * `seq` numbers the client's inputs and `at` names the step the turn should land on
+ * (both optional; without `at` the turn happens on the next step).
+ */
+export type SnakeAction = { type: "turn"; dir: Dir; seq?: number; at?: number };
 
 export interface RoundResult {
   winner: string | null;
@@ -129,7 +157,8 @@ export interface SnakeV {
   dir: Dir;
   alive: boolean;
   len: number;
-  diedAt: number;
+  /** Server time of death (dead snakes only). */
+  diedAt?: number;
 }
 
 export interface SnakeView {
@@ -149,14 +178,24 @@ export interface SnakeView {
   food: number[];
   golden: [number, number] | null;
   feed: FeedItem[];
-  champions: string[] | null;
+  /** Match winners (final phase only). */
+  champions?: string[];
   /** True while round over is held open waiting for a disconnected player (endsAt = give-up time). */
   waiting: boolean;
+  /** Server time of the step `tick` (play only): lets the owner's client run its snake ahead. */
+  at?: number;
+  /**
+   * The viewer's own input status (players with a snake, countdown and play only):
+   * [last applied input, last received input, ms it arrived before its step].
+   */
+  me?: [number, number, number];
 }
 
 // ---------- helpers ----------
 
 const lenOf = (sn: Snake) => sn.body.length + sn.grow;
+/** A non-negative integer small enough to be a step or input number. */
+const isCount = (v: unknown): v is number => typeof v === "number" && Number.isInteger(v) && v >= 0 && v <= 2 ** 31;
 
 function onlineIds(s: SnakeState, ctx: GameCtx) {
   return s.ids.filter((id) => ctx.player(id)?.connected !== false);
@@ -230,7 +269,21 @@ function startRound(s: SnakeState, ctx: GameCtx, ids: string[]) {
   const made = new Map<string, Snake>();
   order.forEach((id, i) => {
     const { body, dir } = spawns[i];
-    made.set(id, { id, body, dir, queue: [], alive: true, grow: 0, diedAt: 0, spawn: body.slice(), spawnDir: dir, away: false });
+    made.set(id, {
+      id,
+      body,
+      dir,
+      queue: [],
+      applied: 0,
+      rx: 0,
+      slack: 0,
+      alive: true,
+      grow: 0,
+      diedAt: 0,
+      spawn: body.slice(),
+      spawnDir: dir,
+      away: false,
+    });
   });
   s.snakes = s.ids.flatMap((id) => made.get(id) ?? []);
   s.food = [];
@@ -279,10 +332,16 @@ function step(s: SnakeState, ctx: GameCtx) {
   const now = ctx.now();
   const { w, h } = s;
   s.tick += 1;
+  s.stepAt = now;
   const live = s.snakes.filter((sn) => sn.alive);
   for (const sn of live) {
-    const turn = sn.queue.shift();
-    if (turn) sn.dir = turn;
+    // One turn per step, in order; a turn aimed at a later step waits for it.
+    const turn = sn.queue[0];
+    if (turn && turn.at <= s.tick) {
+      sn.queue.shift();
+      sn.dir = turn.dir;
+      if (turn.seq) sn.applied = turn.seq;
+    }
   }
 
   // Cells that stay occupied through this move: every live body, minus tails that move away.
@@ -432,6 +491,7 @@ function advance(s: SnakeState, ctx: GameCtx): boolean {
       if (now < s.endsAt) return false;
       s.phase = "play";
       s.endsAt = now + ROUND_MS;
+      s.stepAt = now;
       s.goldenAt = now + goldenDelay(ctx);
       // Anyone who dropped during the countdown forfeits this round.
       checkRoundEnd(s, ctx);
@@ -486,13 +546,14 @@ export function buildView(s: SnakeState, now: number): SnakeView {
         dir: sn.dir,
         alive: sn.alive,
         len: lenOf(sn),
-        diedAt: sn.diedAt,
+        ...(sn.alive ? null : { diedAt: sn.diedAt }),
       })),
     food: flatCells(s, s.food),
     golden: s.golden === null ? null : [s.golden % s.w, Math.floor(s.golden / s.w)],
     feed: s.feed.map((f) => ({ ...f })),
-    champions: s.champions ? s.champions.slice() : null,
+    ...(s.champions ? { champions: s.champions.slice() } : null),
     waiting: s.waitingSince !== null,
+    ...(s.phase === "play" ? { at: s.stepAt } : null),
   };
 }
 
@@ -525,6 +586,7 @@ export const snakes: GameDef<SnakeState, SnakeAction> = {
       goldenAt: 0,
       feed: [],
       tick: 0,
+      stepAt: 0,
       champions: null,
       waitingSince: null,
       rev: 0,
@@ -534,17 +596,27 @@ export const snakes: GameDef<SnakeState, SnakeAction> = {
     return s;
   },
 
-  action(s, playerId, action) {
+  action(s, playerId, action, ctx) {
     if (s.phase !== "countdown" && s.phase !== "play") return false;
     const a: unknown = action;
     if (!a || typeof a !== "object" || Array.isArray(a)) return false;
-    const { type, dir } = a as { type?: unknown; dir?: unknown };
+    const { type, dir, seq, at } = a as { type?: unknown; dir?: unknown; seq?: unknown; at?: unknown };
     if (type !== "turn" || !isDir(dir)) return false;
+    if (seq !== undefined && !isCount(seq)) return false;
+    if (at !== undefined && !isCount(at)) return false;
     const sn = s.snakes.find((x) => x.id === playerId);
-    if (!sn || !sn.alive || sn.queue.length >= MAX_QUEUE) return false;
-    const last = sn.queue.length ? sn.queue[sn.queue.length - 1] : sn.dir;
+    if (!sn || !sn.alive) return false;
+    // The step this turn lands on: never one that already happened, never far ahead.
+    const when = s.phase === "play" && typeof at === "number" ? Math.min(at, s.tick + 1 + MAX_HOLD) : 0;
+    if (typeof seq === "number" && seq > 0) {
+      sn.rx = seq;
+      // How early it arrived for the step it asked for (the client learns its timing from this).
+      sn.slack = when > 0 ? Math.max(-999, Math.min(999, Math.round(s.stepAt + (when - s.tick) * TICK_MS - ctx.now()))) : 0;
+    }
+    if (sn.queue.length >= MAX_QUEUE) return false;
+    const last = sn.queue.length ? sn.queue[sn.queue.length - 1].dir : sn.dir;
     if (dir === last || dir === OPPOSITE[last]) return false;
-    sn.queue.push(dir);
+    sn.queue.push({ dir, at: when, seq: typeof seq === "number" ? seq : 0 });
     // Queued turns are invisible until the next tick moves the snake: no broadcast needed.
     return false;
   },
@@ -556,12 +628,19 @@ export const snakes: GameDef<SnakeState, SnakeAction> = {
   },
   tickMs: TICK_MS,
 
-  view(s, _viewerId, ctx) {
+  view(s, viewerId, ctx) {
     const hit = viewCache.get(s);
-    if (hit && hit.rev === s.rev) return hit.view;
-    const view = buildView(s, ctx.now());
-    viewCache.set(s, { rev: s.rev, view });
-    return view;
+    let view: SnakeView;
+    if (hit && hit.rev === s.rev) view = hit.view;
+    else {
+      view = buildView(s, ctx.now());
+      viewCache.set(s, { rev: s.rev, view });
+    }
+    // Everyone shares one view; a player also gets their own input status (tiny, and only theirs).
+    if (s.phase !== "countdown" && s.phase !== "play") return view;
+    const sn = s.snakes.find((x) => x.id === viewerId);
+    if (!sn || sn.away) return view;
+    return { ...view, me: [sn.applied, sn.rx, sn.slack] };
   },
 
   playerLeft(s, playerId, ctx) {
