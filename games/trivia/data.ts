@@ -123,7 +123,7 @@ export const QUESTIONS: readonly Question[] = [
   q(FOO, "easy", "Pizza Margherita comes from which country?", "Italy", "Greece", "France", "Spain"),
   q(FOO, "easy", "What is tofu made from?", "Soybeans", "Rice", "Chickpeas", "Wheat"),
   q(FOO, "easy", "Chocolate is made from the beans of which plant?", "Cacao", "Coffee", "Vanilla", "Carob"),
-  q(FOO, "easy", "Which fruit is traditionally used to make cider?", "Apples", "Pears", "Grapes", "Plums"),
+  q(FOO, "easy", "Which fruit is traditionally used to make cider?", "Apples", "Cherries", "Grapes", "Plums"),
   q(FOO, "medium", "Which costly spice comes from the stigmas of a crocus flower?", "Saffron", "Turmeric", "Paprika", "Cardamom"),
   q(FOO, "medium", "What is the main ingredient of hummus?", "Chickpeas", "Lentils", "Fava beans", "Peas"),
   q(FOO, "medium", "Marzipan is made mainly from which nut?", "Almonds", "Hazelnuts", "Walnuts", "Cashews"),
@@ -132,7 +132,7 @@ export const QUESTIONS: readonly Question[] = [
   q(FOO, "medium", "Classic red borscht gets its colour from which vegetable?", "Beetroot", "Red cabbage", "Tomato", "Red pepper"),
   q(FOO, "hard", "Which type of pastry is used to make éclairs?", "Choux pastry", "Puff pastry", "Filo pastry", "Shortcrust pastry"),
   q(FOO, "hard", "What is the Japanese name for the savoury 'fifth taste'?", "Umami", "Wasabi", "Miso", "Dashi"),
-  q(FOO, "hard", "Tequila is distilled from which plant?", "Blue agave", "Cactus", "Sugarcane", "Corn"),
+  q(FOO, "hard", "Tequila is distilled from which plant?", "Blue agave", "Prickly pear cactus", "Sugarcane", "Corn"),
   q(FOO, "hard", "Which fizzy drink is made by fermenting sweet tea with a culture of bacteria and yeast?", "Kombucha", "Kefir", "Matcha", "Chai"),
 
   // ── Sports ──

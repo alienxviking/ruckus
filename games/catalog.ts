@@ -48,9 +48,9 @@ export const CATALOG: GameMeta[] = [
     emoji: "⚡",
     accent: "#facc15",
     how: [
-      "10 multiple-choice questions, 15 seconds each.",
-      "Correct answers score up to 1000 points, more the faster you lock in.",
-      "Answer streaks earn a bonus.",
+      "10 questions from 10 categories, 15 seconds each. Everyone gets the same question at once.",
+      "Tap an answer or press 1–4 / A–D. One pick per question, no take-backs.",
+      "Right answers score 500–1,000 (faster = more); answer streaks add up to +300 more.",
     ],
   },
   {

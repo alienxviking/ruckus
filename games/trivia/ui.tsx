@@ -208,13 +208,14 @@ export function AnswerButton({
       aria-label={label}
       disabled={look !== "open"}
       onClick={() => onPick(index)}
-      className={`relative flex min-h-[4.75rem] w-full flex-col items-center justify-center gap-1.5 rounded-2xl border-2 px-2.5 pt-3 pb-2.5 text-center outline-none transition-[opacity,filter,transform,box-shadow,background-color,border-color] duration-300 focus-visible:ring-4 focus-visible:ring-white/70 @lg/answers:min-h-[5.25rem] @lg/answers:items-stretch @lg/answers:px-3.5 @lg/answers:py-2 @lg/answers:text-left ${
+      className={`relative flex min-h-[4.75rem] w-full flex-col items-center justify-center gap-1.5 rounded-2xl border-2 px-2.5 pt-5 pb-2.5 text-center outline-none transition-[opacity,filter,transform,box-shadow,background-color,border-color] duration-300 focus-visible:ring-4 focus-visible:ring-white/70 @lg/answers:min-h-[5.25rem] @lg/answers:items-stretch @lg/answers:py-2 @lg/answers:pr-9 @lg/answers:pl-3.5 @lg/answers:text-left ${
         TONE[look]
       } ${dim && mine ? "trv-shake" : ""}`}
       style={style}
     >
       <span className="flex w-full items-center justify-center gap-3 @lg/answers:justify-start">
-        {/* Narrow tiles: the letter is a tab on the corner so words get the full width. */}
+        {/* Narrow tiles: the letter is a tab on the corner so words get the full width
+            (the tile's top padding keeps the first line clear of the corner badges). */}
         <span
           aria-hidden
           className={`absolute -top-2 left-2 z-[1] grid size-6 shrink-0 place-items-center rounded-full font-display text-sm font-black text-ink shadow-md ring-2 ring-ink transition-opacity duration-300 @lg/answers:static @lg/answers:size-9 @lg/answers:rounded-lg @lg/answers:text-lg @lg/answers:shadow-none @lg/answers:ring-0 ${
