@@ -8,6 +8,7 @@ import {
   GHOST_MS,
   GOLDEN_VALUE,
   MAX_QUEUE,
+  REJOIN_MS,
   ROUND_MS,
   ROUND_OVER_MS,
   START_LEN,
@@ -775,6 +776,9 @@ for (const [w, hh, counts] of [
   assert(game.tick!(h.s, h.t.ctx) === true, "transition broadcasts");
   assert(phaseOf(h) === "roundOver" && h.s.lastRoundWinner === a, "round goes to the one still here");
   h.t.advance(ROUND_OVER_MS);
+  assert(game.tick!(h.s, h.t.ctx) === true && phaseOf(h) === "roundOver", "break held open for them");
+  assert(viewOf(h, a).waiting === true, "view says we're waiting");
+  h.t.advance(REJOIN_MS);
   game.tick!(h.s, h.t.ctx);
   assert(phaseOf(h) === "final" && h.ends.length === 1, "match over");
   assert(h.t.result?.winners.join() === a, "forfeit winner");
@@ -824,7 +828,9 @@ for (const [w, hh, counts] of [
   assert(phaseOf(h) === "roundOver", "round ends");
   h.t.advance(ROUND_OVER_MS);
   game.tick!(h.s, h.t.ctx);
-  assert(phaseOf(h) === "final" && h.ends.length === 1, "match ends when nobody is left");
+  assert(phaseOf(h) === "roundOver" && h.ends.length === 0, "waits a moment for someone to come back");
+  for (let i = 0; i < REJOIN_MS / TICK_MS + 2; i++) tick(h);
+  assert(phaseOf(h) === "final" && num(h.ends.length) === 1, "match ends when nobody is left");
 }
 
 // ---------- disconnects: round over and final ----------
@@ -862,7 +868,54 @@ for (const [w, hh, counts] of [
   disconnect(h, b);
   h.t.advance(ROUND_OVER_MS);
   game.tick!(h.s, h.t.ctx);
+  assert(phaseOf(h) === "roundOver" && h.ends.length === 0, "no instant forfeit");
+  h.t.advance(REJOIN_MS - 1);
+  assert(game.tick!(h.s, h.t.ctx) === false && phaseOf(h) === "roundOver", "still waiting just before the grace runs out");
+  h.t.advance(1);
+  game.tick!(h.s, h.t.ctx);
   assert(phaseOf(h) === "final" && h.t.result?.winners.join() === a, "forfeit to the player still here");
+  assert(num(h.ends.length) === 1, "ctx.end exactly once");
+  for (let i = 0; i < 5; i++) tick(h);
+  assert(num(h.ends.length) === 1, "stays ended");
+}
+{
+  // Regression: a quick page refresh between rounds used to end a 2-player match on the spot
+  // (handing it to the player who was behind). Now the break waits, and play resumes when they're back.
+  const h = start(2);
+  const [a, b] = h.t.ids;
+  forceRound(h, b); // b leads 1-0
+  disconnect(h, b);
+  h.t.advance(ROUND_OVER_MS);
+  game.tick!(h.s, h.t.ctx);
+  assert(phaseOf(h) === "roundOver" && viewOf(h, a).waiting, "holding the break");
+  const giveUp = h.s.endsAt;
+  assert(giveUp === h.t.ctx.now() + REJOIN_MS, "view counts down to the give-up time");
+  h.t.advance(2_000);
+  assert(game.tick!(h.s, h.t.ctx) === false, "nothing to broadcast while waiting");
+  reconnect(h, b);
+  assert(game.tick!(h.s, h.t.ctx) === true, "next tick notices they're back");
+  assert(phaseOf(h) === "countdown" && h.s.round === 2 && h.s.snakes.length === 2, "round 2 starts with both");
+  assert(!viewOf(h, a).waiting && h.ends.length === 0, "match goes on");
+  assert(h.s.roundWins[b] === 1, "b keeps the lead");
+  // The grace is per break: the next drop gets a fresh one.
+  forceRound(h, a);
+  disconnect(h, a);
+  h.t.advance(ROUND_OVER_MS);
+  game.tick!(h.s, h.t.ctx);
+  assert(phaseOf(h) === "roundOver" && h.s.endsAt === h.t.ctx.now() + REJOIN_MS, "fresh grace");
+  h.t.advance(REJOIN_MS);
+  game.tick!(h.s, h.t.ctx);
+  assert(phaseOf(h) === "final" && h.t.result?.winners.join() === b && num(h.ends.length) === 1, "forfeit after the grace");
+}
+{
+  // Three players, one drops between rounds: two are still here, so no waiting at all.
+  const h = start(3);
+  const [a, , c] = h.t.ids;
+  forceRound(h, a);
+  disconnect(h, c);
+  h.t.advance(ROUND_OVER_MS);
+  game.tick!(h.s, h.t.ctx);
+  assert(phaseOf(h) === "countdown" && !viewOf(h, a).waiting, "carries straight on");
 }
 
 // ---------- fuzz: random play at min, mid and max sizes; invariants, cache, termination, view size ----------

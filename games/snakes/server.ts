@@ -7,6 +7,7 @@ import {
   MAX_QUEUE,
   MAX_ROUNDS,
   OPPOSITE,
+  REJOIN_MS,
   ROUND_MS,
   ROUND_OVER_MS,
   START_LEN,
@@ -105,6 +106,11 @@ export interface SnakeState {
   /** Movement steps so far (clients use it to spot fresh frames). */
   tick: number;
   champions: string[] | null;
+  /**
+   * Set when a round ended with fewer than two players online: the next round waits
+   * (up to REJOIN_MS) for someone to reconnect, so one page refresh can't end the match.
+   */
+  waitingSince: number | null;
   /** Bumped on every visible change; keys the shared view cache. */
   rev: number;
 }
@@ -144,6 +150,8 @@ export interface SnakeView {
   golden: [number, number] | null;
   feed: FeedItem[];
   champions: string[] | null;
+  /** True while round over is held open waiting for a disconnected player (endsAt = give-up time). */
+  waiting: boolean;
 }
 
 // ---------- helpers ----------
@@ -404,6 +412,13 @@ function checkRoundEnd(s: SnakeState, ctx: GameCtx) {
 
 function nextRound(s: SnakeState, ctx: GameCtx) {
   const ids = onlineIds(s, ctx);
+  if (ids.length < 2 && s.waitingSince === null) {
+    // Someone dropped (maybe just a refresh): hold the break open for them.
+    s.waitingSince = ctx.now();
+    s.endsAt = ctx.now() + REJOIN_MS;
+    return;
+  }
+  s.waitingSince = null;
   if (ids.length === 1) return finishMatch(s, ctx, ids, "forfeit");
   if (ids.length === 0) return finishMatch(s, ctx, topScorers(s.roundWins), "abandoned");
   s.round += 1;
@@ -426,7 +441,10 @@ function advance(s: SnakeState, ctx: GameCtx): boolean {
       checkRoundEnd(s, ctx);
       return true;
     case "roundOver":
-      if (now < s.endsAt) return false;
+      if (s.waitingSince !== null) {
+        // Carry on the moment two players are back; give up when the grace runs out.
+        if (onlineIds(s, ctx).length < 2 && now < s.endsAt) return false;
+      } else if (now < s.endsAt) return false;
       nextRound(s, ctx);
       return true;
     default:
@@ -474,6 +492,7 @@ export function buildView(s: SnakeState, now: number): SnakeView {
     golden: s.golden === null ? null : [s.golden % s.w, Math.floor(s.golden / s.w)],
     feed: s.feed.map((f) => ({ ...f })),
     champions: s.champions ? s.champions.slice() : null,
+    waiting: s.waitingSince !== null,
   };
 }
 
@@ -507,6 +526,7 @@ export const snakes: GameDef<SnakeState, SnakeAction> = {
       feed: [],
       tick: 0,
       champions: null,
+      waitingSince: null,
       rev: 0,
     };
     const ready = onlineIds(s, ctx);
@@ -564,7 +584,7 @@ export const snakes: GameDef<SnakeState, SnakeAction> = {
   },
 
   playerReturned(s, playerId) {
-    if (s.phase !== "countdown") return; // otherwise they get a snake next round
+    if (s.phase !== "countdown") return; // otherwise they get a snake next round (the tick notices a waiting break)
     const sn = s.snakes.find((x) => x.id === playerId);
     if (!sn || sn.alive || !sn.away) return;
     const blocked = occupancy(s);

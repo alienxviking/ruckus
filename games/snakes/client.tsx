@@ -3,12 +3,13 @@
 import { useEffect, useEffectEvent, useMemo, useState, useSyncExternalStore, type ReactNode } from "react";
 import type { GameClientProps } from "@/shared/client-game";
 import { PLAYER_COLORS, type Player } from "@/shared/types";
-import { Note, Scoreboard, StatusBanner, TimerBar, useSecondsLeft } from "@/components/game-ui";
+import { Note, StatusBanner, TimerBar, useSecondsLeft } from "@/components/game-ui";
 import type { FeedItem, RoundResult, SnakeAction, SnakeView } from "./server";
 import {
   COUNTDOWN_MS,
   MAX_ROUNDS,
   OPPOSITE,
+  REJOIN_MS,
   ROUND_MS,
   ROUND_OVER_MS,
   START_LEN,
@@ -142,8 +143,14 @@ function Brawl({ view, me, players, byId, isPlayer, act, serverNow, accent }: Om
     setIntent({ dir, round, tick: view.tick });
     act({ type: "turn", dir });
   };
+  // Shown until the server has turned you (or a tick later, if the turn just missed a tick).
   const heading =
-    mine?.alive && intent && intent.round === round && intent.tick >= view.tick && intent.dir !== OPPOSITE[mine.dir]
+    mine?.alive &&
+    intent &&
+    intent.round === round &&
+    view.tick <= intent.tick + 1 &&
+    intent.dir !== mine.dir &&
+    intent.dir !== OPPOSITE[mine.dir]
       ? intent.dir
       : null;
 
@@ -188,6 +195,10 @@ function Brawl({ view, me, players, byId, isPlayer, act, serverNow, accent }: Om
             ? `Length ${mine.len} · you're the longest 👑`
             : `Length ${mine.len} · eat, grow, outlast`;
     }
+  } else if (phase === "roundOver" && view.waiting) {
+    const gone = players.filter((p) => !p.connected).map((p) => p.name);
+    head = "⏳ Waiting for players…";
+    sub = gone.length ? `${gone.join(", ")} dropped out · back in ${secs}s or the match ends` : "Starting the next round…";
   } else if (phase === "roundOver") {
     head = winner ? `🏆 ${winner === me ? "You take" : `${name(winner)} takes`} round ${round}!` : "🤝 Draw, nobody scores";
     sub = view.roundReason ? REASON[view.roundReason] : "";
@@ -202,7 +213,9 @@ function Brawl({ view, me, players, byId, isPlayer, act, serverNow, accent }: Om
       : phase === "countdown"
         ? `starts in ${secs}`
         : phase === "roundOver"
-          ? `next round in ${secs}`
+          ? view.waiting
+            ? `ends in ${secs}`
+            : `next round in ${secs}`
           : `${view.history.length} round${view.history.length === 1 ? "" : "s"} played`;
   const hurry = phase === "play" && secs <= 10;
   const ring =
@@ -239,7 +252,7 @@ function Brawl({ view, me, players, byId, isPlayer, act, serverNow, accent }: Om
         </div>
         <TimerBar
           endsAt={phase === "final" ? 0 : view.endsAt}
-          total={PHASE_MS[phase]}
+          total={phase === "roundOver" && view.waiting ? REJOIN_MS : PHASE_MS[phase]}
           serverNow={serverNow}
           color={hurry ? "#f87171" : accent}
         />
@@ -265,11 +278,11 @@ function Brawl({ view, me, players, byId, isPlayer, act, serverNow, accent }: Om
       {isPlayer && phase !== "final" && (
         <>
           <p
-            className={`hidden text-center text-xs text-muted transition-opacity pointer-fine:block ${steerable ? "" : "opacity-50"}`}
+            className={`hidden text-center text-xs text-muted transition-opacity @xl:block pointer-fine:block ${steerable ? "" : "opacity-50"}`}
           >
             Steer with <Kbd>←</Kbd> <Kbd>↑</Kbd> <Kbd>↓</Kbd> <Kbd>→</Kbd> or <Kbd>WASD</Kbd>, or drag on the board
           </p>
-          <div className="hidden items-center gap-4 pointer-coarse:flex">
+          <div className="hidden items-center gap-4 @max-xl:flex pointer-coarse:flex">
             <DPad
               onSteer={steer}
               current={steerable ? (heading ?? mine?.dir ?? null) : null}
@@ -390,6 +403,11 @@ function BoardOverlay({
           <span className="text-xs text-muted @xl:text-sm">
             {w ? `takes round ${view.round}` : "nobody scores this round"}
           </span>
+          {view.waiting && (
+            <span className="mt-1.5 animate-rise rounded-full bg-panel-2 px-2.5 py-0.5 text-xs font-semibold text-brand-2 @xl:text-sm">
+              ⏳ waiting for players ({secs}s)
+            </span>
+          )}
         </div>
       </div>
     );
@@ -525,17 +543,69 @@ function FinalStandings({
   me: string;
   colors: Record<string, string>;
 }) {
-  // Ties in round wins are broken (for display only) by the longest snake each player grew.
-  const order = players.map((p) => p.id).sort((a, b) => (view.best[b] ?? 0) - (view.best[a] ?? 0));
-  const topLen = Math.max(0, ...order.map((id) => view.best[id] ?? 0));
-  // Show everyone in their snake colour so the standings match the board.
-  const tinted: Record<string, Player> = { ...byId };
-  for (const p of players) tinted[p.id] = { ...p, color: colors[p.id] ?? p.color };
-  const biggest = order.filter((id) => (view.best[id] ?? 0) === topLen);
+  const wins = (id: string) => view.roundWins[id] ?? 0;
+  const best = (id: string) => view.best[id] ?? 0;
+  const champs = view.champions ?? [];
+  const champ = (id: string) => (champs.includes(id) ? 1 : 0);
+  // Champions first (a forfeit can crown someone who isn't ahead on rounds), then round wins;
+  // remaining ties are broken (for display only) by the longest snake each player grew.
+  const order = players
+    .map((p) => p.id)
+    .sort((a, b) => champ(b) - champ(a) || wins(b) - wins(a) || best(b) - best(a));
+  const topLen = Math.max(0, ...order.map(best));
+  const biggest = order.filter((id) => best(id) === topLen);
+  const medal = ["🥇", "🥈", "🥉"];
   return (
-    <div className="grid animate-rise gap-3 @xl:grid-cols-2">
-      <Scoreboard title="Round wins" scores={view.roundWins} byId={tinted} order={order} highlight={me} />
-      <div className="card flex flex-col gap-3 p-3">
+    <div className="grid gap-3 @xl:grid-cols-[3fr_2fr]">
+      <section className="card p-3" aria-label="Final standings">
+        <div className="label mb-2">Final standings</div>
+        <ol className="space-y-1.5">
+          {order.map((id, i) => {
+            const p = byId[id];
+            const color = colors[id] ?? p?.color ?? "#94a3b8";
+            const isChamp = champ(id) === 1;
+            const rank = isChamp ? 1 : 1 + order.filter((o) => champ(o) > 0 || wins(o) > wins(id)).length;
+            return (
+              <li
+                key={id}
+                className="animate-rise flex min-h-11 items-center gap-2 rounded-xl border px-2 py-1.5"
+                style={{
+                  animationDelay: `${120 + i * 70}ms`,
+                  borderColor: isChamp ? color : "transparent",
+                  background: isChamp ? color + "22" : "var(--color-panel-2)",
+                  boxShadow: isChamp ? `0 0 18px ${color}33` : undefined,
+                }}
+              >
+                <span className="w-7 shrink-0 text-center text-lg leading-none" aria-hidden>
+                  {rank <= 3 && (isChamp || wins(id) > 0) ? medal[rank - 1] : <span className="text-sm text-muted">{rank}</span>}
+                </span>
+                <span className="sr-only">Place {rank}:</span>
+                <span className="relative shrink-0 text-xl leading-none" aria-hidden>
+                  {p?.avatar ?? "🐍"}
+                  {isChamp && (
+                    <span className="absolute -top-3 left-1/2 -translate-x-1/2 text-sm motion-safe:animate-bounce">👑</span>
+                  )}
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="flex min-w-0 items-center gap-1.5">
+                    <span className="truncate font-semibold" style={{ color }}>
+                      {p?.name ?? "Someone"}
+                    </span>
+                    {id === me && <span className="shrink-0 text-[10px] font-bold tracking-wide text-muted uppercase">you</span>}
+                  </span>
+                  <span className="block text-xs text-muted tabular-nums">longest {best(id)}</span>
+                </span>
+                <span className="flex shrink-0 items-center gap-2">
+                  <Pips wins={wins(id)} color={color} />
+                  <span className="w-5 text-right font-mono text-lg font-bold tabular-nums">{wins(id)}</span>
+                  <span className="sr-only"> round win{wins(id) === 1 ? "" : "s"}</span>
+                </span>
+              </li>
+            );
+          })}
+        </ol>
+      </section>
+      <section className="card flex animate-rise flex-col gap-3 p-3" style={{ animationDelay: "260ms" }} aria-label="Rounds">
         <div>
           <div className="label mb-2">Rounds</div>
           <ol className="space-y-1 text-sm">
@@ -545,7 +615,8 @@ function FinalStandings({
                 <span className="min-w-0 break-words">
                   {r.winner ? (
                     <>
-                      🏆 <b style={{ color: colors[r.winner] }}>{byId[r.winner]?.name ?? "Someone"}</b>
+                      <span aria-hidden>{byId[r.winner]?.avatar ?? "🏆"}</span>{" "}
+                      <b style={{ color: colors[r.winner] }}>{byId[r.winner]?.name ?? "Someone"}</b>
                     </>
                   ) : (
                     "🤝 Draw"
@@ -571,7 +642,7 @@ function FinalStandings({
             </div>
           </div>
         )}
-      </div>
+      </section>
     </div>
   );
 }
