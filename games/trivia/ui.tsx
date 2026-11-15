@@ -2,7 +2,7 @@
 
 // Presentational pieces for Trivia Rush (no game logic here).
 
-import type { CSSProperties, ReactNode } from "react";
+import { useLayoutEffect, useRef, type CSSProperties, type ReactNode } from "react";
 import type { Player } from "@/shared/types";
 import { CATEGORY_EMOJI, LETTERS, fmt, type Category, type Difficulty } from "./shared";
 
@@ -28,31 +28,66 @@ export function personOf(byId: Record<string, Player>, id: string): Player {
   return byId[id] ?? { id, name: "Player", color: "#94a3b8", avatar: "❔", connected: false };
 }
 
+/** One set of curves for the whole game: a calm ease-out for movement, a springy one for pops. */
+export const EASE_OUT = "cubic-bezier(.2,.8,.2,1)";
+export const EASE_SPRING = "cubic-bezier(.2,1.4,.4,1)";
+
+/** False when the viewer asked for reduced motion (checked at animation time, never during render). */
+export function motionOK(): boolean {
+  return typeof window !== "undefined" && !window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+}
+
 const CSS = `
-@keyframes trv-float {
-  0% { opacity: 0; transform: translate(-50%, 8px) scale(.7); }
-  18% { opacity: 1; transform: translate(-50%, -10px) scale(1.15); }
-  70% { opacity: 1; transform: translate(-50%, -34px) scale(1); }
-  100% { opacity: 0; transform: translate(-50%, -50px) scale(.95); }
+@keyframes trv-enter {
+  from { opacity: 0; transform: translateY(14px) scale(.985); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes trv-tile-in {
+  from { opacity: 0; transform: translateY(14px) scale(.9); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes trv-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes trv-swap {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes trv-pop {
+  from { opacity: 0; transform: scale(.5); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes trv-lock {
+  0% { transform: scale(1); }
+  30% { transform: scale(.93); }
+  65% { transform: scale(1.035); }
+  100% { transform: scale(1); }
+}
+@keyframes trv-ring {
+  from { opacity: .9; transform: scale(1); }
+  to { opacity: 0; transform: scale(1.12, 1.28); }
 }
 @keyframes trv-correct {
   0% { transform: scale(1); }
-  35% { transform: scale(1.06); }
+  35% { transform: scale(1.07); }
   65% { transform: scale(.99); }
-  100% { transform: scale(1.02); }
+  100% { transform: scale(1.03); }
 }
-@keyframes trv-glow {
-  0%, 100% { box-shadow: 0 0 0 0 var(--trv-glow); }
-  50% { box-shadow: 0 0 26px 3px var(--trv-glow); }
+@keyframes trv-halo {
+  0% { opacity: 0; }
+  25% { opacity: 1; }
+  50% { opacity: .45; }
+  75% { opacity: 1; }
+  100% { opacity: .75; }
 }
 @keyframes trv-shake {
   0%, 100% { transform: translateX(0); }
   20%, 60% { transform: translateX(-5px); }
   40%, 80% { transform: translateX(5px); }
 }
-@keyframes trv-slide {
-  from { transform: translateY(var(--trv-from, 0px)); }
-  to { transform: translateY(0); }
+@keyframes trv-float {
+  0% { opacity: 0; transform: translate(-50%, 8px) scale(.7); }
+  18% { opacity: 1; transform: translate(-50%, -10px) scale(1.15); }
+  70% { opacity: 1; transform: translate(-50%, -34px) scale(1); }
+  100% { opacity: 0; transform: translate(-50%, -50px) scale(.95); }
 }
 @keyframes trv-count {
   0% { transform: scale(1.6); opacity: 0; }
@@ -65,17 +100,26 @@ const CSS = `
   100% { opacity: 0; transform: translate(calc(-50% + var(--dx)), calc(-50% + var(--dy))) scale(.3); }
 }
 @keyframes trv-bar { from { transform: scaleY(0); } to { transform: scaleY(1); } }
-.trv-float { animation: trv-float 1.8s cubic-bezier(.2,.8,.3,1) both; }
-.trv-correct { animation: trv-correct .55s cubic-bezier(.2,1.4,.4,1) both, trv-glow 1.4s ease-in-out .25s 2; }
-.trv-shake { animation: trv-shake .42s ease both; }
-.trv-slide { animation: trv-slide .75s cubic-bezier(.2,.9,.25,1) .3s both; }
-.trv-count { animation: trv-count .45s cubic-bezier(.2,1.2,.4,1) both; }
+.trv-enter { animation: trv-enter .4s ${EASE_OUT} both; }
+.trv-tile-in { animation: trv-tile-in .45s ${EASE_SPRING} both; animation-delay: calc(80ms + var(--i, 0) * 60ms); }
+.trv-fade { animation: trv-fade .3s ease both; }
+.trv-swap { animation: trv-swap .28s ${EASE_OUT} both; }
+.trv-rise { animation: trv-swap .4s ${EASE_OUT} both; animation-delay: var(--d, 0ms); }
+.trv-pop { animation: trv-pop .3s ${EASE_SPRING} both; animation-delay: var(--d, 0ms); }
+.trv-lock { animation: trv-lock .42s ${EASE_SPRING} both; }
+.trv-ring { animation: trv-ring .6s ${EASE_OUT} both; }
+.trv-correct { animation: trv-correct .6s ${EASE_SPRING} both; }
+.trv-halo { opacity: .75; animation: trv-halo 1.6s ease-in-out .1s both; }
+.trv-shake { animation: trv-shake .42s ease .05s both; }
+.trv-float { animation: trv-float 1.8s ${EASE_OUT} .25s both; }
+.trv-count { animation: trv-count .45s ${EASE_SPRING} both; }
 .trv-pulse { animation: trv-pulse .9s ease-in-out infinite; }
-.trv-spark { animation: trv-spark .85s ease-out .1s both; }
-.trv-bar { transform-origin: bottom; animation: trv-bar .6s cubic-bezier(.2,1,.3,1) both; }
+.trv-spark { animation: trv-spark .85s ease-out .15s both; }
+.trv-bar { transform-origin: bottom; animation: trv-bar .6s ${EASE_OUT} both; }
 @media (prefers-reduced-motion: reduce) {
-  .trv-float, .trv-spark { display: none; }
-  .trv-correct, .trv-shake, .trv-slide, .trv-count, .trv-pulse, .trv-bar { animation: none; }
+  .trv-float, .trv-spark, .trv-ring { display: none; }
+  .trv-enter, .trv-tile-in, .trv-fade, .trv-swap, .trv-rise, .trv-pop, .trv-lock, .trv-correct,
+  .trv-halo, .trv-shake, .trv-count, .trv-pulse, .trv-bar { animation: none; }
 }
 `;
 
@@ -138,18 +182,25 @@ const SPARKS = Array.from({ length: 8 }, (_, i) => {
 
 export type AnswerLook = "open" | "plain" | "locked" | "faded" | "correct" | "wrong";
 
-const TONE: Record<AnswerLook, string> = {
+const GREEN = "#4ade80";
+const ROSE = "#fb7185";
+
+/** Per-look movement. Only transform/opacity animate; the springy ones play once when the look changes. */
+const MOTION: Record<AnswerLook, string> = {
   open: "cursor-pointer hover:-translate-y-0.5 hover:brightness-125 active:translate-y-0 active:scale-[0.98]",
   plain: "",
-  locked: "",
-  faded: "opacity-40 saturate-50",
+  locked: "trv-lock",
+  faded: "opacity-40",
   correct: "trv-correct",
-  wrong: "",
+  wrong: "scale-[0.97]",
 };
 
 /**
  * One of the four answer tiles. Sizes follow the width of the answers grid (a
  * named `answers` container), so long words fit on phones and in side-by-side layouts.
+ *
+ * The fill lives on two stacked layers (soft and strong) that cross-fade, so
+ * locking in, fading out and the reveal glide instead of snapping between gradients.
  */
 export function AnswerButton({
   index,
@@ -176,6 +227,7 @@ export function AnswerButton({
   const letter = LETTERS[index];
   const revealing = look === "correct" || look === "wrong";
   const dim = look === "wrong";
+  const strong = look === "locked" || look === "correct";
   const names = pickers.map((p) => p.name).join(", ");
   const label = revealing
     ? `${letter}: ${text}${look === "correct" ? " (correct answer)" : ""}${mine ? " (your pick)" : ""}${
@@ -183,14 +235,10 @@ export function AnswerButton({
       }`
     : `Answer ${letter}: ${text}${look === "locked" ? " (locked in)" : ""}`;
 
-  const strong = look === "locked" || look === "correct";
   const style: CSSProperties = {
-    borderColor: strong ? color : color + (dim ? "26" : "66"),
-    background: dim
-      ? `${color}0a`
-      : `linear-gradient(160deg, ${color}${strong ? "4d" : "29"}, ${color}${strong ? "26" : "0f"})`,
+    borderColor: strong ? color : color + (dim ? (mine ? "66" : "26") : "66"),
+    background: `${color}0a`,
     boxShadow: look === "locked" ? `0 0 0 3px ${color}55, 0 8px 24px -10px ${color}` : undefined,
-    ...cssVars({ "--trv-glow": color + "99" }),
   };
 
   const badge =
@@ -208,11 +256,38 @@ export function AnswerButton({
       aria-label={label}
       disabled={look !== "open"}
       onClick={() => onPick(index)}
-      className={`relative flex min-h-[4.75rem] w-full flex-col items-center justify-center gap-1.5 rounded-2xl border-2 px-2.5 pt-5 pb-2.5 text-center outline-none transition-[opacity,filter,transform,box-shadow,background-color,border-color] duration-300 focus-visible:ring-4 focus-visible:ring-white/70 @lg/answers:min-h-[5.25rem] @lg/answers:items-stretch @lg/answers:py-2 @lg/answers:pr-9 @lg/answers:pl-3.5 @lg/answers:text-left ${
-        TONE[look]
-      } ${dim && mine ? "trv-shake" : ""}`}
+      className={`relative isolate flex min-h-[4.75rem] w-full flex-col items-center justify-center gap-1.5 rounded-2xl border-2 px-2.5 pt-5 pb-2.5 text-center outline-none transition-[opacity,translate,scale,border-color,filter] duration-300 ease-[cubic-bezier(.2,.8,.2,1)] motion-reduce:transition-[opacity,border-color] focus-visible:ring-4 focus-visible:ring-white/70 @lg/answers:min-h-[5.25rem] @lg/answers:items-stretch @lg/answers:py-2 @lg/answers:pr-9 @lg/answers:pl-3.5 @lg/answers:text-left ${
+        dim && mine ? "trv-shake" : MOTION[look]
+      }`}
       style={style}
     >
+      {/* Fill layers (behind the content, inside the tile's own stacking context): soft (open / faded) and
+          strong (locked / correct); a wrong tile keeps only the base tint. */}
+      <span
+        aria-hidden
+        className="pointer-events-none absolute inset-0 -z-10 rounded-[14px] transition-opacity duration-300"
+        style={{ background: `linear-gradient(160deg, ${color}29, ${color}0f)`, opacity: strong || revealing ? 0 : 1 }}
+      />
+      <span
+        aria-hidden
+        className="pointer-events-none absolute inset-0 -z-10 rounded-[14px] transition-opacity duration-300"
+        style={{ background: `linear-gradient(160deg, ${color}4d, ${color}26)`, opacity: strong ? 1 : 0 }}
+      />
+      {look === "locked" && (
+        <span
+          aria-hidden
+          className="trv-ring pointer-events-none absolute -inset-[2px] rounded-2xl border-2"
+          style={{ borderColor: color }}
+        />
+      )}
+      {look === "correct" && (
+        <span
+          aria-hidden
+          className="trv-halo pointer-events-none absolute -inset-[2px] rounded-2xl"
+          style={{ boxShadow: `0 0 0 3px ${GREEN}, 0 0 30px 2px ${GREEN}88` }}
+        />
+      )}
+
       <span className="flex w-full items-center justify-center gap-3 @lg/answers:justify-start">
         {/* Narrow tiles: the letter is a tab on the corner so words get the full width
             (the tile's top padding keeps the first line clear of the corner badges). */}
@@ -238,20 +313,34 @@ export function AnswerButton({
           aria-hidden
           className="flex flex-wrap items-center justify-center gap-1 @lg/answers:justify-start @lg/answers:pl-12"
         >
-          {pickers.slice(0, 6).map((p) => (
-            <span key={p.id} className="animate-pop">
+          {pickers.slice(0, 6).map((p, j) => (
+            <span key={p.id} className="trv-pop" style={cssVars({ "--d": `${180 + j * 45}ms` })}>
               <Face player={p} />
             </span>
           ))}
-          {pickers.length > 6 && <span className="text-xs font-bold text-muted">+{pickers.length - 6}</span>}
+          {pickers.length > 6 && (
+            <span className="trv-pop text-xs font-bold text-muted" style={cssVars({ "--d": "450ms" })}>
+              +{pickers.length - 6}
+            </span>
+          )}
         </span>
       )}
       {badge && (
         <span
           aria-hidden
-          className={`animate-pop absolute -top-2 right-2 z-[1] grid size-6 place-items-center rounded-full text-sm font-black shadow-md ring-2 ring-ink ${badge.cls}`}
+          className={`trv-pop absolute -top-2 right-2 z-[1] grid size-6 place-items-center rounded-full text-sm font-black shadow-md ring-2 ring-ink ${badge.cls}`}
         >
           {badge.icon}
+        </span>
+      )}
+      {revealing && mine && (
+        <span aria-hidden className="pointer-events-none absolute inset-x-0 -bottom-2.5 z-[2] flex justify-center">
+          <span
+            className="trv-pop rounded-full px-2 text-[10px] leading-4 font-black tracking-wider text-ink uppercase shadow-md ring-2 ring-ink"
+            style={{ background: look === "correct" ? GREEN : ROSE, ...cssVars({ "--d": "120ms" }) }}
+          >
+            Your pick
+          </span>
         </span>
       )}
       {look === "correct" && mine && points > 0 && (
@@ -261,7 +350,7 @@ export function AnswerButton({
               key={i}
               aria-hidden
               className="trv-spark pointer-events-none absolute top-1/2 left-1/2 text-sm"
-              style={{ color: i % 2 ? accent : color, ...cssVars({ "--dx": sp.dx, "--dy": sp.dy }) }}
+              style={{ color: i % 2 ? accent : GREEN, ...cssVars({ "--dx": sp.dx, "--dy": sp.dy }) }}
             >
               ✦
             </span>
@@ -279,7 +368,54 @@ export function AnswerButton({
   );
 }
 
-export function RankDelta({ delta, show }: { delta: number; show: boolean }) {
+/**
+ * A number that counts from `from` to `value` (ease-out) after `delay` ms.
+ * It edits its own text node from an effect, so the per-frame updates never
+ * re-render React; with reduced motion it shows the final value straight away.
+ */
+export function CountUp({
+  value,
+  from,
+  delay = 0,
+  duration = 700,
+  className,
+  style,
+}: {
+  value: number;
+  from: number;
+  delay?: number;
+  duration?: number;
+  className?: string;
+  style?: CSSProperties;
+}) {
+  const ref = useRef<HTMLSpanElement>(null);
+  useLayoutEffect(() => {
+    const node = ref.current?.firstChild;
+    if (!node || node.nodeType !== Node.TEXT_NODE || from === value || !motionOK()) return;
+    const show = (n: number) => {
+      const t = fmt(n);
+      if (node.nodeValue !== t) node.nodeValue = t;
+    };
+    show(from);
+    const start = performance.now() + delay;
+    let raf = requestAnimationFrame(function step(now: number) {
+      const k = Math.min(1, Math.max(0, (now - start) / duration));
+      show(from + (value - from) * (1 - (1 - k) ** 3));
+      if (k < 1) raf = requestAnimationFrame(step);
+    });
+    return () => {
+      cancelAnimationFrame(raf);
+      show(value);
+    };
+  }, [value, from, delay, duration]);
+  return (
+    <span ref={ref} className={className} style={style}>
+      {fmt(value)}
+    </span>
+  );
+}
+
+export function RankDelta({ delta, show, delay = 0 }: { delta: number; show: boolean; delay?: number }) {
   if (!show || delta === 0) {
     return (
       <span className="w-7 shrink-0 text-center text-xs text-muted" aria-hidden>
@@ -289,7 +425,10 @@ export function RankDelta({ delta, show }: { delta: number; show: boolean }) {
   }
   const up = delta > 0;
   return (
-    <span className={`w-7 shrink-0 text-center font-mono text-[11px] font-bold ${up ? "text-green-300" : "text-rose-300"}`}>
+    <span
+      className={`trv-pop w-7 shrink-0 text-center font-mono text-[11px] font-bold ${up ? "text-green-300" : "text-rose-300"}`}
+      style={cssVars({ "--d": `${delay}ms` })}
+    >
       <span aria-hidden>
         {up ? "▲" : "▼"}
         {Math.abs(delta)}

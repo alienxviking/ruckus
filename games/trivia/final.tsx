@@ -6,7 +6,7 @@ import type { Player } from "@/shared/types";
 import type { PlayerLine, TriviaView } from "./server";
 import { CATEGORY_EMOJI, fmt } from "./shared";
 import { byRank } from "./standings";
-import { MEDALS, ordinal, personOf, seconds } from "./ui";
+import { CountUp, MEDALS, cssVars, ordinal, personOf, seconds } from "./ui";
 
 const PODIUM_HEIGHT = ["h-28 @lg:h-32", "h-20 @lg:h-24", "h-14 @lg:h-16"];
 
@@ -22,8 +22,8 @@ function Podium({ top, byId }: { top: PlayerLine[]; byId: Record<string, Player>
           <div
             key={l.id}
             role="listitem"
-            className="animate-rise flex w-[31%] max-w-[10rem] min-w-0 flex-col items-center gap-1"
-            style={{ animationDelay: `${(3 - place) * 180 + 100}ms` }}
+            className="trv-rise flex w-[31%] max-w-[10rem] min-w-0 flex-col items-center gap-1"
+            style={cssVars({ "--d": `${(3 - place) * 180 + 100}ms` })}
           >
             <span className="text-3xl @lg:text-4xl" aria-hidden>
               {p.avatar}
@@ -31,7 +31,13 @@ function Podium({ top, byId }: { top: PlayerLine[]; byId: Record<string, Player>
             <span className="max-w-full truncate text-sm font-bold" style={{ color: p.color }}>
               {p.name}
             </span>
-            <span className="font-mono text-sm font-bold tabular-nums">{fmt(l.score)}</span>
+            <CountUp
+              value={l.score}
+              from={0}
+              delay={(3 - place) * 180 + 150}
+              duration={900}
+              className="font-mono text-sm font-bold tabular-nums"
+            />
             <div
               className={`trv-bar flex w-full ${PODIUM_HEIGHT[place - 1]} items-start justify-center rounded-t-xl pt-2`}
               style={{
@@ -51,7 +57,7 @@ function Podium({ top, byId }: { top: PlayerLine[]; byId: Record<string, Player>
   );
 }
 
-function SoloCard({ line, asked, accent }: { line: PlayerLine; asked: number; accent: string }) {
+function SoloCard({ line, asked, accent, title }: { line: PlayerLine; asked: number; accent: string; title: string }) {
   const stats = [
     { label: "Correct", value: `${line.correct}/${asked}` },
     { label: "Best streak", value: line.bestStreak ? `🔥 ${line.bestStreak}` : "–" },
@@ -62,10 +68,15 @@ function SoloCard({ line, asked, accent }: { line: PlayerLine; asked: number; ac
       className="card animate-rise flex flex-col items-center gap-3 p-5 text-center"
       style={{ borderColor: accent + "66", background: `radial-gradient(120% 90% at 50% 0%, ${accent}1f, transparent 60%), var(--color-panel)` }}
     >
-      <span className="label">Your run</span>
-      <span className="font-display text-5xl font-black tabular-nums" style={{ color: accent }}>
-        {fmt(line.score)}
-      </span>
+      <span className="label">{title}</span>
+      <CountUp
+        value={line.score}
+        from={0}
+        delay={200}
+        duration={1100}
+        className="font-display text-5xl font-black tabular-nums"
+        style={{ color: accent }}
+      />
       <span className="-mt-2 text-sm text-muted">points</span>
       <div className="grid w-full max-w-sm grid-cols-3 gap-2">
         {stats.map((s) => (
@@ -102,8 +113,13 @@ export function FinalScreen({
         <span aria-hidden>🏁</span> Final standings
       </h2>
 
-      {solo && mine ? (
-        <SoloCard line={mine} asked={view.asked} accent={accent} />
+      {solo ? (
+        <SoloCard
+          line={ranked[0]}
+          asked={view.asked}
+          accent={accent}
+          title={mine ? "Your run" : `${personOf(byId, ranked[0].id).name}'s run`}
+        />
       ) : anyPoints ? (
         <Podium top={ranked.slice(0, 3)} byId={byId} />
       ) : (
@@ -117,11 +133,15 @@ export function FinalScreen({
             <span>points</span>
           </div>
           <ol className="divide-y divide-line/70" aria-label="All players">
-            {ranked.map((l) => {
+            {ranked.map((l, i) => {
               const p = personOf(byId, l.id);
               const isMe = l.id === me;
               return (
-                <li key={l.id} className={`flex items-center gap-2.5 rounded-xl px-2 py-2 ${isMe ? "bg-white/[0.06]" : ""}`}>
+                <li
+                  key={l.id}
+                  className={`trv-rise flex items-center gap-2.5 rounded-xl px-2 py-2 ${isMe ? "bg-white/[0.06]" : ""}`}
+                  style={cssVars({ "--d": `${250 + Math.min(i, 8) * 40}ms` })}
+                >
                   <span className="w-7 shrink-0 text-center font-mono text-sm font-bold text-muted">
                     {anyPoints && l.rank <= 3 ? (
                       <span className="text-xl" aria-label={`${ordinal(l.rank)} place`}>

@@ -8,7 +8,7 @@ import type { PlayerLine, TriviaAction, TriviaView } from "./server";
 import { LETTERS, QUESTION_MS, STREAK_CAP, fmt } from "./shared";
 import { FinalScreen } from "./final";
 import { Leaderboard, Lineup, LockedIn, SoloStats } from "./standings";
-import { AnswerButton, CategoryChip, DiffPill, TriviaStyles, ordinal, personOf, seconds, type AnswerLook } from "./ui";
+import { AnswerButton, CategoryChip, DiffPill, TriviaStyles, cssVars, ordinal, personOf, seconds, type AnswerLook } from "./ui";
 
 /** When several copies of the game share a page (the dev simulator), the one touched last owns the keyboard. */
 const keyboard = { owner: null as string | null };
@@ -103,12 +103,15 @@ export default function TriviaRush({
       {(phase === "question" || phase === "reveal") && q && (
         <>
           <StatusBanner key={`${phase}-${qNum}`} accent={bannerAccent(view, mine, isPlayer, accent)}>
-            <Banner view={view} mine={mine} isPlayer={isPlayer} myChoice={myChoice} secs={secs} byId={byId} />
+            {/* Re-keyed when what we're saying changes (pick -> locked -> time's up), so it swaps in instead of snapping. */}
+            <div key={bannerKey(view, isPlayer, myChoice, secs)} className="trv-swap">
+              <Banner view={view} mine={mine} isPlayer={isPlayer} myChoice={myChoice} secs={secs} byId={byId} />
+            </div>
           </StatusBanner>
 
           <div className="grid items-start gap-3 @2xl:grid-cols-[minmax(0,1fr)_17.5rem]">
             <div className="flex min-w-0 flex-col gap-3">
-              <section key={`q-${qNum}`} aria-labelledby={questionId} className="card p-4 @lg:p-5">
+              <section key={`q-${qNum}`} aria-labelledby={questionId} className="card trv-enter p-4 @lg:p-5">
                 <div className="mb-2.5 flex flex-wrap items-center justify-between gap-2">
                   <div className="flex flex-wrap items-center gap-1.5">
                     <CategoryChip cat={q.cat} accent={accent} />
@@ -119,7 +122,7 @@ export default function TriviaRush({
                     <span className="text-text">{qNum}</span>/{view.total}
                   </span>
                 </div>
-                <h2 id={questionId} className="animate-rise font-display text-xl leading-snug font-bold text-balance @lg:text-2xl">
+                <h2 id={questionId} className="font-display text-xl leading-snug font-bold text-balance @lg:text-2xl">
                   {q.text}
                 </h2>
                 <div className="mt-3 flex items-center gap-2.5">
@@ -147,19 +150,22 @@ export default function TriviaRush({
                 </div>
               </section>
 
-              <div role="group" aria-label="Answers" className="@container/answers grid grid-cols-2 gap-x-2.5 gap-y-3.5 @lg:gap-3">
+              <div role="group" aria-label="Answers" className="@container/answers grid grid-cols-2 gap-x-2.5 gap-y-3.5 pb-1 @lg:gap-3">
                 {q.choices.map((text, i) => (
-                  <AnswerButton
-                    key={`${qNum}-${i}`}
-                    index={i}
-                    text={text}
-                    look={lookFor(i, view, myChoice, canAnswer)}
-                    mine={revealing ? mine?.outcome?.choice === i : false}
-                    pickers={revealing ? lines.filter((l) => l.outcome?.choice === i).map((l) => personOf(byId, l.id)) : []}
-                    points={revealing && mine?.outcome?.choice === i ? mine.outcome.points : 0}
-                    accent={accent}
-                    onPick={answer}
-                  />
+                  // The wrapper deals the tiles in (staggered) when a question arrives; the
+                  // button's own animations (lock, pop, shake) stay free to play on top.
+                  <div key={`${qNum}-${i}`} className="trv-tile-in flex" style={cssVars({ "--i": String(i) })}>
+                    <AnswerButton
+                      index={i}
+                      text={text}
+                      look={lookFor(i, view, myChoice, canAnswer)}
+                      mine={revealing ? mine?.outcome?.choice === i : false}
+                      pickers={revealing ? lines.filter((l) => l.outcome?.choice === i).map((l) => personOf(byId, l.id)) : []}
+                      points={revealing && mine?.outcome?.choice === i ? mine.outcome.points : 0}
+                      accent={accent}
+                      onPick={answer}
+                    />
+                  </div>
                 ))}
               </div>
             </div>
@@ -186,6 +192,11 @@ function lookFor(i: number, view: TriviaView, myChoice: number | null, canAnswer
   if (view.phase === "reveal") return i === view.answer ? "correct" : "wrong";
   if (myChoice !== null) return i === myChoice ? "locked" : "faded";
   return canAnswer ? "open" : "plain";
+}
+
+function bannerKey(view: TriviaView, isPlayer: boolean, myChoice: number | null, secs: number): string {
+  if (view.phase !== "question" || !isPlayer) return "info";
+  return myChoice !== null ? "locked" : secs > 0 ? "pick" : "late";
 }
 
 function bannerAccent(view: TriviaView, mine: PlayerLine | null, isPlayer: boolean, accent: string): string {
