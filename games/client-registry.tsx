@@ -4,7 +4,7 @@
 // lazily loaded chunk: the room only downloads the game being played, and a
 // broken game cannot take down the rest of the site.
 import dynamic from "next/dynamic";
-import type { ComponentType } from "react";
+import { memo, type ComponentType } from "react";
 import type { GameClientProps } from "@/shared/client-game";
 
 function Loading() {
@@ -53,7 +53,8 @@ const LOADERS: Record<string, () => Promise<{ default: AnyGameClient }>> = {
 };
 
 export const GAME_CLIENTS: Record<string, AnyGameClient> = Object.fromEntries(
-  Object.entries(LOADERS).map(([id, load]) => [id, dynamic(load, { ssr: false, loading: Loading })]),
+  // memo: chat lines and room updates don't re-render a running game unless its props change.
+  Object.entries(LOADERS).map(([id, load]) => [id, memo(dynamic(load, { ssr: false, loading: Loading }))]),
 );
 
 const preloaded = new Set<string>();

@@ -6,7 +6,7 @@ import type { Player, RoomView } from "@/shared/types";
 import type { useRoom } from "@/lib/useRoom";
 import { PlayerChip } from "../game-ui";
 import { Confetti } from "../Confetti";
-import { Component, type ReactNode } from "react";
+import { Component, useMemo, type ReactNode } from "react";
 
 export function GameStage({
   room,
@@ -25,7 +25,9 @@ export function GameStage({
 }) {
   const meta = CATALOG_BY_ID[room.gameId];
   const GameClient = GAME_CLIENTS[room.gameId];
-  const players = room.participants.map((id) => byId[id]).filter(Boolean);
+  // Stable across chat lines and pings, so the (memoised) game client only re-renders when
+  // its own inputs change.
+  const players = useMemo(() => room.participants.map((id) => byId[id]).filter(Boolean), [room.participants, byId]);
   const isPlayer = room.participants.includes(me);
 
   return (
