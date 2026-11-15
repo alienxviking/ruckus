@@ -231,7 +231,7 @@ export const CATALOG: GameMeta[] = [
     how: [
       "Take turns placing X or O.",
       "Three in a row wins the round. First to 3 rounds wins.",
-      "Starting player alternates each round.",
+      "Starting player alternates each round. Disconnect for 20 seconds and you forfeit.",
     ],
   },
 ];
