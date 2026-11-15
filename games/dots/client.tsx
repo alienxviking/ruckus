@@ -520,17 +520,19 @@ function Board({
               strokeWidth={3}
               className="transition-[fill-opacity,stroke-opacity] duration-700"
             />
-            <text
-              x={cx}
-              y={cy + 2}
-              textAnchor="middle"
-              dominantBaseline="central"
-              fontSize={44}
-              opacity={dim ? 0.4 : 1}
-              className="transition-opacity duration-700"
-            >
-              {p.avatar}
-            </text>
+            <g className="dots-avatar">
+              <text
+                x={cx}
+                y={cy + 2}
+                textAnchor="middle"
+                dominantBaseline="central"
+                fontSize={44}
+                opacity={dim ? 0.4 : 1}
+                className="transition-opacity duration-700"
+              >
+                {p.avatar}
+              </text>
+            </g>
           </g>
         );
       })}
@@ -756,11 +758,14 @@ const CSS = `
 @keyframes dots-glow { 0%, 100% { stroke-opacity: .12; } 50% { stroke-opacity: .42; } }
 .dots-preview { animation: dots-breathe 1.1s ease-in-out infinite; stroke-opacity: .8; }
 @keyframes dots-breathe { 0%, 100% { stroke-opacity: .62; } 50% { stroke-opacity: .95; } }
-.dots-box { transform-box: fill-box; transform-origin: center; animation: dots-box .45s cubic-bezier(.2, 1.4, .4, 1) both; }
+/* A claim plays in order: the closing line draws (.3s), the box fills, the avatar lands, the ripple and +1 fire. */
+.dots-box { transform-box: fill-box; transform-origin: center; animation: dots-box .45s cubic-bezier(.2, 1.4, .4, 1) .16s both; }
 @keyframes dots-box { from { transform: scale(.3); opacity: 0; } to { transform: none; opacity: 1; } }
-.dots-ripple { transform-box: fill-box; transform-origin: center; animation: dots-ripple .75s ease-out both; }
+.dots-avatar { transform-box: fill-box; transform-origin: center; animation: dots-avatar .5s cubic-bezier(.2, 1.6, .4, 1) .3s both; }
+@keyframes dots-avatar { from { transform: scale(.2) rotate(-20deg); opacity: 0; } to { transform: none; opacity: 1; } }
+.dots-ripple { transform-box: fill-box; transform-origin: center; animation: dots-ripple .75s ease-out .2s both; }
 @keyframes dots-ripple { from { transform: scale(.35); opacity: .95; } to { transform: scale(1.55); opacity: 0; } }
-.dots-float { transform-box: fill-box; transform-origin: center; animation: dots-float 1.2s ease-out both; }
+.dots-float { transform-box: fill-box; transform-origin: center; animation: dots-float 1.2s ease-out .2s both; }
 @keyframes dots-float {
   0% { transform: translateY(14px) scale(.5); opacity: 0; }
   18% { transform: translateY(0) scale(1.2); opacity: 1; }
@@ -771,7 +776,7 @@ const CSS = `
 @keyframes dots-bar { from { transform: scaleX(0); } }
 @keyframes dots-fade { 0%, 70% { opacity: 1; } 100% { opacity: 0; } }
 @media (prefers-reduced-motion: reduce) {
-  .dots-draw, .dots-glow, .dots-preview, .dots-box, .dots-bar { animation: none; }
+  .dots-draw, .dots-glow, .dots-preview, .dots-box, .dots-avatar, .dots-bar { animation: none; }
   .dots-ripple { display: none; }
   .dots-float { animation: dots-fade 1.2s linear both; }
 }
