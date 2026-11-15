@@ -76,8 +76,14 @@ export function Room({
           </div>
         </div>
       ) : !room ? (
-        <div className="grid flex-1 place-items-center text-muted">
-          {r.status === "closed" ? "Can't reach the game server. Retrying…" : "Connecting…"}
+        <div className="grid flex-1 place-items-center text-muted" role="status">
+          <div className="flex flex-col items-center gap-3">
+            <span
+              aria-hidden
+              className="size-8 rounded-full border-[3px] border-line border-t-brand motion-safe:animate-[spin_0.8s_linear_infinite]"
+            />
+            {r.status === "closed" ? "Can't reach the game server. Retrying…" : "Joining the room…"}
+          </div>
         </div>
       ) : (
         <div className="grid flex-1 gap-4 pb-24 lg:pb-4 lg:grid-cols-[minmax(0,1fr)_300px]">
@@ -85,7 +91,9 @@ export function Room({
             {room.phase === "lobby" ? (
               <Lobby room={room} isHost={isHost} send={r.send} />
             ) : (
-              <GameStage room={room} view={r.view} me={r.me} isHost={isHost} byId={byId} r={r} />
+              <div className="animate-rise">
+                <GameStage room={room} view={r.view} me={r.me} isHost={isHost} byId={byId} r={r} />
+              </div>
             )}
           </section>
 

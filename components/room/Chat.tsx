@@ -36,14 +36,14 @@ export function Chat({
         {room.chat.map((m) => {
           if (!m.from) {
             return (
-              <li key={m.id} className="text-xs text-muted">
+              <li key={m.id} className="animate-rise text-xs text-muted">
                 {m.text}
               </li>
             );
           }
           const p = byId[m.from];
           return (
-            <li key={m.id} className="break-words">
+            <li key={m.id} className="animate-rise break-words">
               <span className="font-semibold" style={{ color: p?.color }}>
                 {p ? `${p.avatar} ${p.name}` : "someone"}
               </span>

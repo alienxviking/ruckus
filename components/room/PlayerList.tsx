@@ -15,7 +15,7 @@ export function PlayerList({ room, me }: { room: RoomView; me: string }) {
           return (
             <li
               key={p.id}
-              className={`flex items-center gap-2 rounded-lg px-2 py-1.5 ${p.id === me ? "bg-panel-2" : ""} ${
+              className={`animate-pop flex items-center gap-2 rounded-lg px-2 py-1.5 transition-opacity duration-300 ${p.id === me ? "bg-panel-2" : ""} ${
                 p.connected ? "" : "opacity-45"
               }`}
             >

@@ -22,13 +22,17 @@ export function Lobby({
   return (
     <div className="flex flex-col gap-4">
       <div
-        className="card animate-rise grid gap-5 p-5 sm:grid-cols-[1fr_auto] sm:p-6"
+        className="card animate-rise grid gap-5 p-5 transition-[border-color] duration-300 sm:grid-cols-[1fr_auto] sm:p-6"
         style={{ borderColor: game.accent + "66", background: `linear-gradient(135deg, ${game.accent}14, transparent 60%), var(--color-panel)` }}
       >
-        <div>
+        {/* Re-keyed per game so the details animate in when the host switches games. */}
+        <div key={game.id} className="animate-rise">
           <div className="label">{isHost ? "You picked" : `${host?.name ?? "The host"} picked`}</div>
           <h1 className="mt-1 flex items-center gap-3 font-display text-3xl font-extrabold sm:text-4xl">
-            <span aria-hidden>{game.emoji}</span> {game.name}
+            <span aria-hidden className="animate-pop">
+              {game.emoji}
+            </span>{" "}
+            {game.name}
           </h1>
           <ul className="mt-3 space-y-1.5 text-sm text-text/85">
             {game.how.map((line, i) => (
@@ -77,9 +81,10 @@ export function Lobby({
       <div>
         <h2 className="label mb-2">{isHost ? "Pick a game" : "Games"}</h2>
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-          {CATALOG.map((g) => (
+          {CATALOG.map((g, i) => (
             <GameCard
               key={g.id}
+              index={i}
               game={g}
               selected={g.id === game.id}
               disabled={!isHost}

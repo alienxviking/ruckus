@@ -5,6 +5,7 @@ import { GAME_CLIENTS } from "@/games/client-registry";
 import type { Player, RoomView } from "@/shared/types";
 import type { useRoom } from "@/lib/useRoom";
 import { PlayerChip } from "../game-ui";
+import { Confetti } from "../Confetti";
 import { Component, type ReactNode } from "react";
 
 export function GameStage({
@@ -44,7 +45,7 @@ export function GameStage({
         )}
       </div>
 
-      {room.result && <ResultBanner room={room} byId={byId} isHost={isHost} r={r} accent={meta?.accent} />}
+      {room.result && <ResultBanner room={room} byId={byId} me={me} isHost={isHost} r={r} accent={meta?.accent} />}
 
       <div className="min-h-[60vh]">
         {GameClient ? (
@@ -73,24 +74,35 @@ export function GameStage({
 function ResultBanner({
   room,
   byId,
+  me,
   isHost,
   r,
   accent,
 }: {
   room: RoomView;
   byId: Record<string, Player>;
+  me: string;
   isHost: boolean;
   r: ReturnType<typeof useRoom>;
   accent?: string;
 }) {
   const result = room.result!;
+  const iWon = result.winners.includes(me);
   return (
     <div
-      className="card animate-pop flex flex-col items-center gap-3 p-4 text-center sm:flex-row sm:justify-between sm:text-left"
+      role="status"
+      className="card animate-pop relative flex flex-col items-center gap-3 p-4 text-center sm:flex-row sm:justify-between sm:text-left"
       style={{ borderColor: accent, background: `linear-gradient(135deg, ${accent}22, transparent 70%), var(--color-panel)` }}
     >
+      {result.winners.length > 0 && <Confetti pieces={iWon ? 40 : 22} />}
       <div>
-        <div className="font-display text-xl font-extrabold">🏆 {result.headline}</div>
+        {iWon && <div className="label mb-1 text-brand-2">You won! 🎉</div>}
+        <div className="font-display text-xl font-extrabold">
+          <span aria-hidden className="animate-trophy mr-1">
+            🏆
+          </span>{" "}
+          {result.headline}
+        </div>
         {result.winners.length > 0 && (
           <div className="mt-2 flex flex-wrap justify-center gap-1.5 sm:justify-start">
             {result.winners.map((id) => (

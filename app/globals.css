@@ -119,9 +119,90 @@ body {
   animation: rise 0.3s ease both;
 }
 
+@keyframes float {
+  0%,
+  100% {
+    transform: translateY(0) rotate(var(--tilt, 0deg));
+  }
+  50% {
+    transform: translateY(-10px) rotate(calc(var(--tilt, 0deg) * -1));
+  }
+}
+.animate-float {
+  animation: float 5s ease-in-out infinite;
+}
+
+@keyframes confetti-fall {
+  0% {
+    transform: translate3d(0, -20px, 0) rotate(0deg);
+    opacity: 1;
+  }
+  100% {
+    transform: translate3d(var(--drift, 0px), 340px, 0) rotate(var(--spin, 540deg));
+    opacity: 0;
+  }
+}
+
+@keyframes trophy-bounce {
+  0% {
+    transform: scale(0.4) rotate(-12deg);
+  }
+  55% {
+    transform: scale(1.25) rotate(6deg);
+  }
+  100% {
+    transform: scale(1) rotate(0);
+  }
+}
+.animate-trophy {
+  display: inline-block;
+  animation: trophy-bounce 0.6s cubic-bezier(0.2, 1.4, 0.4, 1) both;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Game cards: lift and glow in their own accent colour. */
+.game-card {
+  transition:
+    transform 0.18s cubic-bezier(0.2, 0.8, 0.2, 1),
+    border-color 0.18s ease,
+    box-shadow 0.18s ease,
+    background 0.18s ease;
+}
+.game-card:where(:hover, :focus-visible):not(:disabled) {
+  transform: translateY(-3px);
+  border-color: color-mix(in oklab, var(--accent) 60%, var(--color-line));
+  box-shadow: 0 12px 30px -12px color-mix(in oklab, var(--accent) 55%, transparent);
+}
+.game-card .game-emoji {
+  transition: transform 0.25s cubic-bezier(0.2, 1.4, 0.4, 1);
+}
+.game-card:where(:hover, :focus-visible):not(:disabled) .game-emoji {
+  transform: scale(1.12) rotate(-6deg);
+}
+
+/* Visible keyboard focus everywhere, invisible for mouse/touch. */
+:where(button, a, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--color-brand-2);
+  outline-offset: 2px;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .animate-pop,
-  .animate-rise {
+  .animate-rise,
+  .animate-float,
+  .animate-trophy {
     animation: none;
+  }
+  .game-card,
+  .game-card .game-emoji {
+    transition: none;
+  }
+  .game-card:hover {
+    transform: none;
   }
 }

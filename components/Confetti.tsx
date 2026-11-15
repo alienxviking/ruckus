@@ -1,0 +1,31 @@
+// CSS-only confetti burst: ~30 pieces animated with transform/opacity, no JS loop.
+// Positions come from the index (not Math.random) so renders stay pure.
+
+const COLORS = ["#ff5d73", "#ffb020", "#ffe14d", "#4ade80", "#38bdf8", "#c084fc", "#f472b6"];
+
+export function Confetti({ pieces = 30 }: { pieces?: number }) {
+  return (
+    <div aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-0 overflow-visible motion-reduce:hidden">
+      {Array.from({ length: pieces }, (_, i) => {
+        const r = (n: number) => ((i * 9301 + n * 49297) % 233280) / 233280; // cheap deterministic noise
+        return (
+          <span
+            key={i}
+            className="absolute top-0 block rounded-[2px]"
+            style={
+              {
+                left: `${4 + r(1) * 92}%`,
+                width: 6 + r(2) * 6,
+                height: 10 + r(3) * 8,
+                background: COLORS[i % COLORS.length],
+                "--drift": `${(r(4) - 0.5) * 160}px`,
+                "--spin": `${360 + r(5) * 540}deg`,
+                animation: `confetti-fall ${1.6 + r(6) * 1.4}s cubic-bezier(0.2, 0.6, 0.4, 1) ${r(7) * 0.5}s both`,
+              } as React.CSSProperties
+            }
+          />
+        );
+      })}
+    </div>
+  );
+}
