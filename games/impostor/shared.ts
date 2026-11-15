@@ -1,0 +1,130 @@
+// Odd One Out: constants and pure word helpers shared by the server and the client.
+// Nothing secret lives here (the word list is in data.ts, which stays on the server).
+// The client runs the same clue rules for live validation; the server re-checks.
+
+export const MIN_PLAYERS = 3;
+export const MAX_ROUNDS = 3;
+/** Every player gives this many clues per round, in the same turn order. */
+export const LAPS = 2;
+
+export const CLUE_MS = 25_000;
+export const VOTE_MS = 45_000;
+/** Once everyone connected has voted, the vote closes this much later. */
+export const VOTE_SETTLE_MS = 2_000;
+export const GUESS_MS = 25_000;
+export const REVEAL_MS = 8_000;
+/** A caught odd one who is offline gets this long to come back and guess. */
+export const AWAY_GUESS_MS = 8_000;
+/** Fewer than MIN_PLAYERS connected for this long ends the game. */
+export const SHORT_GRACE_MS = 20_000;
+
+export const MAX_CLUE = 20;
+export const MAX_GUESS = 30;
+/** Anything longer than this is rejected before any text processing. */
+export const MAX_RAW = 200;
+
+export const POINTS = {
+  /** The odd one survives the vote (tie, nobody voted, or the wrong person caught). */
+  escape: 3,
+  /** The odd one is caught but names the majority word. */
+  guess: 2,
+  /** The odd one is caught and misses: everyone else gets this... */
+  catch: 1,
+  /** ...plus this if they voted for the odd one. */
+  sharpEye: 1,
+} as const;
+
+const CONTROL = /[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u2028-\u202e\u2060-\u2064\ufeff]/g;
+const CLUE_CHARS = /^[\p{L}\p{M}\p{N}'\u2019-]+$/u;
+const GUESS_CHARS = /^[\p{L}\p{M}\p{N}'\u2019 -]+$/u;
+
+/** Strip control/invisible characters, collapse whitespace, trim. */
+export function cleanText(input: string): string {
+  return input.replace(CONTROL, "").replace(/\s+/g, " ").trim();
+}
+
+/** Comparable form: no accents, lowercase, letters and digits only. */
+export function normalizeWord(input: string): string {
+  return input
+    .normalize("NFKD")
+    .replace(/\p{M}/gu, "")
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]/gu, "");
+}
+
+/** The word plus its likely singular forms (dogs→dog, berries→berry, leaves→leaf). */
+function variants(n: string): string[] {
+  const out = [n];
+  if (n.length > 4 && n.endsWith("ies")) out.push(n.slice(0, -3) + "y");
+  if (n.length > 4 && n.endsWith("ves")) out.push(n.slice(0, -3) + "f", n.slice(0, -3) + "fe");
+  if (n.length > 3 && n.endsWith("es")) out.push(n.slice(0, -2));
+  if (n.length > 2 && n.endsWith("s") && !n.endsWith("ss")) out.push(n.slice(0, -1));
+  return out;
+}
+
+/** Same word, ignoring simple plurals. Both arguments must already be normalized. */
+export function sameWord(a: string, b: string): boolean {
+  if (!a || !b) return false;
+  if (a === b) return true;
+  const vb = variants(b);
+  return variants(a).some((v) => vb.includes(v));
+}
+
+/**
+ * Why this clue can't be used, or null when it's fine.
+ * `myWord` is the clue-giver's own word; `earlier` are clues already given this round.
+ */
+export function clueProblem(raw: string, myWord: string | null, earlier: readonly string[]): string | null {
+  const text = cleanText(raw);
+  if (!text) return "Type a clue first.";
+  if (text.includes(" ")) return "One word only.";
+  if ([...text].length > MAX_CLUE) return `Keep it to ${MAX_CLUE} characters.`;
+  if (!CLUE_CHARS.test(text)) return "Letters, digits, hyphens and apostrophes only.";
+  const n = normalizeWord(text);
+  if (!n) return "Use at least one letter or digit.";
+  if (myWord) {
+    const w = normalizeWord(myWord);
+    if (w && (sameWord(n, w) || variants(n).some((v) => v.includes(w)))) {
+      return "That gives away your word. Try another.";
+    }
+  }
+  for (const e of earlier) {
+    if (sameWord(n, normalizeWord(e))) return `“${cleanText(e)}” was already said this round.`;
+  }
+  return null;
+}
+
+/** Why this last guess can't be sent, or null when it's fine. */
+export function guessProblem(raw: string): string | null {
+  const text = cleanText(raw);
+  if (!text) return "Type a guess first.";
+  if ([...text].length > MAX_GUESS) return `Keep it to ${MAX_GUESS} characters.`;
+  if (!GUESS_CHARS.test(text)) return "Letters, digits, spaces, hyphens and apostrophes only.";
+  if (!normalizeWord(text)) return "Use at least one letter or digit.";
+  return null;
+}
+
+/** Classic edit distance (inputs are short: guesses are capped at MAX_GUESS). */
+export function levenshtein(a: string, b: string): number {
+  if (a === b) return 0;
+  if (!a.length) return b.length;
+  if (!b.length) return a.length;
+  let prev = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i++) {
+    const cur = [i];
+    for (let j = 1; j <= b.length; j++) {
+      cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    }
+    prev = cur;
+  }
+  return prev[b.length];
+}
+
+/** Does the odd one's last guess name the majority word? Forgives plurals, and one typo on 5+ letter words. */
+export function guessMatches(guess: string, word: string): boolean {
+  const g = normalizeWord(guess);
+  const w = normalizeWord(word);
+  if (!g || !w) return false;
+  if (sameWord(g, w)) return true;
+  return w.length >= 5 && levenshtein(g, w) <= 1;
+}
