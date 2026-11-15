@@ -47,7 +47,7 @@ try {
   const roomUrl = host.url();
   await host.getByLabel("Name").fill("Host");
   await host.getByRole("button", { name: "Let's go" }).click();
-  await host.getByText("Pick a game").waitFor();
+  await host.getByRole("heading", { name: "Pick a game" }).waitFor();
 
   const phone = await player("phone", { width: 390, height: 844 }, true);
   await joinRoom(phone, roomUrl, "Phone");
@@ -76,7 +76,7 @@ try {
         }
       }
       await host.getByRole("button", { name: "End game" }).click();
-      await host.getByText("Pick a game").waitFor({ timeout: 10_000 });
+      await host.getByRole("heading", { name: "Pick a game" }).waitFor({ timeout: 10_000 });
       const fresh = errors.slice(before);
       console.log(`${fresh.length ? "✗" : "✓"} ${g.name}${fresh.length ? ` (${fresh.length} errors)` : ""}`);
     } catch (e) {
