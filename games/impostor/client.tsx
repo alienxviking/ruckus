@@ -92,7 +92,7 @@ export default function OddOneOut({ view, me, byId, isPlayer, act, serverNow, on
         </StatusBanner>
       </div>
 
-      {view.phase !== "final" && (
+      {view.phase !== "final" && view.shortUntil === null && (
         <PhaseTimer view={view} serverNow={serverNow} accent={accent} myTurn={myTurn} caughtMe={caughtMe} settling={settling} />
       )}
 
@@ -254,7 +254,8 @@ function ShortWarning({ until, serverNow }: { until: number; serverNow: () => nu
   const secs = useSecondsLeft(until, serverNow);
   return (
     <div role="status" className="card animate-rise border-brand/60 px-4 py-2 text-sm">
-      <span aria-hidden>⚠️ </span>Not enough players connected. The game ends{" "}
+      <span aria-hidden>⏸️ </span>
+      <b>Paused:</b> not enough players connected. The game ends{" "}
       <span aria-hidden>
         in <b className="tabular-nums">{secs}s</b>
       </span>

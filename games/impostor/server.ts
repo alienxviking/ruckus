@@ -26,6 +26,10 @@ import {
 //
 // Per-player data lives in arrays indexed by seat (position in `ids`), so player
 // ids are never used as object keys in state.
+//
+// With fewer than MIN_PLAYERS connected the game is paused: no turns are skipped,
+// no timer runs out, nobody scores. Play resumes where it stopped once enough
+// players are back, or the game ends after SHORT_GRACE_MS.
 
 export type Phase = "clues" | "vote" | "lastGuess" | "reveal" | "final";
 export type ClueStatus = "clue" | "pass" | "away";
@@ -64,7 +68,8 @@ export interface ImpostorState {
   endsAt: number;
   scores: number[];
   usedPairs: number[];
-  wasOdd: boolean[];
+  /** How many rounds each seat has been the odd one (makes a repeat less likely, never impossible). */
+  oddTimes: number[];
   // The current round's secrets.
   majorityWord: string;
   oddWord: string;
@@ -83,7 +88,7 @@ export interface ImpostorState {
   history: RoundSummary[];
   /** Seat -> when they went offline, 0 while connected. */
   awaySince: number[];
-  /** When fewer than MIN_PLAYERS were last seen connected. */
+  /** Since when fewer than MIN_PLAYERS are connected: the game is paused meanwhile. */
   shortSince: number | null;
   endedEarly: boolean;
 }
@@ -124,12 +129,13 @@ export interface ImpostorView {
   scores: Record<string, number>;
   /** Finished rounds, fully revealed. The current round joins at its reveal. */
   history: RoundSummary[];
-  /** When the game ends unless more players reconnect (null when enough are here). */
+  /** Paused for lack of players: the game ends at this time unless more reconnect (null when enough are here). */
   shortUntil: number | null;
   endedEarly: boolean;
 }
 
 const isOnline = (ctx: GameCtx, id: string) => ctx.player(id)?.connected === true;
+const onlineCount = (s: ImpostorState, ctx: GameCtx) => s.ids.filter((id) => isOnline(ctx, id)).length;
 
 function randomIndex(ctx: GameCtx, length: number): number {
   const r = ctx.random();
@@ -182,15 +188,26 @@ function rejectText(ctx: GameCtx, to: string, message: string): false {
 
 // ---------- round flow ----------
 
+/**
+ * Picks the odd one among connected players. Strictly "someone not odd yet" would
+ * leak the role: with 3 players everyone would know round 3's odd one, and earlier
+ * odd ones would know they're in the majority. So it's a weighted draw instead:
+ * each earlier turn as the odd one halves a player's chance. Fresh players are
+ * likelier, yet nobody can rule themselves (or anyone else) out.
+ */
 function chooseOddSeat(s: ImpostorState, ctx: GameCtx): number {
   const seats = s.ids.map((_, i) => i);
   const online = seats.filter((i) => isOnline(ctx, s.ids[i]));
-  const fresh = (list: number[]) => list.filter((i) => !s.wasOdd[i]);
-  const last = s.history.length ? s.ids.indexOf(s.history[s.history.length - 1].oddId) : -1;
-  // Prefer someone connected who hasn't been odd yet; never strand the round on an offline player.
-  const pools = [fresh(online), online.filter((i) => i !== last), online, fresh(seats), seats];
-  const pool = pools.find((p) => p.length > 0) ?? [0];
-  return pool[randomIndex(ctx, pool.length)];
+  const pool = online.length ? online : seats; // never strand the round on an offline player
+  const weights = pool.map((i) => 0.5 ** (s.oddTimes[i] ?? 0));
+  const total = weights.reduce((a, b) => a + b, 0);
+  const r = ctx.random();
+  let x = (Number.isFinite(r) ? Math.min(Math.max(r, 0), 0.999999) : 0) * total;
+  for (let k = 0; k < pool.length; k++) {
+    x -= weights[k];
+    if (x < 0) return pool[k];
+  }
+  return pool[pool.length - 1];
 }
 
 function startRound(s: ImpostorState, ctx: GameCtx) {
@@ -209,7 +226,7 @@ function startRound(s: ImpostorState, ctx: GameCtx) {
   s.oddWord = flip ? pair[0] : pair[1];
 
   s.oddSeat = chooseOddSeat(s, ctx);
-  s.wasOdd[s.oddSeat] = true;
+  s.oddTimes[s.oddSeat] += 1;
 
   s.order = shuffle(
     s.ids.map((_, i) => i),
@@ -225,12 +242,16 @@ function startRound(s: ImpostorState, ctx: GameCtx) {
   beginTurn(s, ctx);
 }
 
-/** Start the turn at s.turn, instantly skipping offline players; moves to the vote when done. */
+/**
+ * Start the turn at s.turn, instantly skipping offline players; moves to the vote when done.
+ * While too few players are connected nobody is skipped: the turn waits for the pause to end.
+ */
 function beginTurn(s: ImpostorState, ctx: GameCtx) {
   const n = s.order.length;
+  const paused = onlineCount(s, ctx) < MIN_PLAYERS;
   while (s.turn < turnsPerRound(s)) {
     const seat = s.order[s.turn % n];
-    if (isOnline(ctx, s.ids[seat])) {
+    if (paused || isOnline(ctx, s.ids[seat])) {
       s.endsAt = ctx.now() + CLUE_MS;
       return;
     }
@@ -258,8 +279,9 @@ function startVote(s: ImpostorState, ctx: GameCtx) {
 
 /** Keep `settleAt` in step with "everyone connected has voted". Returns true if it changed. */
 function syncSettle(s: ImpostorState, ctx: GameCtx): boolean {
-  if (s.phase !== "vote") return false;
-  const allIn = s.ids.every((id, i) => s.votes[i] >= 0 || !isOnline(ctx, id));
+  if (s.phase !== "vote" || s.shortSince !== null) return false; // paused: leave it for later
+  const online = s.ids.filter((id) => isOnline(ctx, id));
+  const allIn = online.length > 0 && s.ids.every((id, i) => s.votes[i] >= 0 || !isOnline(ctx, id));
   const before = s.settleAt;
   if (!allIn) s.settleAt = null;
   else if (s.settleAt === null) s.settleAt = ctx.now();
@@ -343,7 +365,8 @@ function endGame(s: ImpostorState, ctx: GameCtx, early: boolean) {
   let headline: string;
   if (!winners.length) headline = s.endedEarly ? "Odd One Out ended early before anyone scored" : "Nobody scored in Odd One Out";
   else if (winners.length === 1) headline = `${prefix}${name(winners[0])} wins Odd One Out with ${pts}`;
-  else headline = `${prefix}${joinNames(winners.map(name))} tie for the win with ${pts}`;
+  else if (winners.length <= 3) headline = `${prefix}${joinNames(winners.map(name))} tie for the win with ${pts}`;
+  else headline = `${prefix}${winners.length} players tie for the win with ${pts}`;
   ctx.end({ winners, headline, scores });
 }
 
@@ -370,9 +393,67 @@ function syncPresence(s: ImpostorState, ctx: GameCtx): boolean {
       changed = true;
     }
   } else if (s.shortSince !== null) {
+    // Resume: every running clock picks up where it stopped.
+    const paused = now - s.shortSince;
+    s.endsAt += paused;
+    if (s.settleAt !== null) s.settleAt += paused;
     s.shortSince = null;
     changed = true;
   }
+  return changed;
+}
+
+/**
+ * Time-driven changes: whatever deadline has passed (turn, vote, guess, reveal), and
+ * the end of the game after a long pause. Uses presence as last recorded, so it runs
+ * before an action or a reconnect is applied: late moves can't beat the clock.
+ */
+function runClock(s: ImpostorState, ctx: GameCtx): boolean {
+  if (s.phase === "final") return false;
+  const now = ctx.now();
+  if (s.shortSince !== null) {
+    if (now - s.shortSince < SHORT_GRACE_MS) return false; // paused
+    endGame(s, ctx, true);
+    return true;
+  }
+  switch (s.phase) {
+    case "clues":
+      if (currentSeat(s) < 0 || now < s.endsAt) return false;
+      endTurn(s, ctx, null, "pass");
+      return true;
+    case "vote":
+      if (now < voteDeadline(s)) return false;
+      resolveVote(s, ctx);
+      return true;
+    case "lastGuess":
+      if (now < guessDeadline(s)) return false;
+      resolveGuess(s, ctx, null);
+      return true;
+    case "reveal":
+      if (now < s.endsAt) return false;
+      if (s.round >= s.totalRounds) endGame(s, ctx, false);
+      else startRound(s, ctx);
+      return true;
+  }
+  return false;
+}
+
+/** Presence-driven changes: who's away, pause/resume, skipping an offline clue-giver, vote settling. */
+function syncAll(s: ImpostorState, ctx: GameCtx): boolean {
+  if (s.phase === "final") return false;
+  let changed = syncPresence(s, ctx);
+  if (s.shortSince !== null) return changed;
+  if (s.phase === "clues") {
+    const seat = currentSeat(s);
+    if (seat < 0) {
+      beginTurn(s, ctx); // defensive: never sit on a finished lap
+      changed = true;
+    } else if (!isOnline(ctx, s.ids[seat])) {
+      endTurn(s, ctx, null, "away");
+      changed = true;
+    }
+  }
+  if (syncSettle(s, ctx)) changed = true;
   return changed;
 }
 
@@ -423,7 +504,7 @@ export const impostor: GameDef<ImpostorState, ImpostorAction> = {
       endsAt: 0,
       scores: ids.map(() => 0),
       usedPairs: [],
-      wasOdd: ids.map(() => false),
+      oddTimes: ids.map(() => 0),
       majorityWord: "",
       oddWord: "",
       oddSeat: 0,
@@ -448,62 +529,24 @@ export const impostor: GameDef<ImpostorState, ImpostorAction> = {
     if (s.phase === "final") return false;
     const seat = s.ids.indexOf(playerId);
     if (seat < 0) return false;
+    // A deadline that passed since the last tick applies first, so a late clue, vote
+    // or guess lands in the next phase (and is refused) instead of beating the clock.
+    const moved = runClock(s, ctx);
+    if ((s.phase as Phase) === "final") return moved; // runClock may have ended the game
     const a: unknown = action;
-    if (!a || typeof a !== "object" || Array.isArray(a)) return false;
+    if (!a || typeof a !== "object" || Array.isArray(a)) return moved;
     const { type } = a as { type?: unknown };
-    if (type === "clue") return giveClue(s, seat, (a as { text?: unknown }).text, ctx);
-    if (type === "vote") return castVote(s, seat, (a as { target?: unknown }).target, ctx);
-    if (type === "guess") return makeGuess(s, seat, (a as { text?: unknown }).text, ctx);
-    return false;
+    let done = false;
+    if (type === "clue") done = giveClue(s, seat, (a as { text?: unknown }).text, ctx);
+    else if (type === "vote") done = castVote(s, seat, (a as { target?: unknown }).target, ctx);
+    else if (type === "guess") done = makeGuess(s, seat, (a as { text?: unknown }).text, ctx);
+    return moved || done;
   },
 
   tick(s, ctx) {
     if (s.phase === "final") return false;
-    const now = ctx.now();
-    let changed = syncPresence(s, ctx);
-    if (s.shortSince !== null && now - s.shortSince >= SHORT_GRACE_MS) {
-      endGame(s, ctx, true);
-      return true;
-    }
-    switch (s.phase) {
-      case "clues": {
-        const seat = currentSeat(s);
-        if (seat < 0) {
-          beginTurn(s, ctx); // defensive: never sit on a finished lap
-          return true;
-        }
-        if (!isOnline(ctx, s.ids[seat])) {
-          endTurn(s, ctx, null, "away");
-          return true;
-        }
-        if (now >= s.endsAt) {
-          endTurn(s, ctx, null, "pass");
-          return true;
-        }
-        break;
-      }
-      case "vote":
-        if (syncSettle(s, ctx)) changed = true;
-        if (now >= voteDeadline(s)) {
-          resolveVote(s, ctx);
-          return true;
-        }
-        break;
-      case "lastGuess":
-        if (now >= guessDeadline(s)) {
-          resolveGuess(s, ctx, null);
-          return true;
-        }
-        break;
-      case "reveal":
-        if (now >= s.endsAt) {
-          if (s.round >= s.totalRounds) endGame(s, ctx, false);
-          else startRound(s, ctx);
-          return true;
-        }
-        break;
-    }
-    return changed;
+    const changed = syncAll(s, ctx);
+    return runClock(s, ctx) || changed;
   },
   tickMs: 250,
 
@@ -533,22 +576,15 @@ export const impostor: GameDef<ImpostorState, ImpostorAction> = {
     };
   },
 
-  playerLeft(s, playerId, ctx) {
-    if (s.phase === "final") return;
-    syncPresence(s, ctx);
-    const seat = s.ids.indexOf(playerId);
-    if (seat < 0) return;
-    if (s.phase === "clues" && currentSeat(s) === seat && !isOnline(ctx, playerId)) {
-      endTurn(s, ctx, null, "away");
-    } else if (s.phase === "vote") {
-      syncSettle(s, ctx);
-    }
+  // Both hooks apply any passed deadline first (with presence as it was), then the change.
+  playerLeft(s, _playerId, ctx) {
+    runClock(s, ctx);
+    syncAll(s, ctx);
   },
 
   playerReturned(s, _playerId, ctx) {
-    if (s.phase === "final") return;
-    syncPresence(s, ctx);
-    syncSettle(s, ctx);
+    runClock(s, ctx);
+    syncAll(s, ctx);
   },
 };
 

@@ -14,6 +14,7 @@ import {
   VOTE_SETTLE_MS,
   clueProblem,
   guessMatches,
+  guessProblem,
   levenshtein,
   normalizeWord,
   sameWord,
@@ -127,6 +128,36 @@ function hasUndefined(v: unknown): boolean {
     assert(clueProblem(ok, word, ["mug"]) === null, `clue "${ok}" allowed`);
   }
   assert(clueProblem("berries", "berry", []) !== null && clueProblem("blueberries", "berry", []) !== null, "plural containment");
+
+  // Plural secret words: a clue built on the singular gives it away too.
+  const pluralGiveaways: [string, string][] = [
+    ["staircase", "stairs"], ["stairway", "stairs"], ["dartboard", "darts"], ["checkerboard", "checkers"],
+    ["domino-effect", "dominoes"], ["headphone-jack", "headphones"], ["card-game", "cards"], ["marble-run", "marbles"],
+    ["sneakerhead", "sneakers"], ["pajama-party", "pajamas"], ["scissor-kick", "scissors"], ["binocular-vision", "binoculars"],
+    ["noodle", "noodles"], ["mitten-shaped", "mittens"], ["knife", "knives"], ["leaf", "leaves"],
+  ];
+  for (const [clue, secret] of pluralGiveaways) {
+    assert(/gives away/.test(clueProblem(clue, secret, []) ?? ""), `"${clue}" gives away "${secret}"`);
+  }
+  // ...but no false singulars: "caves" isn't "cafe", short stems are ignored.
+  for (const [clue, secret] of [["caves", "cafe"], ["cave", "cafe"], ["chorus", "chores"], ["anchor", "chores"], ["toast", "toys"]]) {
+    assert(clueProblem(clue, secret, []) === null, `"${clue}" is fine for "${secret}"`);
+  }
+  assert(!sameWord("caves", "cafe") && sameWord("wolves", "wolf") && sameWord("dominoes", "domino"), "plural rules");
+
+  // Blank-looking and glitch-text clues.
+  for (const blank of ["\u3164", "\uffa0", "\u115f", "\u1160", "\u034f", "a\u0301\u0301\u0301\u0301\u0301", "\u0301\u0301"]) {
+    assert(clueProblem(blank, "coffee", []) !== null, `invisible/glitch clue refused: ${JSON.stringify(blank)}`);
+  }
+  assert(/accents/.test(clueProblem("a" + "\u0301".repeat(19), "coffee", []) ?? ""), "zalgo clue refused");
+  assert(/accents/.test(guessProblem("tea" + "\u0301".repeat(20)) ?? ""), "zalgo guess refused");
+  assert(guessProblem("\u3164") !== null, "blank guess refused");
+  assert(clueProblem("cr\u00e8me", "coffee", []) === null && clueProblem("pho\u031b\u0309", "coffee", []) === null, "real accents fine");
+  // Cyrillic/Greek look-alikes can't dodge the word checks.
+  assert(/gives away/.test(clueProblem("\u0441\u043effee", "coffee", []) ?? ""), "Cyrillic look-alike caught");
+  assert(/gives away/.test(clueProblem("\u0422\u0415\u0410", "tea", []) ?? ""), "all-Cyrillic look-alike caught");
+  assert(/already said/.test(clueProblem("m\u03bf\u03bfn", "sun", ["moon"]) ?? ""), "Greek look-alike repeat caught");
+  assert(guessMatches("\u0441\u043effee", "coffee"), "look-alike guess still counts");
 }
 
 // ---------- word list ----------
@@ -204,7 +235,6 @@ function hasUndefined(v: unknown): boolean {
   assert(later(s, t, 1) && phase(s) === "clues" && roundOf(s) === 2, "round 2 begins");
 
   // Round 2: a 1-1-1-1 tie -> the odd one escapes.
-  assert(oddId(s) !== odd, "a different odd one each round");
   playClues(s, t);
   odd = oddId(s);
   odds.push(odd);
@@ -218,7 +248,7 @@ function hasUndefined(v: unknown): boolean {
   later(s, t, REVEAL_MS);
 
   // Round 3: caught, but the odd one names the majority word (with a typo / plural).
-  assert(roundOf(s) === 3 && !odds.includes(oddId(s)), "third distinct odd one");
+  assert(roundOf(s) === 3, "round 3");
   playClues(s, t);
   odd = oddId(s);
   for (const id of s.ids) act(s, t, id, { type: "vote", target: id === odd ? s.ids.find((x) => x !== odd)! : odd });
@@ -255,10 +285,10 @@ function hasUndefined(v: unknown): boolean {
 // ---------- every timer path, nobody doing anything (3 players) ----------
 {
   const { t, s, endCalls } = start(3, 11);
-  const odds = new Set<string>();
+  const escaped: Record<string, number> = Object.fromEntries(s.ids.map((id) => [id, 0]));
   for (let round = 1; round <= 3; round++) {
     assert(roundOf(s) === round && phase(s) === "clues", `round ${round} clues`);
-    odds.add(oddId(s));
+    escaped[oddId(s)] += 3;
     for (let turn = 0; turn < 3 * LAPS; turn++) {
       const who = current(s);
       assert(turnOf(s) === turn, "turn index");
@@ -274,10 +304,9 @@ function hasUndefined(v: unknown): boolean {
     assert(h.outcome === "escaped" && h.votes.length === 0 && h.caughtId === null, "no votes: odd escapes");
     later(s, t, REVEAL_MS);
   }
-  assert(odds.size === 3, "with 3 players everyone is odd once");
   assert(phase(s) === "final" && endCalls() === 1, "ended once");
-  assert(resultOf(t)!.winners.length === 3 && /tie/.test(resultOf(t)!.headline), "three-way tie at 3 points");
-  for (const id of s.ids) assert(resultOf(t)!.scores![id] === 3, "each escaped once");
+  for (const id of s.ids) assert(resultOf(t)!.scores![id] === escaped[id], "each escape scored +3");
+  assert(JSON.stringify(resultOf(t)!.winners.slice().sort()) === JSON.stringify(topScorers(escaped).sort()), "winners = top scorers");
 }
 
 // ---------- last guess times out ----------
@@ -490,7 +519,7 @@ function hasUndefined(v: unknown): boolean {
 
 // ---------- disconnects: clue phase ----------
 {
-  const { t, s } = start(4, 23);
+  const { t, s } = start(5, 23);
   const order = s.order.map((i) => idOf(s, i));
   // The current player drops: skipped at once.
   const first = order[0];
@@ -505,15 +534,17 @@ function hasUndefined(v: unknown): boolean {
   // The first player comes back in time for lap 2.
   setConnected(s, t, first, true);
   act(s, t, order[3], { type: "clue", text: "zqbravo" });
-  assert(current(s) === first && turnOf(s) === 4, "returning player gets their lap-2 turn");
+  act(s, t, order[4], { type: "clue", text: "zqecho" });
+  assert(current(s) === first && turnOf(s) === 5, "returning player gets their lap-2 turn");
   act(s, t, first, { type: "clue", text: "zqcharlie" });
   act(s, t, order[1], { type: "clue", text: "zqdelta" });
-  assert(s.clues[6].status === "away", "still-offline player skipped again");
-  assert(current(s) === order[3], "on to the last player");
+  assert(s.clues[7].status === "away", "still-offline player skipped again");
+  assert(current(s) === order[3], "on to the next player");
+  act(s, t, order[3], { type: "clue", text: "zqfoxtrot" });
   // Tick also catches an offline current player (e.g. no playerLeft callback).
-  t.ctx.players.find((p) => p.id === order[3])!.connected = false;
+  t.ctx.players.find((p) => p.id === order[4])!.connected = false;
   assert(tick(s, t) && phase(s) === "vote", "tick skips an offline current player");
-  t.ctx.players.find((p) => p.id === order[3])!.connected = true;
+  t.ctx.players.find((p) => p.id === order[4])!.connected = true;
   tick(s, t);
 }
 
@@ -585,22 +616,18 @@ function hasUndefined(v: unknown): boolean {
 }
 
 // ---------- disconnects: reveal & next odd one ----------
-{
-  const { t, s } = start(4, 43);
+for (const seed of [43, 44, 45, 46, 47]) {
+  const { t, s } = start(6, seed);
   playClues(s, t);
   later(s, t, VOTE_MS);
   assert(phase(s) === "reveal", "reveal");
-  const firstOdd = oddId(s);
-  // Everyone who hasn't been odd yet except one goes offline.
-  const fresh = s.ids.filter((id) => id !== firstOdd);
-  setConnected(s, t, fresh[0], false);
-  setConnected(s, t, fresh[1], false);
+  // Two players go offline during the reveal: the next odd one is someone connected.
+  const away = s.ids.slice(0, 2);
+  for (const id of away) setConnected(s, t, id, false);
   later(s, t, REVEAL_MS);
-  assert(roundOf(s) === 2 && oddId(s) === fresh[2], "next odd one is someone connected who hasn't been odd");
-  // fresh[2]'s turns still happen; offline players are skipped.
-  assert(phase(s) === "clues" && [fresh[2], firstOdd].includes(current(s)!), "an online player has the turn");
-  setConnected(s, t, fresh[0], true);
-  setConnected(s, t, fresh[1], true);
+  assert(roundOf(s) === 2 && !away.includes(oddId(s)), "next odd one is connected");
+  assert(phase(s) === "clues" && !away.includes(current(s)!), "an online player has the turn");
+  for (const id of away) setConnected(s, t, id, true);
 }
 
 // ---------- not enough players ----------
@@ -636,23 +663,78 @@ function hasUndefined(v: unknown): boolean {
   assert(tick(s, t) === false && endCalls() === 1, "end called once");
 }
 {
-  // Everybody vanishes: turns are skipped, nothing stalls, the game ends.
+  // Everybody vanishes: the game pauses (no turns burned, no rounds auto-resolved, no points)
+  // and ends after the grace period.
   const { t, s, endCalls } = start(4, 59);
+  const gone = t.ctx.now();
   for (const id of s.ids) setConnected(s, t, id, false);
-  assert(phase(s) === "vote" && clueCount(s) === 4 * LAPS && s.clues.every((c) => c.status === "away"), "all turns skipped");
+  assert(phase(s) === "clues" && clueCount(s) <= 1, "at most the first leaver's turn was skipped");
+  assert(view(s, t, "spectator").shortUntil === gone + SHORT_GRACE_MS, "everyone sees the pause and its deadline");
   let guard = 0;
   while (phase(s) !== "final" && guard++ < 400) later(s, t, 1000);
   assert(phase(s) === "final" && endCalls() === 1, "ends instead of stalling");
-  assert(JSON.stringify(resultOf(t)!.winners.slice().sort()) === JSON.stringify(topScorers(resultOf(t)!.scores!).sort()), "winners are top scorers");
+  assert(t.ctx.now() - gone >= SHORT_GRACE_MS && t.ctx.now() - gone < SHORT_GRACE_MS + 1500, "ends after the grace period");
+  assert(roundOf(s) === 1 && s.scores.every((x) => x === 0), "no rounds played on their own, nobody scored");
+  assert(resultOf(t)!.winners.length === 0 && /ended early/i.test(resultOf(t)!.headline), "nobody wins an empty game");
+}
+
+{
+  // Everyone drops for 12s, 2s into round 1, then returns: same round, same turn, the
+  // turn clock resumes where it stopped, and nobody has scored.
+  const { t, s, endCalls } = start(4, 5);
+  later(s, t, 2000);
+  const turn = turnOf(s);
+  const who = current(s);
+  const left = s.endsAt - t.ctx.now();
+  for (const id of s.ids) setConnected(s, t, id, false);
+  for (let ms = 0; ms < 12_000; ms += 250) later(s, t, 250);
+  for (const id of s.ids) setConnected(s, t, id, true);
+  assert(endCalls() === 0 && phase(s) === "clues" && roundOf(s) === 1, "still round 1 clues");
+  assert(s.clues.filter((c) => c.status === "away").length <= 1, "no turns burned while paused");
+  const v = view(s, t, s.ids[0]);
+  assert(v.shortUntil === null && s.scores.every((x) => x === 0) && s.history.length === 0, "no points, no reveals");
+  if (current(s) === who) {
+    assert(turnOf(s) === turn && s.endsAt - t.ctx.now() === left, "turn clock resumes with the time it had");
+  }
+  playClues(s, t);
+  assert(phase(s) === "vote", "play continues normally");
+}
+
+{
+  // A 2.5s blip during the vote, before anyone voted: still voting afterwards, nobody scores.
+  const { t, s } = start(4, 6);
+  playClues(s, t);
+  const remaining = s.endsAt - t.ctx.now();
+  for (const id of s.ids) setConnected(s, t, id, false);
+  for (let ms = 0; ms < 2500; ms += 250) later(s, t, 250);
+  for (const id of s.ids) setConnected(s, t, id, true);
+  tick(s, t);
+  assert(phase(s) === "vote" && s.scores.every((x) => x === 0), "vote survives the blip");
+  assert(s.endsAt - t.ctx.now() === remaining, "the vote clock lost no time");
+  assert(view(s, t, s.ids[0]).allVoted === false, "an empty vote doesn't count as everyone voted");
+}
+
+{
+  // 3 players, one drops mid-round: paused instead of skipping, resumes when they return.
+  const { t, s, endCalls } = start(3, 48);
+  const who = current(s)!;
+  later(s, t, 10_000);
+  setConnected(s, t, who, false);
+  assert(current(s) === who && clueCount(s) === 0, "their turn waits instead of being skipped");
+  for (let ms = 0; ms < SHORT_GRACE_MS - 1000; ms += 250) later(s, t, 250); // longer than the 15s left
+  assert(current(s) === who && clueCount(s) === 0 && endCalls() === 0, "no timeout while paused");
+  setConnected(s, t, who, true);
+  assert(view(s, t, who).endsAt - t.ctx.now() === CLUE_MS - 10_000, "turn time left as it was before the pause");
+  assert(act(s, t, who, { type: "clue", text: "zqback" }), "and they can play their turn");
 }
 
 // ---------- player counts ----------
 {
   // 12 players: three rounds, three different odd ones, 24 turns each.
   const { t, s, endCalls } = start(12, 61);
-  const odds = new Set<string>();
+  const expected: Record<string, number> = Object.fromEntries(s.ids.map((id) => [id, 0]));
   for (let round = 1; round <= 3; round++) {
-    odds.add(oddId(s));
+    for (const id of s.ids) if (id !== oddId(s)) expected[id] += 2;
     assert(s.order.length === 12, "everyone in the order");
     playClues(s, t);
     assert(clueCount(s) === 24, "24 turns");
@@ -662,10 +744,32 @@ function hasUndefined(v: unknown): boolean {
     act(s, t, odd, { type: "guess", text: "zzz" });
     later(s, t, REVEAL_MS);
   }
-  assert(odds.size === 3 && endCalls() === 1 && phase(s) === "final", "12-player game completes");
-  // Each round: 11 catchers x 2 points; every player was a catcher twice and odd once (or catcher 3 times).
-  for (const id of s.ids) assert(resultOf(t)!.scores![id] === (odds.has(id) ? 4 : 6), "12-player scores");
-  assert(resultOf(t)!.winners.length === 9, "nine-way tie at the top");
+  assert(endCalls() === 1 && phase(s) === "final", "12-player game completes");
+  // Each round: 11 catchers x 2 points.
+  for (const id of s.ids) assert(resultOf(t)!.scores![id] === expected[id], "12-player scores");
+  const r = resultOf(t)!;
+  assert(JSON.stringify(r.winners.slice().sort()) === JSON.stringify(topScorers(expected).sort()), "winners = top scorers");
+  if (r.winners.length > 3) {
+    assert(r.headline === `${r.winners.length} players tie for the win with 6 points`, `big tie summarised: ${r.headline}`);
+  }
+}
+{
+  // A many-way tie gives a short headline instead of listing every name.
+  const { t, s } = start(12, 62);
+  s.scores = s.ids.map((_, i) => (i < 9 ? 6 : 4));
+  s.round = s.totalRounds;
+  s.phase = "reveal";
+  s.endsAt = t.ctx.now();
+  tick(s, t);
+  const r = resultOf(t)!;
+  assert(r.winners.length === 9 && r.headline === "9 players tie for the win with 6 points", r.headline);
+  const three = start(3, 63);
+  three.s.scores = [2, 2, 2];
+  three.s.round = three.s.totalRounds;
+  three.s.phase = "reveal";
+  three.s.endsAt = three.t.ctx.now();
+  tick(three.s, three.t);
+  assert(/^Player0, Player1 & Player2 tie for the win with 2 points$/.test(resultOf(three.t)!.headline), "small ties still name everyone");
 }
 {
   // Player ids are client-chosen: a "__proto__" id must still score like anyone else.
@@ -676,7 +780,9 @@ function hasUndefined(v: unknown): boolean {
   while (phase(s) !== "final" && guard++ < 200) later(s, t, 30_000);
   assert(phase(s) === "final" && resultOf(t), "game with a weird id completes");
   assert(Object.prototype.hasOwnProperty.call(resultOf(t)!.scores, "__proto__"), "weird id has its own score entry");
-  assert(resultOf(t)!.scores!["__proto__"] === 3 && resultOf(t)!.winners.includes("__proto__"), "weird id scored its escape");
+  const weirdEscapes = s.history.filter((h) => h.oddId === "__proto__").length;
+  assert(resultOf(t)!.scores!["__proto__"] === 3 * weirdEscapes, "weird id scored its escapes");
+  assert(resultOf(t)!.winners.includes("__proto__") === topScorers(resultOf(t)!.scores!).includes("__proto__"), "weird id ranked normally");
   const v = JSON.parse(JSON.stringify(view(s, t, "__proto__"))) as ImpostorView;
   assert(Object.prototype.hasOwnProperty.call(v.scores, "__proto__"), "weird id survives the JSON round trip");
 }
@@ -690,6 +796,76 @@ function hasUndefined(v: unknown): boolean {
     firsts.add(s.ids[s.oddSeat]);
   }
   assert(pairs.size > 10 && firsts.size > 3, "randomised setup");
+}
+
+// ---------- choosing the odd one keeps the role hidden ----------
+{
+  // 3 players: round 3's odd one is not simply "whoever is left"; earlier odd ones can be odd again.
+  let distinctFirstTwo = 0;
+  let lastFresh = 0;
+  let repeats = 0;
+  const firstPick = new Map<string, number>();
+  for (let seed = 1; seed <= 400; seed++) {
+    const t = makeTestCtx(3, seed);
+    const s: ImpostorState = game.setup(t.ctx);
+    const odds: string[] = [];
+    let guard = 0;
+    while (phase(s) !== "final" && guard++ < 200) {
+      if (phase(s) === "clues" && turnOf(s) === 0 && odds.length < roundOf(s)) odds.push(oddId(s));
+      later(s, t, 30_000);
+    }
+    assert(odds.length === 3, "three rounds");
+    firstPick.set(odds[0], (firstPick.get(odds[0]) ?? 0) + 1);
+    if (new Set(odds).size < 3) repeats += 1;
+    if (odds[0] !== odds[1]) {
+      distinctFirstTwo += 1;
+      if (!odds.slice(0, 2).includes(odds[2])) lastFresh += 1;
+    }
+  }
+  const share = lastFresh / distinctFirstTwo;
+  assert(share > 0.35 && share < 0.65, `round 3 isn't predictable (${(share * 100).toFixed(0)}% the remaining player)`);
+  assert(repeats > 100 && repeats < 300, `odd ones can repeat (${repeats}/400 games)`);
+  assert([...firstPick.values()].every((c) => c > 100), "round 1 is uniform");
+}
+
+// ---------- deadlines hold even between ticks ----------
+{
+  // A vote sent after the vote closed (no tick in between) is refused and can't change the result.
+  const { t, s } = start(4, 7);
+  playClues(s, t);
+  const odd = oddId(s);
+  const others = s.ids.filter((id) => id !== odd);
+  for (const id of others) act(s, t, id, { type: "vote", target: odd });
+  act(s, t, odd, { type: "vote", target: others[0] });
+  t.advance(VOTE_SETTLE_MS + 200);
+  const moved = act(s, t, others[0], { type: "vote", target: others[1] });
+  assert(moved === true, "the overdue close is applied (and broadcast)");
+  assert(phase(s) === "lastGuess" && s.votes[s.ids.indexOf(others[0])] === s.ids.indexOf(odd), "late vote change refused");
+  // A guess 200ms after the guess window is refused: caught.
+  t.advance(GUESS_MS + 200);
+  act(s, t, odd, { type: "guess", text: s.majorityWord });
+  assert(s.history[0].outcome === "caught" && s.history[0].guess === null, "late guess refused");
+}
+{
+  // A clue 200ms after the turn ended counts as a pass, not a clue.
+  const { t, s } = start(4, 8);
+  const who = current(s)!;
+  t.advance(CLUE_MS + 200);
+  assert(act(s, t, who, { type: "clue", text: "zqlate" }) === true, "overdue pass applied");
+  assert(s.clues[0].status === "pass" && s.clues[0].text === null && current(s) !== who, "late clue refused");
+}
+{
+  // A caught odd one who returns just after their short away window doesn't get the full window back.
+  const { t, s } = start(5, 41);
+  playClues(s, t);
+  const odd = oddId(s);
+  for (const id of s.ids) if (id !== odd) act(s, t, id, { type: "vote", target: odd });
+  later(s, t, VOTE_MS);
+  assert(phase(s) === "lastGuess", "caught");
+  setConnected(s, t, odd, false);
+  t.advance(AWAY_GUESS_MS + 100);
+  setConnected(s, t, odd, true);
+  assert(phase(s) === "reveal" && s.history[0].outcome === "caught", "window had closed");
 }
 
 console.log("impostor: all tests passed");

@@ -125,14 +125,14 @@ export const CATALOG: GameMeta[] = [
     category: "party",
     minPlayers: 3,
     maxPlayers: 12,
-    minutes: 8,
+    minutes: 10,
     emoji: "🕵️",
     accent: "#a78bfa",
     original: true,
     how: [
-      "Everyone gets a secret word, but one player's word is slightly different. Nobody knows who.",
-      "Take turns giving one-word clues about your word.",
-      "Vote out who you think is the odd one. They can still win by guessing the real word.",
+      "Everyone gets the same secret word, except one player, who gets a related one and does not know it.",
+      "Give one-word clues in two laps around the table, then vote for whoever seems to have the odd word.",
+      "Odd one escapes: +3. Caught: guess the real word for +2, or everyone else scores (+1 more for a right vote).",
     ],
   },
   {
