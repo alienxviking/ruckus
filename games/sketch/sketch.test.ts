@@ -392,7 +392,12 @@ function playOut(g: G, duringDraw?: (g: G) => void) {
   ok(g.act(other, { type: "sync" }) === false && g.t.events.length === 1, "second sync within 1s is ignored");
   g.t.advance(SYNC_GAP_MS);
   ok(g.act(other, { type: "sync" }) === false && g.t.events.length === 2, "sync allowed again after 1s");
-  ok(g.act("spectator", { type: "sync" }) === false && g.t.events.length === 2, "non-participants can't sync");
+  ok(g.act("spectator", { type: "sync" }) === false && g.t.events.length === 2, "spectators can't use player actions");
+  // ...but they can ask for the drawing so far through the read-only spectator hook.
+  ok(game.spectatorAction!(g.s, "spectator", { type: "sync" }, g.t.ctx) === false, "spectator sync returns false");
+  ok(g.t.events.length === 3 && g.t.events[2].to === "spectator", "spectator sync goes only to the spectator");
+  ok(game.spectatorAction!(g.s, "spectator", { type: "undo" }, g.t.ctx) === false && g.t.events.length === 3, "spectators can only sync");
+  ok(game.spectatorAction!(g.s, "spectator", null, g.t.ctx) === false, "spectator junk ignored");
 
   // Undo/clear/stroke outside the draw phase.
   g.advance(DRAW_MS);

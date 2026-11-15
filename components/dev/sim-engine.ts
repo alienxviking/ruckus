@@ -110,10 +110,13 @@ export class SimEngine {
 
   act(playerId: string, a: unknown) {
     const player = this.players.find((x) => x.id === playerId);
-    if (!player || !player.connected) return; // spectators / disconnected can't act
+    const spectator = playerId === SPECTATOR.id;
+    if (spectator ? !this.def.spectatorAction : !player || !player.connected) return; // like the room
     let changed: boolean | void;
     try {
-      changed = this.def.action(this.state, playerId, clone(a ?? null), this.ctx);
+      changed = spectator
+        ? this.def.spectatorAction!(this.state, playerId, clone(a ?? null), this.ctx)
+        : this.def.action(this.state, playerId, clone(a ?? null), this.ctx);
     } catch (e) {
       console.error("action threw", e);
       return;

@@ -279,10 +279,14 @@ export default class RuckusRoom implements Party.Server {
 
   handleAct(player: Player, action: unknown) {
     const game = this.game;
-    if (!game || !this.participants.includes(player.id)) return;
+    if (!game) return;
+    const playing = this.participants.includes(player.id);
+    if (!playing && !game.def.spectatorAction) return;
     let changed: boolean | void;
     try {
-      changed = game.def.action(game.state, player.id, action, game.ctx);
+      changed = playing
+        ? game.def.action(game.state, player.id, action, game.ctx)
+        : game.def.spectatorAction!(game.state, player.id, action, game.ctx);
     } catch (err) {
       console.error(`[${game.def.id}] action failed`, err);
       return;

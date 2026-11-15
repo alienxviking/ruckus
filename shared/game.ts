@@ -36,6 +36,12 @@ export interface GameDef<S = any, A = any> {
    * Return `false` to skip re-broadcasting state (e.g. when you only emitted an event).
    */
   action(state: S, playerId: string, action: A, ctx: GameCtx): boolean | void;
+  /**
+   * Optional: handle an action from a spectator (in the room but not playing).
+   * Only for read-only requests such as "send me the drawing so far"; it must
+   * never change the game. Return value works like action().
+   */
+  spectatorAction?(state: S, viewerId: string, action: unknown, ctx: GameCtx): boolean | void;
   /** Called every `tickMs`. Return true when state changed and should be broadcast. */
   tick?(state: S, ctx: GameCtx): boolean | void;
   /** Tick interval in ms. Defaults to 250 when `tick` is defined. */

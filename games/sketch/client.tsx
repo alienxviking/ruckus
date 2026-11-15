@@ -57,7 +57,7 @@ export default function SketchStorm({
   accent,
 }: GameClientProps<SketchView, SketchAction>) {
   const [store] = useState(() => new StrokeStore());
-  useStrokeSync(store, view, isPlayer, act, onEvent);
+  useStrokeSync(store, view, true, act, onEvent);
   usePickKeys(view, act);
   const vars = { "--sk-accent": accent } as CSSProperties;
 

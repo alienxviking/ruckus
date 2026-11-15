@@ -564,6 +564,14 @@ export const sketch: GameDef<SketchState, SketchAction> = {
     }
   },
 
+  // Spectators who arrive mid-turn may ask for the drawing so far (read-only).
+  spectatorAction(s, viewerId, action, ctx) {
+    if (s.phase === "final") return false;
+    const a = action as { type?: unknown } | null;
+    if (!a || typeof a !== "object" || a.type !== "sync") return false;
+    return onSync(s, viewerId, ctx);
+  },
+
   tick(s, ctx) {
     if (s.phase === "final") return false;
     const now = ctx.now();

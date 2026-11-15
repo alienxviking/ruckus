@@ -418,7 +418,6 @@ export function useStrokeSync(
   }, [store, game, turn, rev, count]);
 
   useEffect(() => {
-    // Spectators can't send actions, so they live with what they've seen.
     if (!canAsk || !live) return;
     const ask = () => {
       if (!store.needSync) return;
