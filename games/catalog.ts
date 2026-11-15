@@ -345,7 +345,7 @@ export const CATALOG: GameMeta[] = [
   {
     id: "warlords",
     name: "Warlords",
-    tagline: "Split your army, outguess everyone, beware the dragon.",
+    tagline: "Split 100 troops, outguess everyone, beware the dragon.",
     category: "brain",
     minPlayers: 2,
     maxPlayers: 12,
@@ -355,9 +355,9 @@ export const CATALOG: GameMeta[] = [
     isNew: true,
     original: true,
     how: [
-      "Each round, secretly split 100 troops across five castles worth different points.",
-      "The biggest army at a castle takes its points. One castle hides a dragon you must beat too.",
-      "Five rounds, and everyone's past moves are public. Most points wins.",
+      "Each round, secretly split 100 troops across five castles worth 2–9 points.",
+      "Biggest army takes a castle (ties split). One hidden castle has a dragon: beat it too or nobody scores it.",
+      "Five rounds; everyone's past armies are public, so read the patterns. Most points wins.",
     ],
   },
 ];
