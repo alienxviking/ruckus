@@ -291,7 +291,7 @@ export const CATALOG: GameMeta[] = [
   {
     id: "barrage",
     name: "Barrage",
-    tagline: "Everyone aims at once. Everyone fires at once.",
+    tagline: "Everyone aims in secret. Every shell flies at once.",
     category: "arena",
     minPlayers: 2,
     maxPlayers: 8,
@@ -301,9 +301,9 @@ export const CATALOG: GameMeta[] = [
     isNew: true,
     original: true,
     how: [
-      "Set your angle and power, mind the wind, and lock in. All shells fly at the same moment.",
-      "Explosions dig craters and chip health. Shuffle sideways to dodge, and save your special shells.",
-      "Last tank standing wins.",
+      "Drag back from your tank like a slingshot (or use the sliders), pick a shell and lock in your shot.",
+      "When everyone's locked in, every shell flies at once. The dotted guide ignores the wind, so read the gauge.",
+      "Blasts dig craters (fall into the abyss and you're out). Last tank rolling wins, or most armour at turn 15.",
     ],
   },
   {
