@@ -17,13 +17,16 @@ import {
 // tries to write the word that links the previous round's words, until all
 // the words match (a meld) or the rounds run out.
 
-/** Below this many participants online, the writing timer pauses. */
-const MIN_ONLINE = 2;
+/**
+ * Below this many participants present, the writing timer pauses. Present =
+ * online, or offline with a word already in this round (that word still counts).
+ */
+const MIN_PRESENT = 2;
 /** A meld needs at least this many matching words (one word alone isn't a meld). */
 const MIN_MELD = 2;
 /** How long a paused game waits for players to come back before giving up. */
 export const WAIT_MS = 45_000;
-/** A resumed round always gets at least this much time back. */
+/** The first resume in a round gets at least this much time back (later ones keep what was left). */
 export const RESUME_MS = 15_000;
 /** Raw submissions longer than this are junk; don't even clean them. */
 const RAW_LIMIT = 200;
@@ -48,6 +51,8 @@ export interface MmState {
   pausedLeft: number | null;
   /** While paused: the game ends at this time unless enough players return. */
   waitUntil: number | null;
+  /** The RESUME_MS top-up was already given this round (so a flaky connection can't stretch it). */
+  toppedUp: boolean;
   /** This round's secret submissions, by seat. */
   subs: (Sub | null)[];
   history: RoundRecord[];
@@ -78,6 +83,10 @@ export interface MmView {
 
 const isOnline = (ctx: GameCtx, id: string) => ctx.player(id)?.connected === true;
 const onlineCount = (s: MmState, ctx: GameCtx) => s.order.filter((id) => isOnline(ctx, id)).length;
+const presentCount = (s: MmState, ctx: GameCtx) =>
+  s.order.filter((id, i) => isOnline(ctx, id) || !!s.subs[i]).length;
+/** Pause while too few minds are in play, or nobody at all is connected. */
+const shouldPause = (s: MmState, ctx: GameCtx) => presentCount(s, ctx) < MIN_PRESENT || onlineCount(s, ctx) === 0;
 
 function startRound(s: MmState, ctx: GameCtx) {
   const now = ctx.now();
@@ -87,7 +96,8 @@ function startRound(s: MmState, ctx: GameCtx) {
   s.subs = s.order.map(() => null);
   s.pausedLeft = null;
   s.waitUntil = null;
-  if (onlineCount(s, ctx) < MIN_ONLINE) {
+  s.toppedUp = false;
+  if (shouldPause(s, ctx)) {
     s.pausedLeft = s.phaseMs;
     s.waitUntil = now + WAIT_MS;
   }
@@ -181,7 +191,14 @@ function step(s: MmState, ctx: GameCtx): boolean {
   }
   if (s.phase !== "writing") return false;
 
-  if (onlineCount(s, ctx) < MIN_ONLINE) {
+  // Time ran out while the clock was running (e.g. someone dropped between the
+  // deadline and the next tick): reveal rather than pausing an expired round.
+  if (s.pausedLeft === null && now >= s.endsAt) {
+    reveal(s, ctx);
+    return true;
+  }
+
+  if (shouldPause(s, ctx)) {
     if (s.pausedLeft === null) {
       s.pausedLeft = Math.max(0, s.endsAt - now);
       s.waitUntil = now + WAIT_MS;
@@ -196,7 +213,12 @@ function step(s: MmState, ctx: GameCtx): boolean {
 
   let changed = false;
   if (s.pausedLeft !== null) {
-    s.endsAt = now + Math.max(s.pausedLeft, RESUME_MS);
+    let left = s.pausedLeft;
+    if (left < RESUME_MS && !s.toppedUp) {
+      left = RESUME_MS;
+      s.toppedUp = true;
+    }
+    s.endsAt = now + left;
     s.pausedLeft = null;
     s.waitUntil = null;
     changed = true;
@@ -224,6 +246,7 @@ export const mindmeld: GameDef<MmState, MmAction> = {
       phaseMs: FIRST_ROUND_MS,
       pausedLeft: null,
       waitUntil: null,
+      toppedUp: false,
       subs: [],
       history: [],
       reason: null,

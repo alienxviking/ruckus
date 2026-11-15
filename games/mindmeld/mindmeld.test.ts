@@ -633,4 +633,180 @@ function assertPlainJson(v: unknown, path = "view") {
   eq(g.ends(), 1, "ended once");
 }
 
+// ---------- plurals of words ending in -e (headache/headaches, axe/axes) ----------
+{
+  const same = (a: string, b: string) => eq(matchKey(a), matchKey(b), `"${a}" should match "${b}"`);
+  const pairs: [string, string][] = [
+    ["ache", "aches"],
+    ["headache", "headaches"],
+    ["toothache", "toothaches"],
+    ["niche", "niches"],
+    ["cache", "caches"],
+    ["avalanche", "avalanches"],
+    ["moustache", "moustaches"],
+    ["quiche", "quiches"],
+    ["cliché", "clichés"],
+    ["psyche", "psyches"],
+    ["axe", "axes"],
+    ["posse", "posses"],
+    ["impasse", "impasses"],
+    ["crevasse", "crevasses"],
+    ["beach", "beaches"],
+    ["fox", "foxes"],
+    ["buzz", "buzzes"],
+    ["box", "boxes"],
+    ["dish", "dishes"],
+    ["kiss", "kisses"],
+    ["glass", "glasses"],
+  ];
+  for (const [a, b] of pairs) same(a, b);
+  assert(matchKey("cache") !== matchKey("cash"), "cache should not match cash");
+  assert(matchKey("hat") !== matchKey("hate"), "hat should not match hate");
+  assert(matchKey("plan") !== matchKey("plane"), "plan should not match plane");
+
+  // The two forms meld, and the plural is a repeat once the singular was revealed.
+  const g = start(2);
+  g.submit(0, "headache");
+  g.submit(1, "Headaches");
+  assert(g.last().melded, "headache + headaches is a meld");
+  const g2 = start(2);
+  g2.submit(0, "headache");
+  g2.submit(1, "migraine");
+  g2.afterReveal();
+  assert(g2.submit(0, "headaches") === false, "plural of a revealed word is forbidden");
+  assert(g2.submit(1, "axes") === true, "unrelated word still fine");
+}
+
+// ---------- 2 players: a locked-in player who drops out still counts ----------
+{
+  // The offline player's word plus the last word in -> reveal and meld (no pause, no abandon).
+  const g = start(2);
+  g.submit(0, "sun");
+  g.leave(0);
+  eq(g.s.pausedLeft, null, "a locked-in player who drops doesn't pause the round");
+  eq(g.view(1).endsAt, g.s.endsAt, "the clock keeps running for the player still typing");
+  g.submit(1, "Sun");
+  eq(g.s.phase, "reveal", "last online word reveals everything");
+  eq(g.last().entries[0].word, "sun", "offline player's word is revealed");
+  eq(g.last().entries[0].away, false, "and isn't an offline blank");
+  assert(g.last().melded, "two matching words meld");
+  g.afterReveal();
+  eq(g.s.phase, "melded", "melded");
+  eq(g.t.result!.winners.length, 2, "both win");
+}
+{
+  // The online player runs out of time: normal timeout reveal, then the next round pauses.
+  const g = start(2);
+  g.t.advance(5_000);
+  g.submit(0, "sun");
+  g.leave(0);
+  g.t.advance(FIRST_ROUND_MS - 5_000 - 1);
+  assert(!g.tick(), "still writing");
+  eq(g.s.phase, "writing", "the online player keeps their full round");
+  g.t.advance(1);
+  assert(g.tick() === true, "timeout reveals");
+  eq(g.s.phase, "reveal", "reveal");
+  eq(g.last().total, 2, "the offline word and the online blank both count");
+  eq(g.last().melded, false, "no meld");
+  g.afterReveal();
+  eq(g.s.round, 2, "round 2");
+  eq(g.s.pausedLeft, ROUND_MS, "round 2 pauses: the absent player has no word yet");
+  g.back(0);
+  eq(g.s.pausedLeft, null, "resumes when they return");
+}
+{
+  // 3 players: two lock in and drop, the last one finishes the round.
+  const g = start(3);
+  g.submit(0, "moon");
+  g.leave(0);
+  g.submit(1, "moon");
+  g.leave(1);
+  eq(g.s.pausedLeft, null, "words from offline players keep the round alive");
+  g.submit(2, "moons");
+  eq(g.s.phase, "reveal", "reveal");
+  assert(g.last().melded, "3-way meld with two offline players");
+}
+{
+  // Everyone offline: freeze and wait, even if two words are in.
+  const g = start(3);
+  g.submit(0, "moon");
+  g.submit(1, "moon");
+  g.leave(0);
+  g.leave(1);
+  g.leave(2);
+  eq(g.s.phase, "writing", "no reveal with nobody around");
+  assert(g.s.pausedLeft !== null, "paused");
+  g.back(2);
+  eq(g.s.pausedLeft, null, "the thinking player returns: resumed");
+  g.submit(2, "moon");
+  assert(g.last().melded, "meld after everyone came back");
+}
+
+// ---------- a flaky connection can't stretch a round forever ----------
+{
+  const g = start(2);
+  g.t.advance(38_000);
+  g.leave(1);
+  eq(g.s.pausedLeft, 2_000, "2s left");
+  g.back(1);
+  eq(g.s.endsAt, g.t.ctx.now() + RESUME_MS, "first resume tops up to 15s");
+  g.t.advance(RESUME_MS - 2_000);
+  g.leave(1);
+  eq(g.s.pausedLeft, 2_000, "2s left again");
+  g.t.advance(1_000);
+  g.back(1);
+  eq(g.s.endsAt, g.t.ctx.now() + 2_000, "later resumes in the same round keep the time left");
+  g.t.advance(2_000);
+  assert(g.tick() === true, "round ends");
+  eq(g.s.phase, "reveal", "revealed on time");
+  g.afterReveal();
+  // The top-up is available again in the next round.
+  g.t.advance(ROUND_MS - 1_000);
+  g.leave(0);
+  g.back(0);
+  eq(g.s.endsAt, g.t.ctx.now() + RESUME_MS, "new round, new top-up");
+}
+{
+  // A drop between the deadline and the next tick doesn't add time to an expired round.
+  const g = start(2);
+  g.submit(0, "sun");
+  g.t.advance(FIRST_ROUND_MS + 100);
+  g.leave(1);
+  eq(g.s.phase, "reveal", "expired round reveals instead of pausing");
+  eq(g.last().entries[1].away, true, "the leaver is an offline blank");
+  eq(g.last().melded, false, "one word alone is no meld");
+}
+
+// ---------- invisible letters, variation selectors, stacked accents ----------
+{
+  for (const filler of ["\u3164", "\u115F", "\u1160", "\uFFA0", "\u3164\u3164"]) {
+    eq(cleanWord(filler), "", `filler U+${filler.codePointAt(0)!.toString(16)} stripped`);
+    assert(!checkWord(filler, []).ok, "an invisible 'word' is rejected");
+  }
+  eq(cleanWord("c\u3164at"), "cat", "fillers inside a word are stripped");
+  eq(cleanWord("cat\uFE00"), "cat", "variation selector stripped");
+  eq(cleanWord("cat\uFE0F"), "cat", "emoji presentation selector stripped");
+  eq(cleanWord("ca\u{E0100}t"), "cat", "supplementary variation selector stripped");
+  eq(cleanWord("ca\u180Bt"), "cat", "Mongolian variation selector stripped");
+  eq(cleanWord("c\u034Fat"), "cat", "combining grapheme joiner stripped");
+  eq(cleanWord("he\u202Ello\u200B"), "hello", "existing invisible set still stripped");
+
+  // Marks that don't compose under NFC stay stacked; 4+ on one letter is Zalgo.
+  eq(wordProblem("x\u0301\u0302\u0303\u0304"), "Too many accent marks on one letter.", "four stacked accents rejected");
+  assert(!checkWord("z\u0334\u0322\u031B\u0356a\u0337\u0338\u0336\u0335lgo", []).ok, "zalgo rejected");
+  assert(checkWord("x\u0301\u0302\u0303", []).ok, "up to three marks on one letter is fine");
+  assert(checkWord("Vi\u1EC7t", []).ok, "Vietnamese is fine");
+  assert(checkWord("Vi\u1EC7t".normalize("NFD"), []).ok, "decomposed Vietnamese is fine");
+  assert(checkWord("\u0928\u092E\u0938\u094D\u0924\u0947", []).ok, "Devanagari is fine");
+  assert(checkWord("\u0E01\u0E49\u0E32\u0E27", []).ok, "Thai is fine");
+
+  // A look-alike can't dodge the no-repeats rule.
+  const g = start(2);
+  g.submit(0, "cat");
+  g.submit(1, "dog");
+  g.afterReveal();
+  assert(g.submit(0, "cat\uFE00") === false, "cat + variation selector is still 'cat'");
+  assert(g.submit(1, "\u3164") === false, "invisible filler rejected in play");
+}
+
 console.log("mindmeld: all tests passed");

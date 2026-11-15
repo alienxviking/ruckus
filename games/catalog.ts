@@ -164,9 +164,9 @@ export const CATALOG: GameMeta[] = [
     accent: "#e879f9",
     original: true,
     how: [
-      "Everyone secretly types any word at the same time. Then they're revealed.",
-      "Next round, everyone tries to find the word that links the last ones.",
-      "You all win when every word matches. Fewer rounds = legendary.",
+      "Round 1: everyone secretly types any word, then all the words flip over at once.",
+      "Every round after, find the one word linking the last round's words. Earlier words can't be reused.",
+      "All words match = Mind Meld and you all win. You get 8 rounds; fewer rounds earn a better rating.",
     ],
   },
   {

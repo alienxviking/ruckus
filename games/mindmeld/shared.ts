@@ -45,8 +45,14 @@ export function isMmEvent(e: unknown): e is MmEvent {
 
 // ---------- words ----------
 
-const INVISIBLE = /[\u0000-\u001f\u007f-\u009f­​-‏‪-‮⁠-⁯﻿]/g;
+// Control chars, soft hyphen, zero-width/bidi/format chars, BOM, plus things that
+// count as letters or marks but draw nothing: the combining grapheme joiner,
+// Hangul fillers, Khmer inherent vowels, Mongolian and Unicode variation selectors.
+const INVISIBLE =
+  /[\u0000-\u001f\u007f-\u009f\u00ad\u034f\u115f\u1160\u17b4\u17b5\u180b-\u180f\u200b-\u200f\u202a-\u202e\u2060-\u206f\u3164\ufe00-\ufe0f\ufeff\uffa0\u{e0000}-\u{e007f}\u{e0100}-\u{e01ef}]/gu;
 const WORD_CHARS = /^[\p{L}\p{M}' -]+$/u;
+/** Accent marks stacked this deep on one letter are "Zalgo" text, not a real word. */
+const STACKED_MARKS = /\p{M}{4,}/u;
 
 /** Tidy raw input: unify apostrophes/dashes, drop control + invisible chars, collapse spaces. */
 export function cleanWord(raw: string): string {
@@ -65,6 +71,7 @@ export function wordProblem(word: string): string | null {
   if (!word) return "Type a word first.";
   if (word.length > MAX_WORD) return `Keep it to ${MAX_WORD} characters or fewer.`;
   if (!WORD_CHARS.test(word)) return "Letters only (spaces, hyphens and apostrophes are fine).";
+  if (STACKED_MARKS.test(word)) return "Too many accent marks on one letter.";
   if (!/\p{L}/u.test(word)) return "Your word needs at least one letter.";
   return null;
 }
@@ -73,9 +80,11 @@ export function wordProblem(word: string): string | null {
  * The comparison key: two words "match" when their keys are equal.
  * Lowercase, strip accents and punctuation, ignore spacing ("ice-cream" =
  * "ice cream" = "icecream") and a leading "the/a/an", then a simple singular:
- * drop a trailing "s" when longer than 3 letters and not "-ss"
- * (plus "-sses/-shes/-ches/-xes/-zzes" lose "es", and "-ie" ~ "-y",
- * so "glasses" = "glass", "berries" = "berry", "cookies" = "cookie").
+ * drop a trailing "s" when longer than 3 letters and not "-ss". Then an "e"
+ * after ss/sh/ch/x/zz goes too, so "-es" plurals meet their singular whether
+ * or not it ends in "e" ("boxes" = "box", "glasses" = "glass", "headaches" =
+ * "headache", "axes" = "axe"), and "-ie" ~ "-y" ("berries" = "berry",
+ * "cookies" = "cookie").
  */
 export function matchKey(word: string): string {
   let w = word
@@ -94,9 +103,8 @@ export function matchKey(word: string): string {
     .trim()
     .replace(/^(the|a|an) (?=\S)/, "")
     .replace(/ /g, "");
-  if (w.length > 3 && w.endsWith("s") && !w.endsWith("ss")) {
-    w = /(ss|sh|ch|x|zz)es$/.test(w) ? w.slice(0, -2) : w.slice(0, -1);
-  }
+  if (w.length > 3 && w.endsWith("s") && !w.endsWith("ss")) w = w.slice(0, -1);
+  if (w.length > 3 && /(ss|sh|ch|x|zz)e$/.test(w)) w = w.slice(0, -1);
   if (w.length > 3 && w.endsWith("ie")) w = w.slice(0, -2) + "y";
   return w;
 }
