@@ -1,0 +1,670 @@
+// Run with: npx tsx games/sumo/sumo.test.ts
+import { assert, makeTestCtx } from "../../shared/testing";
+import sumo, { collide, type SumoState, type SumoView } from "./server";
+import { newScene, pushFrame, sampleDisc, type Sample } from "./rink";
+import {
+  ABANDON_MS,
+  CENTER,
+  COUNTDOWN_MS,
+  DASH_CD_MS,
+  DISC_R,
+  F_HEAVY,
+  F_OFFLINE,
+  FX_DASH,
+  FX_FALL,
+  FX_HIT,
+  FX_PICKUP,
+  HEAVY_MASS,
+  MAX_ROUNDS,
+  POWER_FIRST_MS,
+  POWER_INFO,
+  RINK_MIN,
+  RINK_R,
+  ROUND_OVER_MS,
+  SPAWN_R,
+  TICK_MS,
+  TURBO_CD_MS,
+  WINS_NEEDED,
+  rinkRadius,
+  type Snap,
+} from "./shared";
+
+type T = ReturnType<typeof makeTestCtx>;
+
+function setup(n: number, seed = 7) {
+  const t = makeTestCtx(n, seed);
+  let ends = 0;
+  const end = t.ctx.end;
+  t.ctx.end = (r) => {
+    ends += 1;
+    end(r);
+  };
+  const s = sumo.setup(t.ctx);
+  return { t, s, ends: () => ends };
+}
+
+const view = (s: SumoState, t: T, who = "p0") => sumo.view(s, who, t.ctx) as SumoView;
+
+/** Advance one tick; returns tick()'s result. */
+function step(s: SumoState, t: T) {
+  t.advance(TICK_MS);
+  return sumo.tick!(s, t.ctx);
+}
+
+/** Tick for `ms` of game time. */
+function run(s: SumoState, t: T, ms: number) {
+  for (let left = ms; left > 0; left -= TICK_MS) step(s, t);
+}
+
+function startFight(s: SumoState, t: T) {
+  t.advance(COUNTDOWN_MS);
+  assert(sumo.tick!(s, t.ctx) === true, "countdown -> fight returns true");
+  assert(s.phase === "fight", "fight started");
+}
+
+/** Read through a function so TypeScript doesn't narrow across ticks. */
+const phaseOf = (s: SumoState): string => s.phase;
+const powerOf = (s: SumoState) => s.power;
+const snaps = (t: T) => t.events.map((e) => e.event as Snap).filter((e) => e && e.k === "s");
+const finite = (s: SumoState) => s.discs.every((d) => [d.x, d.y, d.vx, d.vy].every(Number.isFinite));
+
+/** Steer disc `slot` toward (x, y) with a simple PD controller (test bot). */
+function steer(s: SumoState, t: T, slot: number, x: number, y: number) {
+  const d = s.discs[slot];
+  let ix = (x - d.x) * 0.9 - d.vx * 0.45;
+  let iy = (y - d.y) * 0.9 - d.vy * 0.45;
+  const m = Math.hypot(ix, iy);
+  if (m > 100) [ix, iy] = [(ix / m) * 100, (iy / m) * 100];
+  sumo.action(s, s.ids[slot], { type: "input", x: Math.round(ix), y: Math.round(iy) }, t.ctx);
+}
+
+// ---------- setup & spawning ----------
+{
+  for (const n of [2, 5, 8]) {
+    const { s, t } = setup(n);
+    assert(s.phase === "countdown" && s.round === 1, "starts in countdown");
+    assert(s.endsAt === t.ctx.now() + COUNTDOWN_MS, "countdown deadline");
+    for (const d of s.discs) {
+      const r = Math.hypot(d.x - CENTER, d.y - CENTER);
+      assert(Math.abs(r - SPAWN_R) < 1e-6, "spawned on the spawn circle");
+      assert(Math.abs(Math.hypot(d.fx, d.fy) - 1) < 1e-9, "facing is a unit vector");
+    }
+    for (let i = 0; i < n; i++) {
+      for (let j = i + 1; j < n; j++) {
+        const gap = Math.hypot(s.discs[i].x - s.discs[j].x, s.discs[i].y - s.discs[j].y);
+        assert(gap > DISC_R * 2 + 60, `discs spawn well apart (${n} players)`);
+      }
+    }
+    const v = view(s, t);
+    assert(v.snap.p.length === n && v.snap.r === RINK_R, "view carries the opening snapshot");
+    const json = JSON.stringify(v);
+    assert(!json.includes("undefined") && JSON.stringify(JSON.parse(json)) === json, "view is plain JSON");
+    assert(JSON.stringify(view(s, t, "spectator")) === json, "spectators see the public view");
+  }
+}
+
+// ---------- countdown: inputs are stored, nothing moves; dashes rejected ----------
+{
+  const { s, t } = setup(2);
+  const x0 = s.discs[0].x;
+  assert(sumo.action(s, "p0", { type: "input", x: 100, y: 0 }, t.ctx) === false, "input never re-broadcasts");
+  assert(s.discs[0].ix === 1 && s.discs[0].iy === 0, "input stored during the countdown");
+  assert(sumo.action(s, "p0", { type: "dash" }, t.ctx) === false && !s.discs[0].dashQueued, "no dash in countdown");
+  for (let i = 0; i < 10; i++) assert(step(s, t) === false, "countdown ticks quiet");
+  assert(s.discs[0].x === x0, "nothing moves in the countdown");
+  assert(snaps(t).length === 0, "no snapshots during the countdown");
+  t.advance(COUNTDOWN_MS);
+  assert(sumo.tick!(s, t.ctx) === true && s.phase === "fight", "countdown -> fight");
+  assert(view(s, t).fightAt === t.ctx.now(), "fight start in view");
+  step(s, t);
+  assert(s.discs[0].x > x0, "held input works the moment the fight starts");
+}
+
+// ---------- rink shrink ----------
+{
+  assert(rinkRadius(0) === RINK_R && rinkRadius(15_000) === RINK_R, "stable for 15s");
+  assert(Math.abs(rinkRadius(35_000) - (RINK_R + RINK_MIN) / 2) < 1e-9, "halfway at 35s");
+  assert(rinkRadius(55_000) === RINK_MIN, "160 at 55s");
+  assert(rinkRadius(60_000) < RINK_MIN && rinkRadius(60_000) > 100, "sudden death keeps shrinking");
+  assert(rinkRadius(1e9) === 0, "never negative");
+  const { s, t } = setup(2);
+  startFight(s, t);
+  // Keep both discs safe near the centre while the clock runs.
+  for (let i = 0; i < 700; i++) {
+    steer(s, t, 0, CENTER - 40, CENTER);
+    steer(s, t, 1, CENTER + 40, CENTER);
+    step(s, t);
+    const ms = t.ctx.now() - s.fightAt;
+    if (ms === 15_000) assert(s.snap.r === RINK_R, "still full size at 15s");
+    if (ms === 35_000) assert(Math.abs(s.snap.r - 300) <= 0.2, `shrinking at 35s (${s.snap.r})`);
+    if (s.phase !== "fight") break;
+  }
+  assert(finite(s), "no NaN after a long fight");
+}
+
+// ---------- physics: acceleration, top speed, friction, determinism ----------
+{
+  const run1 = () => {
+    const { s, t } = setup(3, 99);
+    startFight(s, t);
+    sumo.action(s, "p0", { type: "input", x: 60, y: -80 }, t.ctx);
+    sumo.action(s, "p1", { type: "input", x: -100, y: 0 }, t.ctx);
+    run(s, t, 400);
+    sumo.action(s, "p1", { type: "dash" }, t.ctx);
+    run(s, t, 1200);
+    return JSON.stringify(s.discs) + JSON.stringify(s.snap);
+  };
+  assert(run1() === run1(), "physics is deterministic");
+
+  const { s, t } = setup(2, 3);
+  startFight(s, t);
+  const d = s.discs[0];
+  // Move p1 out of the way, park p0 at the far side and floor it across the rink.
+  s.discs[1].x = CENTER;
+  s.discs[1].y = CENTER - 300;
+  d.x = CENTER - 400;
+  d.y = CENTER;
+  sumo.action(s, "p0", { type: "input", x: 100, y: 0 }, t.ctx);
+  let top = 0;
+  for (let i = 0; i < 16; i++) {
+    step(s, t);
+    top = Math.max(top, Math.hypot(d.vx, d.vy));
+  }
+  assert(top > 400 && top <= 480 + 1e-9, `top speed is capped near 480 (${top})`);
+  sumo.action(s, "p0", { type: "input", x: 0, y: 0 }, t.ctx);
+  const v0 = Math.hypot(d.vx, d.vy);
+  run(s, t, 1000);
+  const v1 = Math.hypot(d.vx, d.vy);
+  assert(v1 < v0 * 0.7 && v1 > v0 * 0.5, `ice friction: ~0.62/s (${(v1 / v0).toFixed(3)})`);
+  assert(finite(s), "no NaN");
+}
+
+// ---------- collisions: symmetry, momentum, energy sanity, mass ----------
+{
+  const { s, t } = setup(2);
+  startFight(s, t);
+  const [a, b] = s.discs;
+  Object.assign(a, { x: 450, y: 500, vx: 300, vy: 40 });
+  Object.assign(b, { x: 550, y: 500, vx: -300, vy: 40 });
+  // Overlapping and approaching.
+  a.x = 471;
+  b.x = 529;
+  const keBefore = 0.5 * (a.vx ** 2 + a.vy ** 2 + b.vx ** 2 + b.vy ** 2);
+  const t0 = s.fightAt + 100;
+  collide(s, a, b, t0);
+  assert(Math.abs(a.x - 1000 + b.x) < 1e-9 && a.y === b.y, "positions stay mirrored");
+  assert(Math.abs(a.vx + b.vx) < 1e-9 && Math.abs(a.vy - b.vy) < 1e-9, "velocities stay mirrored");
+  assert(a.vx < 0 && b.vx > 0, "they bounce apart");
+  assert(Math.abs(a.vx + b.vx) < 1e-9, "momentum conserved (equal masses)");
+  assert(Math.abs(b.x - a.x - 2 * DISC_R) < 1e-9, "no overlap left");
+  const keAfter = 0.5 * (a.vx ** 2 + a.vy ** 2 + b.vx ** 2 + b.vy ** 2);
+  assert(
+    keAfter > keBefore && keAfter < keBefore * 1.35,
+    `bouncy but sane energy (${(keAfter / keBefore).toFixed(3)})`,
+  );
+  assert(Math.abs(Math.abs(a.vx) - 300 * 1.15) < 1e-6, "restitution 1.15 on a real hit");
+  const hit = s.fx.find((f) => f[0] === FX_HIT);
+  assert(hit && hit[3] > 300, "impact effect recorded");
+  assert(a.hitBy === 1 && b.hitBy === 0, "both remember who shoved them");
+
+  // A gentle shove is soft (no ping-pong when leaning on each other).
+  Object.assign(a, { x: 470, y: 500, vx: 20, vy: 0 });
+  Object.assign(b, { x: 529, y: 500, vx: 0, vy: 0 });
+  s.fx = [];
+  collide(s, a, b, t0);
+  assert(b.vx > 0 && b.vx < 20 && a.vx > 0, "slow pushes barely bounce");
+  assert(s.fx.length === 0, "no spark for a gentle shove");
+
+  // Mass matters: a heavy disc ploughs through a normal one.
+  Object.assign(a, { x: 470, y: 500, vx: 300, vy: 0, heavyUntil: t0 + 5000 });
+  Object.assign(b, { x: 535, y: 500, vx: 0, vy: 0 });
+  collide(s, a, b, t0);
+  assert(a.vx > 0, "heavy disc keeps going");
+  assert(b.vx > 300 * 1.2, "light disc goes flying");
+  const p = a.vx * HEAVY_MASS + b.vx;
+  assert(Math.abs(p - 300 * HEAVY_MASS) < 1e-6, "momentum conserved with unequal masses");
+  assert(Math.abs(b.x - a.x - DISC_R * 2.25) < 1e-9, "heavy disc is bigger");
+
+  // Exactly overlapping discs still separate cleanly.
+  Object.assign(a, { x: 500, y: 500, vx: 0, vy: 0, heavyUntil: 0 });
+  Object.assign(b, { x: 500, y: 500, vx: 0, vy: 0 });
+  collide(s, a, b, t0);
+  assert(finite(s) && Math.hypot(a.x - b.x, a.y - b.y) > 59, "coincident discs separate");
+}
+
+// ---------- snapshots: one per tick as an event, small, idle frames skipped ----------
+{
+  const { s, t } = setup(8);
+  startFight(s, t);
+  t.events.length = 0;
+  // Nothing moves: only heartbeats go out.
+  for (let i = 0; i < 35; i++) assert(step(s, t) === false, "fight ticks return false");
+  const idle = snaps(t);
+  assert(idle.length >= 1 && idle.length <= 3, `idle frames are skipped (${idle.length} in 1.75s)`);
+  t.events.length = 0;
+  s.ids.forEach((id, i) => sumo.action(s, id, { type: "input", x: i % 2 ? 100 : -100, y: i % 3 ? 60 : -60 }, t.ctx));
+  step(s, t);
+  const first = snaps(t)[0];
+  assert(first && first.q === 1, "first frame after a quiet spell is flagged");
+  // Every tick sends a frame: an event, or the view when someone falls in.
+  let viaView = 0;
+  for (let i = 0; i < 20; i++) if (step(s, t)) viaView += 1;
+  const live = snaps(t);
+  assert(live.length + viaView === 21, `one frame per tick while things move (${live.length}+${viaView})`);
+  assert(live.length >= 15, "mostly plain snapshot events");
+  assert(
+    live.every((e, i) => i === 0 || (e.t - live[i - 1].t) % TICK_MS === 0),
+    "frames sit on the 50ms grid",
+  );
+  assert(
+    live.every((e) => e.p.every((d) => d.length === 7 && d.every(Number.isInteger))),
+    "ints only",
+  );
+  const env = (e: Snap) => JSON.stringify({ t: "ev", e, now: e.t }).length;
+  const biggest = Math.max(...live.map(env));
+  assert(biggest < 380, `snapshot stays small with 8 players (${biggest} bytes)`);
+  assert(biggest * (1000 / TICK_MS) < 8 * 1024, "under 8 KB/s per client");
+  assert(
+    t.events.every((e) => e.to === undefined && e.except === undefined),
+    "snapshots go to everyone",
+  );
+}
+
+// ---------- dash & cooldown, turbo ----------
+{
+  const { s, t } = setup(2);
+  startFight(s, t);
+  const d = s.discs[0];
+  const [fx, fy] = [d.fx, d.fy];
+  // p1 waits off to the side, out of the dash's path.
+  Object.assign(s.discs[1], { x: CENTER - fy * 300, y: CENTER + fx * 300 });
+  assert(sumo.action(s, "p0", { type: "dash" }, t.ctx) === false && d.dashQueued, "dash queued");
+  assert(sumo.action(s, "p0", { type: "dash" }, t.ctx) === false, "second dash ignored");
+  t.events.length = 0;
+  step(s, t);
+  const sp = Math.hypot(d.vx, d.vy);
+  assert(sp > 480 && sp < 650, `dash bursts past top speed (${sp.toFixed(0)})`);
+  assert((d.vx * fx + d.vy * fy) / sp > 0.99, "with no stick, dash goes where the disc faces");
+  const dashFx = snaps(t)[0]?.fx?.find((f) => f[0] === FX_DASH);
+  assert(dashFx && dashFx[1] === 0, "dash effect in the snapshot");
+  assert(snaps(t)[0].p.find((p) => p[0] === 0)![6] > 20, "cooldown sent in the snapshot");
+  run(s, t, 600);
+  assert(Math.hypot(d.vx, d.vy) <= 480, "dash speed bleeds back to the cap");
+  Object.assign(d, { x: CENTER, y: CENTER, vx: 0, vy: 0 }); // before it coasts into the water
+  sumo.action(s, "p0", { type: "dash" }, t.ctx);
+  assert(!d.dashQueued, "still cooling down");
+  run(s, t, DASH_CD_MS);
+  sumo.action(s, "p0", { type: "input", x: 0, y: -100 }, t.ctx);
+  sumo.action(s, "p0", { type: "dash" }, t.ctx);
+  assert(d.dashQueued, "dash ready again after 2.5s");
+  const vy0 = d.vy;
+  step(s, t);
+  assert(d.vy < vy0 - 500, "dash follows the stick");
+  // Turbo: 0.6s cooldown.
+  sumo.action(s, "p0", { type: "input", x: 0, y: 0 }, t.ctx);
+  Object.assign(d, { x: CENTER, y: CENTER, vx: 0, vy: 0 });
+  d.turboUntil = t.ctx.now() + POWER_INFO.turbo.ms;
+  run(s, t, DASH_CD_MS);
+  sumo.action(s, "p0", { type: "dash" }, t.ctx);
+  assert(
+    d.dashReadyAt - t.ctx.now() === TURBO_CD_MS,
+    `turbo cooldown ${d.dashReadyAt - t.ctx.now()} alive=${d.alive} q=${d.dashQueued} turbo=${d.turboUntil - t.ctx.now()} phase=${s.phase}`,
+  );
+  // A dead disc can't dash.
+  d.alive = false;
+  d.dashQueued = false;
+  run(s, t, 1000);
+  sumo.action(s, "p0", { type: "dash" }, t.ctx);
+  assert(!d.dashQueued, "fallen discs can't dash");
+}
+
+// ---------- falling off: elimination, knockout credit, round end ----------
+{
+  const { s, t } = setup(3);
+  startFight(s, t);
+  const [a, b] = s.discs;
+  // a slams b toward the edge.
+  Object.assign(b, { x: CENTER + 380, y: CENTER, vx: 0, vy: 0 });
+  Object.assign(a, { x: CENTER + 300, y: CENTER, vx: 450, vy: 0 });
+  s.discs[2].x = CENTER - 200;
+  s.discs[2].y = CENTER;
+  t.events.length = 0;
+  let changed = false;
+  for (let i = 0; i < 20 && b.alive; i++) changed = step(s, t) || changed;
+  assert(!b.alive, "b fell off the edge");
+  assert(changed, "a fall re-sends the view");
+  const v = view(s, t);
+  assert(v.falls.length === 1 && v.falls[0].s === 1 && v.falls[0].by === 0, "fall credited to the shover");
+  assert(v.kos[0] === 1, "knockout counted");
+  assert(!v.snap.p.some((p) => p[0] === 1), "fallen disc gone from the snapshot");
+  const fall =
+    v.snap.fx?.find((f) => f[0] === FX_FALL) ??
+    snaps(t)
+      .flatMap((e) => e.fx ?? [])
+      .find((f) => f[0] === FX_FALL);
+  assert(fall && fall[1] === 1 && fall[6] === 0, "fall effect with the shover");
+  // Can't come back this round.
+  sumo.action(s, "p1", { type: "input", x: -100, y: 0 }, t.ctx);
+  run(s, t, 500);
+  assert(!b.alive, "no coming back this round");
+  assert(s.phase === "fight", "two still on the ice");
+  // Slip off alone: no credit.
+  Object.assign(s.discs[2], { x: CENTER - 430, vx: -300, hitBy: -1 });
+  for (let i = 0; i < 10 && phaseOf(s) === "fight"; i++) step(s, t);
+  assert(phaseOf(s) === "roundOver", "one left: round over");
+  const v2 = view(s, t);
+  assert(v2.lastWinner !== null && v2.lastWinner === s.ids[s.discs.findIndex((d) => d.alive)], "survivor wins");
+  assert(v2.falls[1].by === -1, "slipping off alone credits nobody");
+  assert(v2.history[0].order.join() === "1,2", "fall order recorded");
+}
+
+// ---------- after the round is decided: the winner brakes and stays on the ice ----------
+{
+  const { s, t } = setup(2);
+  startFight(s, t);
+  const [a, b] = s.discs;
+  sumo.action(s, "p0", { type: "input", x: 100, y: 0 }, t.ctx);
+  Object.assign(a, { x: CENTER + 300, y: CENTER, vx: 480, vy: 0 });
+  Object.assign(b, { x: CENTER - 435, y: CENTER, vx: -300, vy: 0 });
+  step(s, t);
+  assert(phaseOf(s) === "roundOver" && view(s, t).lastWinner === "p0", "p0 wins the round");
+  assert(sumo.action(s, "p0", { type: "dash" }, t.ctx) === false && !a.dashQueued, "no dashing after the round");
+  run(s, t, 1500);
+  assert(a.alive && Math.hypot(a.x - CENTER, a.y - CENTER) <= RINK_R, "the winner can't slide off any more");
+  assert(Math.hypot(a.vx, a.vy) < 1, "and brakes to a stop");
+  assert(s.history[0].winner === "p0" && s.wins[0] === 1, "result stands");
+}
+
+// ---------- draw when the last discs fall in the same tick ----------
+{
+  const { s, t } = setup(2);
+  startFight(s, t);
+  const [a, b] = s.discs;
+  Object.assign(a, { x: CENTER - 435, y: CENTER, vx: -400, vy: 0 });
+  Object.assign(b, { x: CENTER + 435, y: CENTER, vx: 400, vy: 0 });
+  step(s, t);
+  assert(s.phase === "roundOver", "round over");
+  assert(view(s, t).lastWinner === null && s.wins.every((w) => w === 0), "draw: nobody scores");
+  t.advance(ROUND_OVER_MS);
+  assert(sumo.tick!(s, t.ctx) === true && phaseOf(s) === "countdown" && s.round === 2, "next round");
+  assert(
+    s.discs.every((d) => d.alive),
+    "everyone back for round 2",
+  );
+}
+
+// ---------- power-ups ----------
+{
+  const { s, t } = setup(2, 11);
+  startFight(s, t);
+  run(s, t, POWER_FIRST_MS - 100);
+  assert(s.power === null, "no power-up before 8s");
+  run(s, t, 200);
+  assert(powerOf(s) !== null, "power-up appears at 8s");
+  const p = powerOf(s)!;
+  assert(Math.hypot(p.x - CENTER, p.y - CENTER) < RINK_R * 0.75, "spawns well inside the rink");
+  assert(s.snap.u !== 0, "power-up in the snapshot");
+  const d = s.discs[0];
+  Object.assign(d, { x: p.x - 10, y: p.y, vx: 0, vy: 0 });
+  t.events.length = 0;
+  step(s, t);
+  assert(powerOf(s) === null, "picked up");
+  const kind = p.kind;
+  if (kind === "heavy") assert(d.heavyUntil > t.ctx.now(), "heavy applied");
+  else assert(d.turboUntil > t.ctx.now(), "turbo applied");
+  const pick = snaps(t)[0]?.fx?.find((f) => f[0] === FX_PICKUP);
+  assert(pick && pick[1] === 0, "pickup effect");
+  run(s, t, 5900);
+  assert(powerOf(s) === null, "next one waits 6s");
+  run(s, t, 300);
+  assert(powerOf(s) !== null, "next power-up after 6s");
+  // Heavy flag in snapshots, and it wears off.
+  d.heavyUntil = t.ctx.now() + POWER_INFO.heavy.ms;
+  d.turboUntil = 0;
+  step(s, t);
+  assert((s.snap.p.find((x) => x[0] === 0)![5] & F_HEAVY) !== 0, "heavy flag");
+  run(s, t, POWER_INFO.heavy.ms + 100);
+  assert((s.snap.p.find((x) => x[0] === 0)![5] & F_HEAVY) === 0, "heavy wears off");
+}
+
+// ---------- hostile actions ----------
+{
+  const { s, t } = setup(2);
+  startFight(s, t);
+  const before = JSON.stringify(s.discs);
+  const junk: unknown[] = [
+    null,
+    undefined,
+    42,
+    "dash",
+    [],
+    ["input", 1, 2],
+    {},
+    { type: "x" },
+    { type: "__proto__" },
+    { type: "input" },
+    { type: "input", x: "1", y: 0 },
+    { type: "input", x: 1.5, y: 0 },
+    { type: "input", x: 0, y: NaN },
+    { type: "input", x: Infinity, y: 0 },
+    { type: "input", x: 101, y: 0 },
+    { type: "input", x: -1e9, y: 0 },
+    { type: "input", x: 0, y: [1] },
+    { type: "input", x: 0, y: { valueOf: () => 5 } },
+    { type: "input", x: 1, y: 1, extra: "a".repeat(100_000) },
+    { type: "dash", x: 5 }, // extra fields are fine but this one is a real dash: tested below
+  ];
+  for (const a of junk.slice(0, -2)) {
+    assert(sumo.action(s, "p0", a as never, t.ctx) === false, `rejects ${JSON.stringify(a)?.slice(0, 40)}`);
+  }
+  assert(JSON.stringify(s.discs) === before, "junk changed nothing");
+  assert(sumo.action(s, "nobody", { type: "dash" }, t.ctx) === false, "strangers rejected");
+  assert(sumo.action(s, "spectator", { type: "input", x: 100, y: 0 }, t.ctx) === false, "spectators rejected");
+  assert(JSON.stringify(s.discs) === before, "strangers changed nothing");
+  // A long diagonal is clamped to length 1.
+  sumo.action(s, "p0", { type: "input", x: 100, y: 100 }, t.ctx);
+  assert(Math.abs(Math.hypot(s.discs[0].ix, s.discs[0].iy) - 1) < 1e-9, "magnitude clamped");
+  // After the end, nothing is accepted.
+  s.phase = "final";
+  assert(sumo.action(s, "p0", { type: "input", x: 0, y: 0 }, t.ctx) === false, "final ignores input");
+  assert(s.discs[0].ix !== 0, "final input ignored");
+}
+
+// ---------- a full match to the end (one skilful player) ----------
+{
+  const { s, t, ends } = setup(4, 5);
+  let guard = 0;
+  while (s.phase !== "final" && guard++ < 20_000) {
+    // p2 hugs the centre; everybody else stands still and gets eaten by the shrinking rink.
+    if (s.phase === "fight" || s.phase === "countdown") steer(s, t, 2, CENTER, CENTER);
+    step(s, t);
+    assert(finite(s), "no NaN in a full match");
+  }
+  assert(s.phase === "final", "match finished");
+  assert(ends() === 1 && t.result, "ctx.end called once");
+  assert(t.result.winners.length === 1 && t.result.winners[0] === "p2", "p2 is champion");
+  assert(t.result.headline === "Player2 is the Ice Sumo champion", t.result.headline);
+  assert(t.result.scores?.p2 === WINS_NEEDED && s.round === WINS_NEEDED, "3 straight round wins");
+  const v = view(s, t);
+  assert(v.champions?.join() === "p2" && v.history.length === WINS_NEEDED, "final view");
+  // Ticks after the end keep things settling but never end again.
+  for (let i = 0; i < 40; i++) assert(step(s, t) === false, "final ticks are quiet");
+  assert(ends() === 1, "still one end");
+}
+
+// ---------- seven draws: no winners ----------
+{
+  const { s, t, ends } = setup(2, 8);
+  let guard = 0;
+  while (s.phase !== "final" && guard++ < 40_000) step(s, t);
+  assert(s.history.length === MAX_ROUNDS && s.history.every((h) => h.winner === null), "seven draws");
+  assert(ends() === 1 && t.result!.winners.length === 0, "nobody wins");
+  assert(/draw/.test(t.result!.headline), t.result!.headline);
+}
+
+// ---------- tie after seven rounds ----------
+{
+  const { s, t } = setup(3, 9);
+  s.round = MAX_ROUNDS;
+  s.wins = [2, 2, 1];
+  startFight(s, t);
+  // Everyone off at once.
+  s.discs.forEach((d, i) =>
+    Object.assign(d, {
+      x: CENTER + Math.cos(i * 2) * 438,
+      y: CENTER + Math.sin(i * 2) * 438,
+      vx: Math.cos(i * 2) * 400,
+      vy: Math.sin(i * 2) * 400,
+    }),
+  );
+  step(s, t);
+  assert(s.phase === "final", "seventh round ends the match");
+  assert(t.result!.winners.join() === "p0,p1", "tie on round wins shares the crown");
+  assert(/share/.test(t.result!.headline), t.result!.headline);
+}
+
+// ---------- 8 players, random chaos: never breaks, always ends ----------
+{
+  const { s, t, ends } = setup(8, 1234);
+  let rnd = 77;
+  const r = () => (rnd = (rnd * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;
+  let guard = 0;
+  let hits = 0;
+  while (s.phase !== "final" && guard++ < 60_000) {
+    for (let i = 0; i < 8; i++) {
+      if (r() < 0.1)
+        sumo.action(
+          s,
+          `p${i}`,
+          { type: "input", x: Math.round(r() * 200 - 100), y: Math.round(r() * 200 - 100) },
+          t.ctx,
+        );
+      if (r() < 0.02) sumo.action(s, `p${i}`, { type: "dash" }, t.ctx);
+    }
+    t.events.length = 0;
+    step(s, t);
+    hits += snaps(t).reduce((n, e) => n + (e.fx?.filter((f) => f[0] === FX_HIT).length ?? 0), 0);
+    assert(finite(s), "no NaN in chaos");
+    for (const d of s.discs) assert(Math.hypot(d.vx, d.vy) <= 1600, "speed hard cap");
+  }
+  assert(s.phase === "final" && ends() === 1, "chaos match ends");
+  assert(hits > 0, "collisions happened");
+}
+
+// ---------- disconnects ----------
+{
+  // Mid-fight: input zeroed, disc stays and can still be shoved off.
+  const { s, t, ends } = setup(3);
+  startFight(s, t);
+  sumo.action(s, "p1", { type: "input", x: 100, y: 0 }, t.ctx);
+  t.ctx.players[1].connected = false;
+  sumo.playerLeft!(s, "p1", t.ctx);
+  assert(s.discs[1].ix === 0 && s.discs[1].alive, "offline disc stays, input zeroed");
+  assert((s.snap.p.find((p) => p[0] === 1)![5] & F_OFFLINE) !== 0, "offline flag");
+  assert(s.aloneSince === null, "two still online");
+  // Down to one online: the match waits 10s, then ends with the last player standing.
+  t.ctx.players[2].connected = false;
+  sumo.playerLeft!(s, "p2", t.ctx);
+  assert(s.aloneSince !== null && view(s, t).abandonAt === s.aloneSince + ABANDON_MS, "abandon timer shown");
+  run(s, t, 4000);
+  // p2 comes back in time: timer cancelled.
+  t.ctx.players[2].connected = true;
+  sumo.playerReturned!(s, "p2", t.ctx);
+  assert(s.aloneSince === null && view(s, t).abandonAt === null, "reconnect cancels the timer");
+  t.ctx.players[2].connected = false;
+  sumo.playerLeft!(s, "p2", t.ctx);
+  for (let i = 0; i < ABANDON_MS / TICK_MS + 2 && s.phase !== "final"; i++) step(s, t);
+  assert(s.phase === "final" && ends() === 1, "ends after 10s alone");
+  assert(t.result!.winners.join() === "p0" && /everyone else left/.test(t.result!.headline), t.result!.headline);
+}
+{
+  // During the countdown and between rounds: the game never stalls.
+  const { s, t, ends } = setup(2);
+  t.ctx.players[1].connected = false;
+  sumo.playerLeft!(s, "p1", t.ctx);
+  startFight(s, t);
+  assert(s.discs[1].alive, "offline player's disc is on the ice");
+  run(s, t, 3000);
+  t.ctx.players[1].connected = true;
+  sumo.playerReturned!(s, "p1", t.ctx);
+  assert(s.aloneSince === null, "back");
+  sumo.action(s, "p1", { type: "input", x: 50, y: 0 }, t.ctx);
+  assert(s.discs[1].ix === 0.5, "returning player steers again");
+  // Everyone leaves: ends as abandoned with no ctx.end stall.
+  t.ctx.players[0].connected = false;
+  t.ctx.players[1].connected = false;
+  sumo.playerLeft!(s, "p0", t.ctx);
+  sumo.playerLeft!(s, "p1", t.ctx);
+  run(s, t, ABANDON_MS + 200);
+  assert(s.phase === "final" && ends() === 1, "empty room ends");
+  assert(/everyone left/.test(t.result!.headline), t.result!.headline);
+}
+{
+  // Leaving during the round-over break: next round still starts.
+  const { s, t } = setup(3);
+  startFight(s, t);
+  Object.assign(s.discs[0], { x: CENTER + 435, vx: 300 });
+  Object.assign(s.discs[1], { x: CENTER - 435, vx: -300 });
+  step(s, t);
+  assert(s.phase === "roundOver", "round over");
+  t.ctx.players[0].connected = false;
+  sumo.playerLeft!(s, "p0", t.ctx);
+  run(s, t, ROUND_OVER_MS);
+  assert(phaseOf(s) === "countdown" && s.round === 2 && s.discs[0].alive, "next round starts anyway");
+}
+
+// ---------- client playback: smooth at 60fps despite network jitter ----------
+{
+  for (const [jitter, latency, tickJitter] of [
+    [0, 30, 0],
+    [70, 80, 15],
+  ]) {
+    const { s, t } = setup(2, 3);
+    startFight(s, t);
+    const T0 = t.ctx.now();
+    Object.assign(s.discs[1], { x: CENTER, y: CENTER });
+    let rnd = 99;
+    const r = () => (rnd = (rnd * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;
+    const sent: { snap: Snap; at: number }[] = [{ snap: s.snap, at: latency }];
+    let lastAt = 0;
+    for (let i = 0; i < 160; i++) {
+      // p0 chases a point running round a circle; the frames reach the client late and unevenly.
+      const a = ((i * TICK_MS) / 1000) * 1.6;
+      steer(s, t, 0, CENTER + Math.cos(a) * 200, CENTER + Math.sin(a) * 200);
+      t.advance(TICK_MS + Math.round((r() - 0.5) * tickJitter));
+      t.events.length = 0;
+      const out = sumo.tick!(s, t.ctx) ? [s.snap] : snaps(t);
+      for (const snap of out) {
+        lastAt = Math.max(lastAt, snap.t - T0 + latency + r() * jitter);
+        sent.push({ snap, at: lastAt });
+      }
+    }
+    const sc = newScene();
+    const o: Sample = { x: 0, y: 0, vx: 0, vy: 0, flags: 0, cd: 0, cdAt: 0 };
+    const pos: [number, number][] = [];
+    let k = 0;
+    for (let now = latency; now < lastAt; now += 1000 / 60) {
+      while (k < sent.length && sent[k].at <= now) pushFrame(sc, sent[k].snap, sent[k++].at);
+      const rt = sc.clock.tick(now);
+      if (sampleDisc(sc.frames, 0, rt, o)) pos.push([o.x, o.y]);
+    }
+    const steps = pos.slice(90).map((p, i, all) => (i ? Math.hypot(p[0] - all[i - 1][0], p[1] - all[i - 1][1]) : 0));
+    steps.shift();
+    const mean = steps.reduce((x, y) => x + y, 0) / steps.length;
+    const worst = Math.max(...steps.slice(1).map((v, i) => Math.abs(v - steps[i])));
+    assert(
+      steps.length > 300 && mean > 4,
+      `the disc keeps circling (${steps.length} frames, ${mean.toFixed(2)}/frame)`,
+    );
+    assert(
+      steps.every((v) => v > mean * 0.5),
+      `no stalls at 60fps (jitter ${jitter}ms)`,
+    );
+    assert(
+      worst < mean * 0.25,
+      `even motion frame to frame (jitter ${jitter}ms: worst change ${(worst / mean).toFixed(3)})`,
+    );
+  }
+}
+
+console.log("✓ sumo tests passed");
