@@ -2,7 +2,7 @@
 
 import { CATALOG, CATALOG_BY_ID } from "@/games/catalog";
 import type { ClientMsg, RoomView } from "@/shared/types";
-import { GameCard } from "../GameCard";
+import { GameBrowser } from "../GameBrowser";
 
 export function Lobby({
   room,
@@ -80,18 +80,13 @@ export function Lobby({
 
       <div>
         <h2 className="label mb-2">{isHost ? "Pick a game" : "Games"}</h2>
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-          {CATALOG.map((g, i) => (
-            <GameCard
-              key={g.id}
-              index={i}
-              game={g}
-              selected={g.id === game.id}
-              disabled={!isHost}
-              onSelect={() => isHost && send({ t: "pick", gameId: g.id })}
-            />
-          ))}
-        </div>
+        <GameBrowser
+          selectedId={game.id}
+          disabled={!isHost}
+          playerCount={online}
+          columns="sm:grid-cols-2 xl:grid-cols-3"
+          onSelect={(g) => isHost && send({ t: "pick", gameId: g.id })}
+        />
       </div>
     </div>
   );

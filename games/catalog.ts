@@ -18,6 +18,8 @@ export interface GameMeta {
   how: string[];
   /** Ruckus original mechanics. */
   original?: boolean;
+  /** Recently added: shows a NEW badge. */
+  isNew?: boolean;
 }
 
 export const CATALOG: GameMeta[] = [
@@ -244,6 +246,7 @@ export const CATALOG: GameMeta[] = [
     minutes: 10,
     emoji: "📞",
     accent: "#fda4af",
+    isNew: true,
     how: [
       "Everyone writes a prompt. Books pass along: draw the words you get, then describe the drawing you get.",
       "Nobody sees more than the page before theirs, so the message garbles as it travels.",
@@ -260,6 +263,7 @@ export const CATALOG: GameMeta[] = [
     minutes: 8,
     emoji: "🎲",
     accent: "#a3e635",
+    isNew: true,
     how: [
       "Everyone rolls hidden dice. Take turns bidding how many of a face are on the whole table. Ones are wild.",
       "Raise the bid, or call Liar! on the last one. Whoever is wrong loses a die.",
@@ -276,6 +280,7 @@ export const CATALOG: GameMeta[] = [
     minutes: 6,
     emoji: "📈",
     accent: "#14b8a6",
+    isNew: true,
     original: true,
     how: [
       "Everyone gets a secret card. The contract pays out the sum of every player's card plus three street cards.",
@@ -293,6 +298,7 @@ export const CATALOG: GameMeta[] = [
     minutes: 6,
     emoji: "💣",
     accent: "#f59e0b",
+    isNew: true,
     original: true,
     how: [
       "Set your angle and power, mind the wind, and lock in. All shells fly at the same moment.",
@@ -310,6 +316,7 @@ export const CATALOG: GameMeta[] = [
     minutes: 4,
     emoji: "🕹️",
     accent: "#818cf8",
+    isNew: true,
     original: true,
     how: [
       "A rapid run of microgames: spot the odd emoji, quick sums, stop the clock, and more.",
@@ -327,6 +334,7 @@ export const CATALOG: GameMeta[] = [
     minutes: 3,
     emoji: "🤼",
     accent: "#a5f3fc",
+    isNew: true,
     original: true,
     how: [
       "Slide with arrows/WASD or the on-screen stick; dash with Space. Ice is slippery: momentum is everything.",
@@ -344,6 +352,7 @@ export const CATALOG: GameMeta[] = [
     minutes: 5,
     emoji: "🏰",
     accent: "#d6a35c",
+    isNew: true,
     original: true,
     how: [
       "Each round, secretly split 100 troops across five castles worth different points.",

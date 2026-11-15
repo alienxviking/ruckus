@@ -1,5 +1,5 @@
 import { CATALOG } from "@/games/catalog";
-import { GameCard } from "@/components/GameCard";
+import { GameBrowser } from "@/components/GameBrowser";
 import { HomeActions } from "@/components/HomeActions";
 import { Logo } from "@/components/Logo";
 
@@ -87,11 +87,7 @@ export default function Home() {
         <h2 id="games-heading" className="mb-4 font-display text-2xl font-bold">
           The games
         </h2>
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {CATALOG.map((g, i) => (
-            <GameCard key={g.id} game={g} index={i} />
-          ))}
-        </div>
+        <GameBrowser />
       </section>
     </main>
   );

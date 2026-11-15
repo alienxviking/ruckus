@@ -27,6 +27,11 @@ export function GameCard({
           {game.emoji}
         </span>
         <div className="flex flex-wrap justify-end gap-1.5 text-[11px] font-semibold">
+          {game.isNew && (
+            <span className="rounded-full px-2 py-0.5 text-ink" style={{ background: game.accent }}>
+              NEW
+            </span>
+          )}
           {game.original && <span className="rounded-full bg-brand/15 px-2 py-0.5 text-brand">ORIGINAL</span>}
           <span className="rounded-full bg-panel-2 px-2 py-0.5 text-muted">{CATEGORY_LABEL[game.category]}</span>
         </div>
