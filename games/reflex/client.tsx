@@ -53,7 +53,15 @@ const CSS = `
   .rx-sway { animation: rx-sway 2.4s ease-in-out infinite; }
   .rx-hop { animation: rx-hop 0.55s cubic-bezier(0.2, 1.4, 0.4, 1) both; }
   .rx-spark { animation: rx-spark 0.95s ease-out both; }
+  .rx-grow { animation: rx-grow 0.6s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+  .rx-flash { animation: rx-flash 0.32s ease-out both; }
+  .rx-slide { animation: rx-slide 0.34s cubic-bezier(0.2, 0.9, 0.3, 1.15) both; }
 }
+.rx-grow { transform-origin: left center; }
+.rx-flash { opacity: 0; }
+@keyframes rx-grow { from { transform: scaleX(0); } to { transform: none; } }
+@keyframes rx-flash { from { opacity: 0.9; } to { opacity: 0; } }
+@keyframes rx-slide { from { opacity: 0; transform: translateX(-14px); } to { opacity: 1; transform: none; } }
 @keyframes rx-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
 @keyframes rx-shake {
   0%, 100% { transform: none; }
@@ -309,6 +317,8 @@ interface Look {
   anim?: string;
   glow?: string;
   vignette?: boolean;
+  /** A bright burst behind the content as the signal lands (the text stays on top, fully legible). */
+  flash?: boolean;
 }
 
 const SIZE_M = "clamp(2.1rem, 12.5cqi, 5.75rem)";
@@ -430,6 +440,7 @@ function lookFor(p: {
         subColor: "#052e16",
         countColor: "#052e16",
         anim: "rx-slam",
+        flash: true,
       };
   }
 }
@@ -469,6 +480,14 @@ function SignalArena(props: {
           aria-hidden
           className="rx-pulse pointer-events-none absolute inset-0"
           style={{ boxShadow: "inset 0 0 110px 34px rgb(0 0 0 / 0.62)" }}
+        />
+      )}
+      {look.flash && (
+        <span
+          key={`flash-${look.key}`}
+          aria-hidden
+          className="rx-flash pointer-events-none absolute inset-0"
+          style={{ background: "radial-gradient(ellipse at 50% 45%, #ffffff 0%, #f0fdf4 45%, rgb(240 253 244 / 0) 80%)" }}
         />
       )}
       <div
@@ -628,7 +647,7 @@ function Spotlight({ last, byId, me }: { last: RoundSummary; byId: Record<string
       {!solo && <p className="text-sm font-semibold">{joinNames(winners.map((p) => p.name))} all score</p>}
       <div className="flex items-center gap-2">
         <span className="font-mono text-3xl font-black tabular-nums sm:text-4xl">
-          {rt}
+          {rt !== null ? <CountUp value={rt} /> : null}
           <span className="text-base font-bold text-muted"> ms</span>
         </span>
         {rt !== null && rt < 200 && (
@@ -651,6 +670,7 @@ function FakeLine({ last }: { last: RoundSummary }) {
 
 function RoundList({ last, byId, me }: { last: RoundSummary; byId: Record<string, Player>; me: string }) {
   const times = last.entries.flatMap((e) => (e.rt !== null ? [e.rt] : []));
+  const fastest = times.length ? Math.min(...times) : 0;
   const rows = Math.ceil(last.entries.length / 2);
   return (
     <ol className={`grid gap-1.5 gap-x-3 ${last.entries.length > 6 ? (TWO_COL_ROWS[rows] ?? "") : ""}`}>
@@ -660,13 +680,26 @@ function RoundList({ last, byId, me }: { last: RoundSummary; byId: Record<string
         return (
           <li
             key={e.id}
-            className="animate-rise flex min-h-10 min-w-0 items-center gap-2 rounded-xl border px-2 py-1"
+            className="rx-slide relative flex min-h-10 min-w-0 items-center gap-2 overflow-hidden rounded-xl border px-2 py-1"
             style={{
               animationDelay: `${Math.min(i, 11) * 55}ms`,
               borderColor: e.win ? p.color : "transparent",
               background: e.win ? p.color + "26" : "var(--color-panel-2)",
             }}
           >
+            {e.rt !== null && (
+              // Race bar: the fastest draw fills the row; slower ones trail off.
+              <span
+                aria-hidden
+                className="rx-grow pointer-events-none absolute inset-x-0 bottom-0 h-[3px]"
+                style={{
+                  width: `${Math.max(8, Math.round((100 * fastest) / Math.max(1, e.rt)))}%`,
+                  background: p.color,
+                  opacity: e.win ? 0.95 : 0.55,
+                  animationDelay: `${120 + Math.min(i, 11) * 55}ms`,
+                }}
+              />
+            )}
             <span aria-hidden className="w-7 shrink-0 text-center text-lg leading-none">
               {e.foul ? "🚫" : place !== null ? (MEDALS[place - 1] ?? <span className="text-sm text-muted">{place}</span>) : "·"}
             </span>
@@ -785,6 +818,7 @@ function FinalPanel({
 
   return (
     <section aria-label="Final standings" className="card @container flex flex-col gap-3 p-3 sm:p-5">
+      <Champions view={view} byId={byId} me={me} />
       <div className="text-center">
         <div className="label">Final standings</div>
         <p className="mt-1 text-sm text-muted">{reason}</p>
@@ -845,6 +879,63 @@ function FinalPanel({
         </div>
       )}
     </section>
+  );
+}
+
+/** Who took the match: avatars hop in, with a burst of sparks on the winner's own screen. */
+function Champions({ view, byId, me }: { view: ReflexView; byId: Record<string, Player>; me: string }) {
+  const winners = view.winners.map((id) => playerOf(byId, id));
+  if (winners.length === 0) return null;
+  const youWon = view.winners.includes(me);
+  const top = view.scores[winners[0].id] ?? 0;
+  const best = winners.length === 1 ? view.best[winners[0].id] : null;
+  return (
+    <div className="flex flex-col items-center gap-1 border-b border-line/70 pt-2 pb-3 text-center">
+      <div className="relative flex justify-center -space-x-3">
+        {winners.slice(0, 5).map((p, i) => (
+          <span
+            key={p.id}
+            aria-hidden
+            className="rx-hop grid size-16 place-items-center rounded-full border-2 text-4xl leading-none shadow-lg shadow-black/30"
+            style={{ borderColor: p.color, background: p.color + "30", animationDelay: `${i * 90}ms` }}
+          >
+            {p.avatar}
+          </span>
+        ))}
+        <span aria-hidden className="rx-hop absolute -top-5 text-2xl" style={{ animationDelay: "220ms" }}>
+          👑
+        </span>
+        {youWon && (
+          <span aria-hidden className="pointer-events-none absolute inset-0 grid place-items-center">
+            {SPARKS.map(([dx, dy, e], i) => (
+              <span
+                key={i}
+                className="rx-spark absolute text-xl"
+                style={{ "--dx": dx, "--dy": dy, animationDelay: `${200 + i * 35}ms` } as CSSProperties}
+              >
+                {e}
+              </span>
+            ))}
+          </span>
+        )}
+      </div>
+      <h3 className="font-display text-2xl leading-tight font-extrabold">
+        {winners.length > 1 ? (
+          "Dead heat!"
+        ) : youWon ? (
+          "Fastest gun in the room: you!"
+        ) : (
+          <>
+            <span style={{ color: winners[0].color }}>{winners[0].name}</span> is the fastest gun
+          </>
+        )}
+      </h3>
+      <p className="text-sm text-muted">
+        {winners.length > 1 ? `${joinNames(winners.map((p) => p.name))} share the win · ` : ""}
+        {top} {top === 1 ? "pt" : "pts"}
+        {best !== null && best !== undefined ? ` · best ${best} ms` : ""}
+      </p>
+    </div>
   );
 }
 
@@ -991,6 +1082,35 @@ function PlusOne() {
     >
       +1
     </span>
+  );
+}
+
+/** A number that counts up from 0 when it appears (instantly under reduced motion). */
+function CountUp({ value, ms = 450 }: { value: number; ms?: number }) {
+  const ref = useRef<HTMLSpanElement>(null);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      el.textContent = String(value);
+      return;
+    }
+    el.textContent = "0";
+    const t0 = performance.now();
+    let raf = 0;
+    const step = (t: number) => {
+      const k = Math.min(1, Math.max(0, (t - t0) / ms));
+      el.textContent = String(Math.round(value * (1 - Math.pow(1 - k, 3))));
+      if (k < 1) raf = requestAnimationFrame(step);
+    };
+    raf = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(raf);
+  }, [value, ms]);
+  return (
+    <>
+      <span ref={ref} aria-hidden />
+      <span className="sr-only">{value}</span>
+    </>
   );
 }
 
