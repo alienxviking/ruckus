@@ -109,7 +109,7 @@ export function Scoreboard({
                 <span className="w-4 text-right text-xs text-muted tabular-nums">{i + 1}</span>
                 <PlayerChip player={p} size="sm" dim={!p.connected} />
               </span>
-              <span className="font-mono font-bold tabular-nums">{scores[id] ?? 0}</span>
+              <span className="font-mono font-bold tabular-nums">{(scores[id] ?? 0).toLocaleString()}</span>
             </li>
           );
         })}
