@@ -256,18 +256,18 @@ export const CATALOG: GameMeta[] = [
   {
     id: "liars",
     name: "Liar's Dice",
-    tagline: "Hidden dice, rising bids, and one big call.",
+    tagline: "Hidden dice, rising bids, and one big call: Liar!",
     category: "board",
     minPlayers: 2,
     maxPlayers: 8,
-    minutes: 8,
+    minutes: 12,
     emoji: "🎲",
     accent: "#a3e635",
     isNew: true,
     how: [
-      "Everyone rolls hidden dice. Take turns bidding how many of a face are on the whole table. Ones are wild.",
-      "Raise the bid, or call Liar! on the last one. Whoever is wrong loses a die.",
-      "Lose all your dice and you're out. Last player with dice wins.",
+      "Everyone rolls hidden dice. Bid how many of a face are on the whole table; ones are wild.",
+      "On your turn, raise the bid (more dice, or a higher face) or call Liar! Whoever was wrong loses a die.",
+      "3+ players? Call Spot on for an exact count to win a die back. Last player holding dice wins.",
     ],
   },
   {
