@@ -1,0 +1,14 @@
+{
+  // Ruckus game server: one Durable Object per room (PartyServer on Cloudflare Workers).
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "ruckus",
+  "main": "party/server.ts",
+  "compatibility_date": "2026-10-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "durable_objects": {
+    "bindings": [{ "name": "Main", "class_name": "RuckusRoom" }]
+  },
+  // SQLite-backed Durable Objects are the ones included in the Workers free plan.
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["RuckusRoom"] }],
+  "observability": { "enabled": false }
+}

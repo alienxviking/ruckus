@@ -67,9 +67,11 @@ export class Limiter {
   }
 }
 
-/** Client IP as seen by Cloudflare. Missing in local dev, where nothing is limited. */
+/** Client IP as seen by Cloudflare. Local dev (no header, or loopback under wrangler dev) is never limited. */
 export function clientIp(req: { headers: { get(name: string): string | null } }): string | null {
-  return req.headers.get("cf-connecting-ip");
+  const ip = req.headers.get("cf-connecting-ip");
+  if (!ip || ip === "127.0.0.1" || ip === "::1" || ip === "::ffff:127.0.0.1") return null;
+  return ip;
 }
 
 /** Room ids a browser may reach: real codes (lowercased) and test rooms. Never "__…". */

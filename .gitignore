@@ -48,3 +48,6 @@ next-env.d.ts
 .partykit/
 # temporary review repro tests
 __review*
+
+.wrangler/
+.dev.vars

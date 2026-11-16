@@ -14,7 +14,7 @@ const eslintConfig = defineConfig([
     "next-env.d.ts",
     // Local screenshots and scratch scripts from the simulator/smoke tests.
     ".shots/**",
-    ".partykit/**",
+    ".partykit/**", "party/worker-configuration.d.ts", ".wrangler/**",
   ]),
 ]);
 

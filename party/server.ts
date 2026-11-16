@@ -1,4 +1,4 @@
-import type * as Party from "partykit/server";
+import { getServerByName, routePartykitRequest, Server, type Connection } from "partyserver";
 import type { GameCtx, GameDef } from "../shared/game";
 import {
   AVATARS,
@@ -34,14 +34,11 @@ const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json", ...CORS } });
 
 /** Ask the internal limiter room. Local dev has no client IP and is never limited. */
-async function allowed(
-  parties: Party.Context["parties"],
-  kind: LimitKind,
-  ip: string | null,
-): Promise<{ ok: true } | { ok: false; reason: string }> {
+async function allowed(env: Env, kind: LimitKind, ip: string | null): Promise<{ ok: true } | { ok: false; reason: string }> {
   if (!ip) return { ok: true };
   try {
-    const res = await parties.main.get(LIMITS_ROOM).fetch({ method: "POST", body: JSON.stringify({ kind, ip }) });
+    const stub = await getServerByName(env.Main, LIMITS_ROOM);
+    const res = await stub.fetch(new Request("https://limits.internal/", { method: "POST", body: JSON.stringify({ kind, ip }) }));
     return (await res.json()) as { ok: true } | { ok: false; reason: string };
   } catch {
     return { ok: true }; // never lock everyone out because the limiter hiccuped
@@ -61,24 +58,10 @@ interface ActiveGame {
  * player's secret key in "hello". Unverified sockets get nothing and can do nothing.
  */
 type ConnState = { verified: true };
-type Conn = Party.Connection<ConnState>;
+type Conn = Connection<ConnState>;
 
-export default class RuckusRoom implements Party.Server {
-  options: Party.ServerOptions = { hibernate: false };
-
-  /** Runs at the edge before a socket reaches a room: bad ids and connect floods stop here. */
-  static async onBeforeConnect(req: Party.Request, lobby: Party.Lobby) {
-    if (!isPublicRoomId(lobby.id)) return new Response("Not found", { status: 404 });
-    const verdict = await allowed(lobby.parties, "connect", clientIp(req));
-    if (!verdict.ok) return new Response(verdict.reason, { status: 429 });
-    return req;
-  }
-
-  /** HTTP to a room id that isn't public (e.g. the internal limiter) never gets through. */
-  static async onBeforeRequest(req: Party.Request, lobby: Party.Lobby) {
-    if (!isPublicRoomId(lobby.id)) return new Response("Not found", { status: 404 });
-    return req;
-  }
+export class RuckusRoom extends Server<Env> {
+  static options = { hibernate: false };
 
   /** Set when someone creates the room; joining a room nobody created is refused. */
   created = false;
@@ -113,12 +96,11 @@ export default class RuckusRoom implements Party.Server {
   /** Last game view JSON sent to each player id: unchanged views aren't re-sent. */
   lastView = new Map<string, string>();
 
-  constructor(readonly room: Party.Room) {}
 
   // ---------- connection lifecycle ----------
 
   onConnect(conn: Conn) {
-    const open = [...this.room.getConnections()].length;
+    const open = [...this.getConnections()].length;
     if (open > MAX_SOCKETS) {
       conn.close(4029, "room is full");
       return;
@@ -131,9 +113,9 @@ export default class RuckusRoom implements Party.Server {
    * HTTP API: POST creates the room (rate limited per IP, plus a daily global cap);
    * GET says whether it exists. The internal limiter room answers limit checks.
    */
-  async onRequest(req: Party.Request) {
+  async onRequest(req: Request) {
     if (req.method === "OPTIONS") return new Response(null, { headers: CORS });
-    if (this.room.id === LIMITS_ROOM) {
+    if (this.name === LIMITS_ROOM) {
       if (req.method !== "POST") return new Response("Not found", { status: 404 });
       const { kind, ip } = (await req.json()) as { kind: LimitKind; ip: string };
       if ((kind !== "create" && kind !== "connect") || typeof ip !== "string") return json({ ok: true });
@@ -143,7 +125,7 @@ export default class RuckusRoom implements Party.Server {
     if (req.method === "GET") return json({ exists });
     if (req.method === "POST") {
       if (exists) return json({ ok: true, existed: true });
-      const verdict = await allowed(this.room.context.parties, "create", clientIp(req));
+      const verdict = await allowed(this.env, "create", clientIp(req));
       if (!verdict.ok) return json({ ok: false, error: verdict.reason }, 429);
       this.created = true;
       this.emptySince = Date.now(); // nobody has joined yet: the usual empty-room rules apply
@@ -188,7 +170,7 @@ export default class RuckusRoom implements Party.Server {
     this.broadcastRoom();
   }
 
-  onMessage(raw: string | ArrayBuffer | ArrayBufferView, sender: Conn) {
+  onMessage(sender: Conn, raw: string | ArrayBuffer | ArrayBufferView) {
     if (typeof raw !== "string" || raw.length > 20_000) return;
     if (!this.allowMessage(sender.id)) {
       const n = (this.dropped.get(sender.id) ?? 0) + 1;
@@ -247,7 +229,7 @@ export default class RuckusRoom implements Party.Server {
 
     // Only rooms someone created can be joined (a mistyped code shouldn't make a new room).
     if (!this.created && this.players.size === 0) {
-      return this.reject(conn, `There's no room with the code ${this.room.id.toUpperCase()}. Check the code, or create a new room.`);
+      return this.reject(conn, `There's no room with the code ${this.name.toUpperCase()}. Check the code, or create a new room.`);
     }
     const existing = this.players.get(conn.id);
     if (!existing && this.players.size >= MAX_PLAYERS) {
@@ -474,14 +456,14 @@ export default class RuckusRoom implements Party.Server {
   }
 
   *verifiedConnections(): Generator<Conn> {
-    for (const conn of this.room.getConnections<ConnState>()) {
+    for (const conn of this.getConnections<ConnState>()) {
       if (conn.state?.verified) yield conn;
     }
   }
 
   roomView(withChat: boolean): RoomWire {
     return {
-      code: this.room.id,
+      code: this.name,
       hostId: this.hostId,
       players: [...this.players.values()],
       phase: this.phase,
@@ -605,3 +587,25 @@ function cleanText(input: unknown, max: number): string {
     .trim()
     .slice(0, max);
 }
+
+/**
+ * The Worker in front of the rooms: routes /parties/main/<room> to its Durable Object.
+ * Malformed room ids (and the internal limiter) are refused here, before any room starts,
+ * and WebSocket connects are rate limited per IP.
+ */
+export default {
+  async fetch(request: Request, env: Env): Promise<Response> {
+    const res = await routePartykitRequest(request, env, {
+      cors: true,
+      onBeforeConnect: async (req, lobby) => {
+        if (!isPublicRoomId(lobby.name)) return new Response("Not found", { status: 404 });
+        const verdict = await allowed(env, "connect", clientIp(req));
+        if (!verdict.ok) return new Response(verdict.reason, { status: 429 });
+      },
+      onBeforeRequest: (_req, lobby) => {
+        if (!isPublicRoomId(lobby.name)) return new Response("Not found", { status: 404 });
+      },
+    });
+    return res ?? new Response("Not found", { status: 404 });
+  },
+} satisfies ExportedHandler<Env>;
