@@ -31,6 +31,13 @@ Real-time party games for 2–12 friends in the browser. Make a room, send the l
 | Putt Panic | 2–8 | Mini golf where everyone putts at once and balls collide |
 | Canvas Clash | 2–8 | Paint your secret pixel emblem on a shared canvas and wreck everyone else's |
 | Double Cross | 3–10 | Split or steal, with private chats to make (and break) promises |
+| Outbreak | 3–12 | Real-time zombie tag: bites convert, survivors cure and slip through zombie-proof doors |
+| Floor is Lava | 2–8 | Hex tiles crumble into lava behind you; jump gaps, bump rivals, last one standing |
+| Snowball Showdown | 2–8 | Real-time snowball fights with arcing throws and crumbling forts |
+| Defuse | 2–8 | Co-op: one player sees the bomb, everyone else holds different torn pages of the manual |
+| Poll Position | 3–12 | Vote on silly polls and score by predicting how the room voted |
+| Emoji Charades | 3–12 | Describe a secret phrase using only emoji |
+| Monster Mashup | 3–12 | Draw a head, body or legs seeing only a sliver of the part above, then meet the monsters |
 
 ## Run it
 
@@ -81,6 +88,8 @@ browser ──websocket──▶ PartyKit room (one Durable Object per room code
   high-frequency data (strokes, snapshots, pixels) goes out as tiny events. Real-time games interpolate between server
   snapshots and predict your own movement locally, so your controls respond instantly.
 - **Quick recovery.** Fast reconnect backoff, plus an immediate reconnect when a phone wakes up or comes back online.
+- **Abuse limits.** Rooms must be created before anyone can join (a wrong code is refused). Room creation and
+  connections are rate-limited per IP, with a global daily cap on new rooms (party/limits.ts).
 - **Idle rooms sleep.** Timers stop once a room has been empty for 30 s, so an abandoned room stops using server time.
 
 ## Project layout
