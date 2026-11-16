@@ -1,0 +1,8 @@
+node_modules
+.next
+.shots
+.wrangler
+.partykit
+.git
+*.log
+__review*
