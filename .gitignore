@@ -51,3 +51,5 @@ __review*
 
 .wrangler/
 .dev.vars
+
+.vercel
