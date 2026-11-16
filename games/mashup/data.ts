@@ -1,0 +1,41 @@
+// Server-only: names the game gives a monster nobody named.
+
+export const AUTO_A = [
+  "Sir",
+  "Lady",
+  "Captain",
+  "Professor",
+  "Grandma",
+  "Baron",
+  "Little",
+  "Mighty",
+  "Doctor",
+  "Uncle",
+  "Princess",
+  "Count",
+  "Tiny",
+  "Big",
+  "Mister",
+  "Auntie",
+];
+
+export const AUTO_B = [
+  "Wobblesnout",
+  "Noodlefoot",
+  "Grumblebelly",
+  "Sockgobbler",
+  "Fizzlewump",
+  "Snorkelbottom",
+  "Puddlejaw",
+  "Squigglesworth",
+  "Toenail",
+  "Blobbington",
+  "Crumbmuncher",
+  "Flapdoodle",
+  "Gloopfang",
+  "Mumblecrust",
+  "Snugglehorn",
+  "Wigglebum",
+  "Zapperknees",
+  "Burpwhistle",
+];
