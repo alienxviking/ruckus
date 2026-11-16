@@ -15,8 +15,12 @@
     "e2e": "npx tsx scripts/e2e-games.mjs"
   },
   "dependencies": {
+    "@animate-ui/react": "^2.4.6",
+    "lucide-react": "^1.73.0",
+    "motion": "^14.14.0",
     "next": "16.4.6",
     "partysocket": "^1.3.0",
+    "radix-ui": "^1.8.1",
     "react": "19.3.0",
     "react-dom": "19.3.0"
   },
