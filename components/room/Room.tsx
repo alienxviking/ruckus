@@ -1,5 +1,7 @@
 "use client";
 
+import { MessageSquare, X } from "lucide-react";
+import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { preloadGame } from "@/games/client-registry";
@@ -11,8 +13,12 @@ import { Chat } from "./Chat";
 import { GameStage } from "./GameStage";
 import { Lobby } from "./Lobby";
 import { PlayerList } from "./PlayerList";
-import { ProfileForm, type ProfileValues } from "./ProfileForm";
+import type { ProfileValues } from "./ProfileForm";
 import { InviteButton } from "./InviteButton";
+
+// The animated profile dialog is fetched on first hover/focus of the profile button.
+const loadProfileDialog = () => import("./ProfileDialog");
+const ProfileDialog = dynamic(loadProfileDialog, { ssr: false });
 
 export function Room({
   code,
@@ -25,6 +31,8 @@ export function Room({
 }) {
   const r = useRoom(code, identity);
   const [editing, setEditing] = useState(false);
+  // Mounted from the first open on, so the dialog can animate out as well as in.
+  const [dialogMounted, setDialogMounted] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
   // Last chat line seen with the drawer open/closed, for the phone's unread dot.
   const [seenChat, setSeenChat] = useState<string | undefined>(undefined);
@@ -68,7 +76,12 @@ export function Room({
           <InviteButton code={code} />
           <button
             className="btn px-2.5 py-1.5"
-            onClick={() => setEditing(true)}
+            onPointerEnter={loadProfileDialog}
+            onFocus={loadProfileDialog}
+            onClick={() => {
+              setDialogMounted(true);
+              setEditing(true);
+            }}
             aria-label="Edit your name and look"
             title="Edit profile"
           >
@@ -88,11 +101,9 @@ export function Room({
 
       {r.rejected ? (
         <div className="grid flex-1 place-items-center px-4">
-          <div className="card animate-pop max-w-sm p-6 text-center" role="alert">
-            <div className="text-4xl" aria-hidden>
-              🚪
-            </div>
-            <p className="mt-3 font-display text-xl font-bold">Can&apos;t join this room</p>
+          <div className="card lit-edge animate-pop max-w-sm p-6 text-center" role="alert" style={{ "--accent": "var(--color-brand)" } as React.CSSProperties}>
+            <p className="label text-brand">Access denied</p>
+            <p className="mt-2 font-display text-xl font-bold">Can&apos;t join this room</p>
             <p className="mt-1 text-muted">{r.rejected}</p>
             <Link className="btn btn-primary mt-5" href="/">
               Back to start
@@ -104,9 +115,11 @@ export function Room({
           <div className="flex flex-col items-center gap-3">
             <span
               aria-hidden
-              className="size-8 rounded-full border-[3px] border-line border-t-brand motion-safe:animate-[spin_0.8s_linear_infinite]"
+              className="size-8 rounded-full border-2 border-line border-t-brand-2 motion-safe:animate-[spin_0.8s_linear_infinite]"
             />
-            {r.status === "closed" ? "Can't reach the game server. Retrying…" : "Joining the room…"}
+            <span className="font-mono text-xs tracking-wide">
+              {r.status === "closed" ? "Can't reach the game server. Retrying…" : "Joining the room…"}
+            </span>
           </div>
         </div>
       ) : (
@@ -131,7 +144,7 @@ export function Room({
                       aria-expanded={chatOpen}
                       aria-label={chatOpen ? "Close chat" : unread ? "Chat (new messages)" : "Chat"}
                     >
-                      <span aria-hidden>💬</span>
+                      <MessageSquare aria-hidden className="size-4" strokeWidth={2} />
                       {unread && (
                         <span aria-hidden className="absolute -top-1 -right-1 size-2.5 rounded-full bg-brand ring-2 ring-ink" />
                       )}
@@ -161,7 +174,8 @@ export function Room({
               onClick={toggleChat}
               aria-expanded={chatOpen}
             >
-              💬 {chatOpen ? "Close" : "Chat"}
+              {chatOpen ? <X aria-hidden className="size-4" strokeWidth={2.25} /> : <MessageSquare aria-hidden className="size-4" strokeWidth={2.25} />}
+              {chatOpen ? "Close" : "Chat"}
               {unread && <span aria-hidden className="ml-1 size-2 rounded-full bg-ink" />}
             </button>
           )}
@@ -175,7 +189,7 @@ export function Room({
                     onClick={toggleChat}
                     aria-label="Close chat"
                   >
-                    ✕
+                    <X aria-hidden className="size-3.5" strokeWidth={2.25} />
                   </button>
                 )}
               </div>
@@ -184,23 +198,16 @@ export function Room({
         </div>
       )}
 
-      {editing && (
-        <div
-          className="fixed inset-0 z-40 grid place-items-center bg-black/60 p-4 backdrop-blur-sm"
-          onClick={(e) => e.target === e.currentTarget && setEditing(false)}
-        >
-          <div className="card animate-pop w-full max-w-md p-5" role="dialog" aria-label="Edit profile">
-            <h2 className="mb-4 font-display text-xl font-bold">Your look</h2>
-            <ProfileForm
-              initial={identity}
-              submitLabel="Save"
-              onSubmit={(v) => {
-                onIdentity(v);
-                setEditing(false);
-              }}
-            />
-          </div>
-        </div>
+      {dialogMounted && (
+        <ProfileDialog
+          open={editing}
+          onOpenChange={setEditing}
+          initial={identity}
+          onSave={(v) => {
+            onIdentity(v);
+            setEditing(false);
+          }}
+        />
       )}
     </div>
   );

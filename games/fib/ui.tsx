@@ -182,7 +182,7 @@ export function FactCard({
     const look: Record<FillStyle, CSSProperties> = {
       preview: { color: "var(--color-text)", background: "var(--color-panel-2)", borderColor: "var(--color-line)" },
       pick: { color: "var(--color-text)", background: accent + "1c", borderColor: accent + "99" },
-      fib: { color: "var(--color-brand)", background: "rgb(255 93 115 / 0.12)", borderColor: "var(--color-brand)" },
+      fib: { color: "var(--color-brand)", background: "color-mix(in srgb, var(--color-brand) 12%, transparent)", borderColor: "var(--color-brand)" },
       truth: { color: accent, background: accent + "2e", borderColor: accent, boxShadow: `0 0 22px ${accent}55` },
     };
     blank = (
@@ -405,7 +405,7 @@ function StepCard({
     ? { borderColor: accent, background: `radial-gradient(120% 120% at 50% 0%, ${accent}33, transparent 70%), var(--color-panel-2)` }
     : o.kind === "house"
       ? { borderColor: "var(--color-muted)", background: "var(--color-panel-2)" }
-      : { borderColor: "rgb(255 93 115 / 0.7)", background: "radial-gradient(120% 120% at 50% 0%, rgb(255 93 115 / 0.16), transparent 70%), var(--color-panel-2)" };
+      : { borderColor: "color-mix(in srgb, var(--color-brand) 70%, transparent)", background: "radial-gradient(120% 120% at 50% 0%, color-mix(in srgb, var(--color-brand) 16%, transparent), transparent 70%), var(--color-panel-2)" };
   const ask: ReactNode = truth ? (
     <span className="inline-flex items-center gap-1.5">
       Who spotted it <Dots />
@@ -523,7 +523,7 @@ function OptionRow({
       style={{
         background: truth ? accent + "1f" : "var(--color-panel-2)",
         // Before its stamp lands the spotlighted row stays neutral, so the list can't spoil it.
-        borderColor: current ? (!revealed ? "var(--color-muted)" : o.kind === "truth" ? accent : "rgb(255 93 115 / 0.7)") : undefined,
+        borderColor: current ? (!revealed ? "var(--color-muted)" : o.kind === "truth" ? accent : "color-mix(in srgb, var(--color-brand) 70%, transparent)") : undefined,
       }}
     >
       <span className="flex items-center justify-between gap-2">

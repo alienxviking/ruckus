@@ -4,6 +4,7 @@
 
 import { useEffect, useState, type ReactNode } from "react";
 import type { Player } from "@/shared/types";
+import { RollingNumber } from "./RollingNumber";
 
 export function PlayerChip({
   player,
@@ -20,10 +21,13 @@ export function PlayerChip({
   const sm = size === "sm";
   return (
     <span
-      className={`inline-flex items-center gap-1.5 rounded-full border font-semibold ${
+      className={`inline-flex items-center gap-1.5 rounded-md border font-semibold ${
         sm ? "px-2 py-0.5 text-xs" : "px-2.5 py-1 text-sm"
       } ${dim ? "opacity-50" : ""}`}
-      style={{ borderColor: player.color + "66", background: player.color + "1f" }}
+      style={{
+        borderColor: player.color + "55",
+        background: `linear-gradient(180deg, ${player.color}24, ${player.color}10)`,
+      }}
     >
       <span aria-hidden>{player.avatar}</span>
       <span style={{ color: player.color }} className="max-w-[9rem] truncate">
@@ -63,7 +67,11 @@ export function TimerBar({
   color?: string;
 }) {
   return (
-    <div className="h-2 w-full overflow-hidden rounded-full bg-panel-2" role="progressbar" aria-label="Time left">
+    <div
+      className="h-2 w-full overflow-hidden rounded-full bg-panel-2 shadow-[inset_0_0_0_1px_var(--color-line)]"
+      role="progressbar"
+      aria-label="Time left"
+    >
       {endsAt && total > 0 ? (
         // Re-keyed per deadline: one compositor animation per phase, no per-tick renders.
         <TimerFill key={endsAt} endsAt={endsAt} total={total} serverNow={serverNow} color={color} />
@@ -83,7 +91,7 @@ function TimerFill({ endsAt, total, serverNow, color }: { endsAt: number; total:
       className={`h-full w-full origin-left rounded-full ${start.left > 0 ? "timer-fill" : ""}`}
       style={
         {
-          background: color,
+          background: `linear-gradient(90deg, color-mix(in oklab, ${color} 55%, transparent), ${color})`,
           transform: `scaleX(${start.left > 0 ? start.from : 0})`,
           animationDuration: `${start.left}ms`,
           "--from": start.from,
@@ -119,15 +127,15 @@ export function Scoreboard({
           return (
             <li
               key={id}
-              className={`flex items-center justify-between gap-2 rounded-lg px-2 py-1 ${
-                id === highlight ? "bg-panel-2" : ""
+              className={`flex items-center justify-between gap-2 rounded-md px-2 py-1 ${
+                id === highlight ? "bg-panel-2 shadow-[inset_2px_0_0_var(--color-brand-2)]" : ""
               }`}
             >
               <span className="flex min-w-0 items-center gap-2">
-                <span className="w-4 text-right text-xs text-muted tabular-nums">{i + 1}</span>
+                <span className="w-5 text-right font-mono text-[11px] text-muted tabular-nums">{String(i + 1).padStart(2, "0")}</span>
                 <PlayerChip player={p} size="sm" dim={!p.connected} />
               </span>
-              <span className="font-mono font-bold tabular-nums">{(scores[id] ?? 0).toLocaleString()}</span>
+              <RollingNumber value={scores[id] ?? 0} className="font-mono font-bold tabular-nums" />
             </li>
           );
         })}
@@ -140,8 +148,16 @@ export function Scoreboard({
 export function StatusBanner({ children, accent }: { children: ReactNode; accent?: string }) {
   return (
     <div
-      className="card animate-rise px-4 py-3 text-center font-display text-lg font-bold sm:text-xl"
-      style={accent ? { borderColor: accent + "66" } : undefined}
+      className="card lit-edge animate-rise px-4 py-3 text-center font-display text-lg font-bold tracking-tight sm:text-xl"
+      style={
+        accent
+          ? ({
+              "--accent": accent,
+              borderColor: accent + "55",
+              background: `linear-gradient(180deg, ${accent}12, transparent 70%), var(--color-panel)`,
+            } as React.CSSProperties)
+          : undefined
+      }
     >
       {children}
     </div>

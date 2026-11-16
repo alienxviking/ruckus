@@ -229,7 +229,7 @@ export const CATALOG: GameMeta[] = [
     maxPlayers: 2,
     minutes: 2,
     emoji: "❌",
-    accent: "#94a3b8",
+    accent: "#60a5fa",
     how: [
       "Take turns placing X or O.",
       "Three in a row wins the round. First to 3 rounds wins.",
@@ -328,7 +328,7 @@ export const CATALOG: GameMeta[] = [
     maxPlayers: 8,
     minutes: 4,
     emoji: "🤼",
-    accent: "#a5f3fc",
+    accent: "#22d3ee",
     original: true,
     how: [
       "Slide with WASD/arrows or hold the left half of the rink; Space, DASH or a right-half tap gives a burst.",
@@ -362,7 +362,7 @@ export const CATALOG: GameMeta[] = [
     maxPlayers: 8,
     minutes: 5,
     emoji: "🥸",
-    accent: "#cbd5e1",
+    accent: "#a78bfa",
     original: true,
     how: [
       "You are one trench-coated walker among 36 identical bots. Walk like them: straight lines, short pauses.",

@@ -1,5 +1,6 @@
 "use client";
 
+import { SendHorizontal } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { ClientMsg, Player, RoomView } from "@/shared/types";
 
@@ -27,23 +28,26 @@ export function Chat({
 
   return (
     <div className="card flex flex-col p-3">
-      <div className="label mb-2">Chat</div>
+      <div className="label mb-2 flex items-center gap-2 px-1">
+        Chat <span aria-hidden className="h-px flex-1 bg-line" />
+      </div>
       <ol
         ref={listRef}
-        className={`space-y-1 overflow-y-auto pr-1 text-sm ${compact ? "h-56" : "h-72"}`}
+        className={`space-y-1.5 overflow-x-hidden overflow-y-auto px-1 text-sm ${compact ? "h-56" : "h-72"}`}
         aria-live="polite"
       >
         {room.chat.map((m) => {
           if (!m.from) {
             return (
-              <li key={m.id} className="animate-rise text-xs text-muted">
-                {m.text}
+              <li key={m.id} className="animate-chat flex gap-1.5 font-mono text-[11px] text-muted">
+                <span aria-hidden className="text-brand-2/70">›</span>
+                <span className="min-w-0 break-words">{m.text}</span>
               </li>
             );
           }
           const p = byId[m.from];
           return (
-            <li key={m.id} className="animate-rise break-words">
+            <li key={m.id} className="animate-chat break-words">
               <span className="font-semibold" style={{ color: p?.color }}>
                 {p ? `${p.avatar} ${p.name}` : "someone"}
               </span>
@@ -73,7 +77,9 @@ export function Chat({
           value={text}
           onChange={(e) => setText(e.target.value)}
         />
-        <button className="btn px-3 py-1.5 text-sm">Send</button>
+        <button className="btn px-3 py-1.5 text-sm" aria-label="Send">
+          <SendHorizontal aria-hidden className="size-4" strokeWidth={2} />
+        </button>
       </form>
     </div>
   );

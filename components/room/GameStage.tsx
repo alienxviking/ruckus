@@ -4,7 +4,10 @@ import { CATALOG_BY_ID } from "@/games/catalog";
 import { GAME_CLIENTS } from "@/games/client-registry";
 import type { Player, RoomView } from "@/shared/types";
 import type { useRoom } from "@/lib/useRoom";
+import { Trophy } from "lucide-react";
 import { PlayerChip } from "../game-ui";
+import { GameBadge } from "../GameBadge";
+import { Magnetic } from "../Magnetic";
 import { Confetti } from "../Confetti";
 import { Component, useMemo, type ReactNode } from "react";
 
@@ -36,9 +39,12 @@ export function GameStage({
   return (
     <div className="flex flex-col gap-3">
       <div className="flex items-center justify-between gap-2">
-        <h1 className="flex items-center gap-2 font-display text-xl font-bold">
-          <span aria-hidden>{meta?.emoji}</span> {meta?.name}
-          {!isPlayer && <span className="rounded-full bg-panel-2 px-2 py-0.5 text-xs font-medium text-muted">watching</span>}
+        <h1 className="flex min-w-0 items-center gap-2.5 font-display text-xl font-bold tracking-tight">
+          {meta && <GameBadge id={meta.id} accent={meta.accent} size="sm" sheen />}
+          <span className="truncate">{meta?.name}</span>
+          {!isPlayer && (
+            <span className="label rounded-sm border border-line px-1.5 py-0.5 text-[10px]">watching</span>
+          )}
         </h1>
         <div className="flex shrink-0 items-center gap-2">
           {isHost && !room.result && (
@@ -69,7 +75,7 @@ export function GameStage({
               serverNow={r.serverNow}
               rtt={r.ping.get}
               onEvent={r.onEvent}
-              accent={meta?.accent ?? "#ff5d73"}
+              accent={meta?.accent ?? "#c6f432"}
             />
           </GameErrorBoundary>
         ) : (
@@ -96,41 +102,54 @@ function ResultBanner({
   accent?: string;
 }) {
   const result = room.result!;
+  const a = accent ?? "#c6f432";
   const iWon = result.winners.includes(me);
   return (
     <div
       role="status"
-      className="card animate-pop relative flex flex-col items-center gap-3 p-4 text-center sm:flex-row sm:justify-between sm:text-left"
-      style={{ borderColor: accent, background: `linear-gradient(135deg, ${accent}22, transparent 70%), var(--color-panel)` }}
+      className="card result-banner relative flex flex-col items-center gap-4 p-4 text-center sm:flex-row sm:justify-between sm:p-5 sm:text-left"
+      style={{
+        borderColor: a + "aa",
+        background: `radial-gradient(90% 140% at 0% 0%, ${a}2a, transparent 60%), var(--color-panel)`,
+        boxShadow: `0 0 0 1px ${a}33, 0 20px 50px -24px ${a}`,
+      }}
     >
+      <span aria-hidden className="banner-sweep" />
       {result.winners.length > 0 && <Confetti pieces={iWon ? 40 : 22} />}
-      <div>
-        {iWon && <div className="label mb-1 text-brand-2">You won! 🎉</div>}
-        <div className="font-display text-xl font-extrabold">
-          <span aria-hidden className="animate-trophy mr-1">
-            🏆
-          </span>{" "}
-          {result.headline}
+      <div className="flex flex-col items-center gap-3 sm:flex-row sm:items-center">
+        <span
+          aria-hidden
+          className="game-badge animate-trophy size-14 rounded-xl"
+          style={{ "--accent": "var(--color-brand-2)" } as React.CSSProperties}
+          data-sheen="true"
+        >
+          <Trophy className="glyph" strokeWidth={1.75} />
+        </span>
+        <div>
+          <div className={`label mb-1 ${iWon ? "text-brand-2" : ""}`}>{iWon ? "You won!" : "Game over"}</div>
+          <div className="font-display text-xl font-bold tracking-tight sm:text-2xl">{result.headline}</div>
+          {result.winners.length > 0 && (
+            <div className="mt-2 flex flex-wrap justify-center gap-1.5 sm:justify-start">
+              {result.winners.map((id) => (
+                <PlayerChip key={id} player={byId[id]} size="sm" />
+              ))}
+            </div>
+          )}
         </div>
-        {result.winners.length > 0 && (
-          <div className="mt-2 flex flex-wrap justify-center gap-1.5 sm:justify-start">
-            {result.winners.map((id) => (
-              <PlayerChip key={id} player={byId[id]} size="sm" />
-            ))}
-          </div>
-        )}
       </div>
       {isHost ? (
         <div className="flex gap-2">
-          <button className="btn btn-primary" onClick={() => r.send({ t: "start" })}>
-            Play again
-          </button>
+          <Magnetic>
+            <button className="btn btn-primary" onClick={() => r.send({ t: "start" })}>
+              Play again
+            </button>
+          </Magnetic>
           <button className="btn" onClick={() => r.send({ t: "lobby" })}>
             Pick another
           </button>
         </div>
       ) : (
-        <span className="text-sm text-muted">Waiting for the host…</span>
+        <span className="font-mono text-xs text-muted">Waiting for the host…</span>
       )}
     </div>
   );

@@ -1,5 +1,6 @@
 "use client";
 
+import { Check, Link2 } from "lucide-react";
 import { useState } from "react";
 
 export function InviteButton({ code }: { code: string }) {
@@ -23,7 +24,14 @@ export function InviteButton({ code }: { code: string }) {
   return (
     <button className="btn px-3 py-1.5" onClick={share} title="Copy invite link">
       <span className="font-mono font-bold tracking-[0.2em]">{code}</span>
-      <span className="text-xs text-muted">{copied ? "Copied!" : "Invite"}</span>
+      <span className={`flex items-center gap-1 text-xs ${copied ? "text-brand-2" : "text-muted"}`}>
+        {copied ? (
+          <Check aria-hidden className="animate-pop size-3.5" strokeWidth={2.5} />
+        ) : (
+          <Link2 aria-hidden className="size-3.5" strokeWidth={2} />
+        )}
+        {copied ? "Copied!" : "Invite"}
+      </span>
     </button>
   );
 }

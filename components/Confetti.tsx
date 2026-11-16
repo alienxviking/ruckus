@@ -1,7 +1,7 @@
 // CSS-only confetti burst: ~30 pieces animated with transform/opacity, no JS loop.
 // Positions come from the index (not Math.random) so renders stay pure.
 
-const COLORS = ["#ff5d73", "#ffb020", "#ffe14d", "#4ade80", "#38bdf8", "#c084fc", "#f472b6"];
+const COLORS = ["#c6f432", "#4ce0ff", "#ffffff", "#ff4769", "#a78bfa", "#facc15", "#34d399"];
 
 export function Confetti({ pieces = 30 }: { pieces?: number }) {
   return (
@@ -11,7 +11,7 @@ export function Confetti({ pieces = 30 }: { pieces?: number }) {
         return (
           <span
             key={i}
-            className="confetti-piece absolute top-0 block rounded-[2px]"
+            className="confetti-piece absolute top-0 block rounded-[1px]"
             style={
               {
                 left: `${4 + r(1) * 92}%`,

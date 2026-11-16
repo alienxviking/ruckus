@@ -56,8 +56,8 @@ export function RoomScreen() {
     return (
       <main className="mx-auto flex w-full max-w-md flex-1 flex-col justify-center gap-6 px-4 py-10">
         <Logo />
-        <div className="card p-5 sm:p-6">
-          <h1 className="font-display text-2xl font-bold">That link has no room code</h1>
+        <div className="glass lit-edge animate-rise p-5 sm:p-6">
+          <h1 className="font-hero text-xl font-extrabold tracking-[-0.03em] sm:text-2xl">That link has no room code</h1>
           <p className="mt-1 mb-5 text-sm text-muted">Room links look like /r/ABCDE. Make a new room or enter a code.</p>
           <Link href="/" className="btn btn-primary w-full py-3">
             Go to the start page
@@ -72,7 +72,7 @@ export function RoomScreen() {
       <main className="mx-auto flex w-full max-w-md flex-1 flex-col justify-center gap-6 px-4 py-10">
         <Logo />
         <div className="card p-5 sm:p-6" role="alert">
-          <h1 className="font-display text-2xl font-bold">No room called {code}</h1>
+          <h1 className="font-hero text-xl font-extrabold tracking-[-0.03em] sm:text-2xl">No room called {code}</h1>
           <p className="mt-1 mb-5 text-sm text-muted">
             The code may be mistyped, or everyone left and the room closed. Ask for a fresh link, or start your own.
           </p>
@@ -88,8 +88,8 @@ export function RoomScreen() {
     return (
       <main className="mx-auto flex w-full max-w-md flex-1 flex-col justify-center gap-6 px-4 py-10">
         <Logo />
-        <div className="card p-5 sm:p-6">
-          <h1 className="font-display text-2xl font-bold">Joining room {code}</h1>
+        <div className="glass lit-edge animate-rise p-5 sm:p-6">
+          <h1 className="font-hero text-xl font-extrabold tracking-[-0.03em] sm:text-2xl">Joining room {code}</h1>
           <p className="mt-1 mb-5 text-sm text-muted">Pick a name and a look. Saved on this device.</p>
           <ProfileForm submitLabel="Let's go" onSubmit={(v) => setOverride(saveIdentity(v))} />
         </div>

@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { newRoomCode, normalizeCode } from "@/lib/identity";
 import { createRoom, roomExists } from "@/lib/rooms";
+import { Magnetic } from "./Magnetic";
 
 export function HomeActions() {
   const router = useRouter();
@@ -45,14 +46,16 @@ export function HomeActions() {
   }, [router]);
 
   return (
-    <div className="card space-y-5 p-5 sm:p-6">
+    <div className="glass lit-edge space-y-5 p-5 sm:p-6">
       <div>
         <div className="label mb-2">Start fresh</div>
-        <button className="btn btn-primary w-full py-3 text-lg" onClick={create} disabled={busy !== null}>
-          {busy === "create" ? "Creating…" : "Create a room"}
-        </button>
+        <Magnetic>
+          <button className="btn btn-primary w-full py-3 text-lg" onClick={create} disabled={busy !== null}>
+            {busy === "create" ? "Creating…" : "Create a room"}
+          </button>
+        </Magnetic>
       </div>
-      <div className="flex items-center gap-3 text-xs text-muted">
+      <div className="label flex items-center gap-3 text-[10px]">
         <span className="h-px flex-1 bg-line" /> or join friends <span className="h-px flex-1 bg-line" />
       </div>
       <form

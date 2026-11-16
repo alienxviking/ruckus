@@ -36,8 +36,11 @@ export function ProfileForm({
       <div className="flex items-center gap-3">
         <span
           aria-hidden
-          className="grid size-14 shrink-0 place-items-center rounded-2xl text-3xl"
-          style={{ background: color + "26", boxShadow: `inset 0 0 0 2px ${color}` }}
+          className="grid size-14 shrink-0 place-items-center rounded-xl text-3xl transition-shadow duration-300"
+          style={{
+            background: `linear-gradient(180deg, ${color}33, ${color}10)`,
+            boxShadow: `inset 0 0 0 1.5px ${color}, inset 0 0 18px -4px ${color}, 0 10px 30px -14px ${color}`,
+          }}
         >
           {avatar}
         </span>
@@ -69,8 +72,8 @@ export function ProfileForm({
               aria-label={`Avatar ${a}`}
               aria-pressed={a === avatar}
               onClick={() => setAvatar(a)}
-              className={`grid aspect-square place-items-center rounded-lg text-xl transition-colors ${
-                a === avatar ? "bg-panel-2 ring-2 ring-text/70" : "hover:bg-panel-2"
+              className={`grid aspect-square place-items-center rounded-md text-xl transition-[background-color,transform] duration-200 active:scale-90 ${
+                a === avatar ? "bg-panel-2 ring-1 ring-brand-2" : "hover:bg-panel-2"
               }`}
             >
               {a}
@@ -89,7 +92,7 @@ export function ProfileForm({
               aria-label={`Colour ${c}`}
               aria-pressed={c === color}
               onClick={() => setColor(c)}
-              className={`size-8 rounded-full transition-transform ${c === color ? "scale-110 ring-2 ring-text ring-offset-2 ring-offset-panel" : "hover:scale-105"}`}
+              className={`size-8 rounded-md transition-transform duration-300 ease-[cubic-bezier(0.34,1.4,0.5,1)] ${c === color ? "scale-110 ring-2 ring-text ring-offset-2 ring-offset-panel" : "hover:scale-105"}`}
               style={{ background: c }}
             />
           ))}
