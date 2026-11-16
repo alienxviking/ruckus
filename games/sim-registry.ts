@@ -37,4 +37,11 @@ export const SIM_LOADERS: Record<string, () => Promise<Loaded>> = {
   putt: () => Promise.all([import("./putt/server"), import("./putt/client")]),
   pixels: () => Promise.all([import("./pixels/server"), import("./pixels/client")]),
   doublecross: () => Promise.all([import("./doublecross/server"), import("./doublecross/client")]),
+  outbreak: () => Promise.all([import("./outbreak/server"), import("./outbreak/client")]),
+  lava: () => Promise.all([import("./lava/server"), import("./lava/client")]),
+  snowball: () => Promise.all([import("./snowball/server"), import("./snowball/client")]),
+  defuse: () => Promise.all([import("./defuse/server"), import("./defuse/client")]),
+  poll: () => Promise.all([import("./poll/server"), import("./poll/client")]),
+  emojicharades: () => Promise.all([import("./emojicharades/server"), import("./emojicharades/client")]),
+  mashup: () => Promise.all([import("./mashup/server"), import("./mashup/client")]),
 };

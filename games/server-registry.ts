@@ -27,6 +27,13 @@ import potato from "./potato/server";
 import putt from "./putt/server";
 import pixels from "./pixels/server";
 import doublecross from "./doublecross/server";
+import outbreak from "./outbreak/server";
+import lava from "./lava/server";
+import snowball from "./snowball/server";
+import defuse from "./defuse/server";
+import poll from "./poll/server";
+import emojicharades from "./emojicharades/server";
+import mashup from "./mashup/server";
 
 export const GAME_DEFS: Record<string, GameDef> = {
   sketch,
@@ -56,4 +63,11 @@ export const GAME_DEFS: Record<string, GameDef> = {
   putt,
   pixels,
   doublecross,
+  outbreak,
+  lava,
+  snowball,
+  defuse,
+  poll,
+  emojicharades,
+  mashup,
 };
