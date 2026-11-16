@@ -4,6 +4,16 @@
 
 const HOST = process.env.PARTY_HOST ?? "localhost:1999";
 const room = "e2e" + Math.random().toString(36).slice(2, 7);
+// Rooms must be created before anyone can join (a mistyped code is refused).
+const created = await fetch(`http://${process.env.PARTY_HOST ?? "localhost:1999"}/parties/main/${room}`, { method: "POST" }).then((r) => r.json());
+if (!created.ok) throw new Error("couldn't create the room: " + JSON.stringify(created));
+{
+  // A code nobody created is refused.
+  const ghost = "nope" + Math.random().toString(36).slice(2, 7);
+  const exists = await fetch(`http://${process.env.PARTY_HOST ?? "localhost:1999"}/parties/main/${ghost}`).then((r) => r.json());
+  if (exists.exists) throw new Error("uncreated room reported as existing");
+  console.log("✓ uncreated room code reported as missing");
+}
 
 function client(id, name) {
   const ws = new WebSocket(`ws://${HOST}/parties/main/${room}?_pk=${id}`);

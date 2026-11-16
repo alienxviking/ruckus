@@ -106,6 +106,7 @@ const rows = [];
 async function runGame(g) {
   const n = Math.min(g.maxPlayers, Math.max(g.minPlayers, 3));
   const room = `e2e-${g.id}-${Math.random().toString(36).slice(2, 7)}`;
+  await fetch(`http://${HOST}/parties/main/${room}`, { method: "POST" });
   const clients = Array.from({ length: n }, (_, i) => client(room, `${g.id}p${i}`, `P${i}`));
   const label = `${g.emoji} ${g.name} (${n}p)`;
   try {

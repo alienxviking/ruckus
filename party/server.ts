@@ -14,6 +14,7 @@ import {
 } from "../shared/types";
 import { CATALOG_BY_ID } from "../games/catalog";
 import { GAME_DEFS } from "../games/server-registry";
+import { clientIp, isPublicRoomId, Limiter, LIMITS_ROOM, type LimitKind } from "./limits";
 
 const HOST_HANDOFF_MS = 8_000; // host must be gone this long before someone else takes over
 const REMOVE_AFTER_MS = 60_000; // disconnected lobby players disappear after this
@@ -23,6 +24,29 @@ const CHAT_BURST = 6; // chat messages allowed per window, per player
 const CHAT_WINDOW_MS = 5_000;
 const MSG_RATE = 60; // sustained messages/second per connection (drawing sends ~25/s)
 const MSG_BURST = 120;
+/** Sockets per room (12 players + spectators + spare tabs). */
+const MAX_SOCKETS = 30;
+/** A socket that keeps flooding past the rate limit is dropped. */
+const MAX_DROPPED = 200;
+
+const CORS = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Methods": "GET, POST, OPTIONS" };
+const json = (body: unknown, status = 200) =>
+  new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json", ...CORS } });
+
+/** Ask the internal limiter room. Local dev has no client IP and is never limited. */
+async function allowed(
+  parties: Party.Context["parties"],
+  kind: LimitKind,
+  ip: string | null,
+): Promise<{ ok: true } | { ok: false; reason: string }> {
+  if (!ip) return { ok: true };
+  try {
+    const res = await parties.main.get(LIMITS_ROOM).fetch({ method: "POST", body: JSON.stringify({ kind, ip }) });
+    return (await res.json()) as { ok: true } | { ok: false; reason: string };
+  } catch {
+    return { ok: true }; // never lock everyone out because the limiter hiccuped
+  }
+}
 
 interface ActiveGame {
   def: GameDef;
@@ -41,6 +65,27 @@ type Conn = Party.Connection<ConnState>;
 
 export default class RuckusRoom implements Party.Server {
   options: Party.ServerOptions = { hibernate: false };
+
+  /** Runs at the edge before a socket reaches a room: bad ids and connect floods stop here. */
+  static async onBeforeConnect(req: Party.Request, lobby: Party.Lobby) {
+    if (!isPublicRoomId(lobby.id)) return new Response("Not found", { status: 404 });
+    const verdict = await allowed(lobby.parties, "connect", clientIp(req));
+    if (!verdict.ok) return new Response(verdict.reason, { status: 429 });
+    return req;
+  }
+
+  /** HTTP to a room id that isn't public (e.g. the internal limiter) never gets through. */
+  static async onBeforeRequest(req: Party.Request, lobby: Party.Lobby) {
+    if (!isPublicRoomId(lobby.id)) return new Response("Not found", { status: 404 });
+    return req;
+  }
+
+  /** Set when someone creates the room; joining a room nobody created is refused. */
+  created = false;
+  /** Only used by the internal "__limits" room. */
+  limiter = new Limiter();
+  /** Messages dropped by the rate limiter, per connection id. */
+  dropped = new Map<string, number>();
 
   players = new Map<string, Player>();
   /** Secret key per player id, set by the first verified hello. */
@@ -72,9 +117,40 @@ export default class RuckusRoom implements Party.Server {
 
   // ---------- connection lifecycle ----------
 
-  onConnect() {
+  onConnect(conn: Conn) {
+    const open = [...this.room.getConnections()].length;
+    if (open > MAX_SOCKETS) {
+      conn.close(4029, "room is full");
+      return;
+    }
     // Nothing is sent until the client verifies itself with "hello".
     this.ensureHousekeeping();
+  }
+
+  /**
+   * HTTP API: POST creates the room (rate limited per IP, plus a daily global cap);
+   * GET says whether it exists. The internal limiter room answers limit checks.
+   */
+  async onRequest(req: Party.Request) {
+    if (req.method === "OPTIONS") return new Response(null, { headers: CORS });
+    if (this.room.id === LIMITS_ROOM) {
+      if (req.method !== "POST") return new Response("Not found", { status: 404 });
+      const { kind, ip } = (await req.json()) as { kind: LimitKind; ip: string };
+      if ((kind !== "create" && kind !== "connect") || typeof ip !== "string") return json({ ok: true });
+      return json(this.limiter.check(kind, ip, Date.now()));
+    }
+    const exists = this.created || this.players.size > 0;
+    if (req.method === "GET") return json({ exists });
+    if (req.method === "POST") {
+      if (exists) return json({ ok: true, existed: true });
+      const verdict = await allowed(this.room.context.parties, "create", clientIp(req));
+      if (!verdict.ok) return json({ ok: false, error: verdict.reason }, 429);
+      this.created = true;
+      this.emptySince = Date.now(); // nobody has joined yet: the usual empty-room rules apply
+      this.ensureHousekeeping();
+      return json({ ok: true });
+    }
+    return new Response("Method not allowed", { status: 405, headers: CORS });
   }
 
   onClose(conn: Conn) {
@@ -114,7 +190,12 @@ export default class RuckusRoom implements Party.Server {
 
   onMessage(raw: string | ArrayBuffer | ArrayBufferView, sender: Conn) {
     if (typeof raw !== "string" || raw.length > 20_000) return;
-    if (!this.allowMessage(sender.id)) return;
+    if (!this.allowMessage(sender.id)) {
+      const n = (this.dropped.get(sender.id) ?? 0) + 1;
+      this.dropped.set(sender.id, n);
+      if (n > MAX_DROPPED) sender.close(4008, "too many messages");
+      return;
+    }
     let msg: ClientMsg;
     try {
       msg = JSON.parse(raw);
@@ -164,6 +245,10 @@ export default class RuckusRoom implements Party.Server {
       : PLAYER_COLORS[this.players.size % PLAYER_COLORS.length];
     const avatar = (AVATARS as readonly string[]).includes(msg.avatar) ? msg.avatar : AVATARS[0];
 
+    // Only rooms someone created can be joined (a mistyped code shouldn't make a new room).
+    if (!this.created && this.players.size === 0) {
+      return this.reject(conn, `There's no room with the code ${this.room.id.toUpperCase()}. Check the code, or create a new room.`);
+    }
     const existing = this.players.get(conn.id);
     if (!existing && this.players.size >= MAX_PLAYERS) {
       return this.reject(conn, `This room is full (${MAX_PLAYERS} players).`);
