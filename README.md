@@ -43,7 +43,7 @@ Real-time party games for 2–12 friends in the browser. Make a room, send the l
 
 ```bash
 npm install
-npm run dev          # Next.js on :3000 + PartyKit game server on :1999
+npm run dev          # Next.js on :3000 + game server (wrangler dev) on :1999
 ```
 
 Open http://localhost:3000, create a room, and open the invite link in another browser (or a private window) to play
@@ -56,7 +56,7 @@ the firewall if prompted.
 ## How it works
 
 ```
-browser ──websocket──▶ PartyKit room (one Durable Object per room code)
+browser ──websocket──▶ PartyServer room (one Cloudflare Durable Object per room code)
                         ├─ players, host, chat, session win tally
                         └─ the active game: GameDef.setup / action / tick / view
 ```
@@ -132,15 +132,18 @@ The e2e and browser scripts need `npm run dev` running. Browser scripts use the 
 
 ## Deploy
 
-1. **Game server:** `npx partykit login`, then `npm run deploy:party`. It prints a host like
-   `ruckus.<your-username>.partykit.dev`.
-2. **Website:** deploy the Next.js app (e.g. Vercel) with the environment variable
-   `NEXT_PUBLIC_PARTYKIT_HOST=ruckus.<your-username>.partykit.dev`. On another host, also set `NEXT_PUBLIC_SITE_URL`
-   to the site's public URL so shared links show the preview image (see `.env.example`).
+Live: the website on Vercel, the game server on Cloudflare Workers (free plans).
 
-The website itself never needs a WebSocket server, so it runs on any static/serverless host.
+1. **Game server** (PartyServer Durable Objects on your Cloudflare account): `npx wrangler login`, then
+   `npm run deploy:party`. It prints a host like `ruckus.<your-subdomain>.workers.dev`.
+2. **Website**: the GitHub repo is connected to Vercel, so every push to `master` deploys. The project needs the
+   environment variable `NEXT_PUBLIC_PARTYKIT_HOST=ruckus.<your-subdomain>.workers.dev`. On another host, also set
+   `NEXT_PUBLIC_SITE_URL` to the site's public URL so shared links show the preview image (see `.env.example`).
+
+Locally, `npm run dev` runs Next.js on :3000 and `wrangler dev` (the game server) on :1999.
 
 **Staying on free tiers.** The site is static apart from the dev-only simulator, so it fits easily in a free Vercel
 (Hobby) project. The room server keeps everything in memory (no storage). On Cloudflare's free Workers plan, Durable
 Objects allow 100k requests and 13,000 GB-s of room time per day. Incoming WebSocket messages count 20:1 and outgoing ones
 are free, so the binding limit is how long rooms stay open: roughly 29 room-hours a day, which is plenty for friends.
+Free plans never bill: if a daily limit were hit, rooms would stop until the reset at 00:00 UTC.
