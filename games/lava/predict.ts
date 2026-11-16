@@ -13,11 +13,15 @@
 
 import { JUMP_CD_MS, JUMP_CD_STEPS, JUMP_MS, SUB_MS, TICK_MS, faceCentre, jumpAge } from "./shared";
 import { BRAKE_FRICTION, FRICTION, applyJump, integrate, type Kin } from "./physics";
+import { LeadFilter } from "../snakes/netsmooth";
 
-/** Never replay further than this past the newest snapshot (ms): a stalled connection freezes you. */
-export const MAX_PREDICT_MS = 400;
+/**
+ * Never replay further than this past the newest snapshot (ms): a stalled connection freezes you.
+ * Generous, because real connections deliver in bunches after gaps of 0.5-1.5 s, and your avatar
+ * has to keep moving through those gaps instead of freezing and then jumping.
+ */
+export const MAX_PREDICT_MS = 1_500;
 const MAX_EVENTS = 64;
-const LEAD_ALPHA = 0.2;
 /** Before the first acknowledgement and without a measured round trip: a typical phone one (ms). */
 const LEAD_GUESS = 80;
 
@@ -58,7 +62,7 @@ export class LavaPredictor {
   seq = 0;
   events: InputEvent[] = [];
   base: Base | null = null;
-  private leadEst = NaN;
+  private readonly leadF = new LeadFilter(-60, 1_200, { quantile: 0.5, margin: 0, keep: 24, ttl: 30_000, slew: 0.05 });
   /** Round over / match over: players skid to a stop and can't be steered. */
   decided = false;
   clock: ClockLike | null = null;
@@ -119,7 +123,7 @@ export class LavaPredictor {
   }
 
   /** The server acknowledged input `seq` as taking effect from sim time `t`. */
-  ack(seq: number, t: number) {
+  ack(seq: number, t: number, perf: number = performance.now()) {
     for (const ev of this.events) {
       if (ev.seq > seq) break;
       if (ev.t !== null) continue;
@@ -127,9 +131,8 @@ export class LavaPredictor {
         ev.t = t;
         if (Number.isFinite(ev.sent)) {
           const sample = t - ev.sent;
-          if (sample > -200 && sample < 1_000) {
-            this.leadEst = Number.isNaN(this.leadEst) ? sample : this.leadEst + (sample - this.leadEst) * LEAD_ALPHA;
-          }
+          // Filtered (median, hysteresis, slewed): one slow or quick input mustn't shove your avatar.
+          if (sample > -200 && sample < 2_000) this.leadF.add(sample, perf);
         }
       } else {
         ev.t = Math.min(t, Number.isFinite(ev.sent) ? ev.sent + this.lead() : t);
@@ -138,8 +141,9 @@ export class LavaPredictor {
   }
 
   /** ms from your clock to the sim time an input sent now takes effect. */
-  lead(): number {
-    if (!Number.isNaN(this.leadEst)) return this.leadEst;
+  lead(perf?: number): number {
+    const v = this.leadF.value(perf);
+    if (!Number.isNaN(v)) return v;
     const rtt = this.rtt?.();
     if (typeof rtt === "number" && Number.isFinite(rtt) && rtt >= 0) return Math.max(0, rtt - TICK_MS / 2);
     return LEAD_GUESS;
@@ -229,35 +233,5 @@ export class LavaPredictor {
   /** Facing for the next jump with no stick (unit vector). */
   facing(): [number, number] {
     return [this.faceX, this.faceY];
-  }
-}
-
-// ---------- adaptive playback delay ----------
-
-const JITTER_WINDOW = 40;
-
-/**
- * How far behind the quickest delivery everyone else is drawn: one frame interval plus the
- * 90th percentile of how late frames run behind the quickest one.
- */
-export class JitterDelay {
-  private late: number[] = [];
-  value: number;
-  constructor(
-    readonly min = 55,
-    readonly max = 120,
-    start = 100,
-  ) {
-    this.value = start;
-  }
-
-  add(ms: number) {
-    if (!Number.isFinite(ms)) return;
-    this.late.push(Math.max(0, ms));
-    if (this.late.length > JITTER_WINDOW) this.late.shift();
-    if (this.late.length < 8) return;
-    const sorted = this.late.slice().sort((a, b) => a - b);
-    const p90 = sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * 0.9))];
-    this.value = Math.min(this.max, Math.max(this.min, TICK_MS + p90 + 8));
   }
 }

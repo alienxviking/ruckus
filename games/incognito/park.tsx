@@ -39,11 +39,14 @@ import {
   type Park as ParkMap,
   type Snap,
 } from "./shared";
+import { Timeline, Trail, debugFrame, reconcile } from "../snakes/netsmooth";
 
 const TAU = Math.PI * 2;
 /** Playback sits this far behind the newest frame the network could have delivered. */
 const DELAY_MS = 100;
 const EXTRAP_MS = 150;
+/** You vs the server's copy: path errors under `tol` are rounding, over `snap` a teleport. */
+const RECONCILE = { tol: 6, snap: 200, tauMs: 150 };
 const KEEP_MS = 500;
 const MAX_FRAMES = 60;
 const PULSE_MS = 1_400;
@@ -76,36 +79,23 @@ interface Frame {
   f: number[][] | null;
 }
 
-/** Maps server time onto performance.now(), smoothly. */
-class Clock {
-  target = 0;
-  offset = 0;
-  ready = false;
-  at = -1;
-
-  observe(t: number, now: number) {
-    const s = now - t;
-    if (!this.ready || Math.abs(s - this.target) > 750) {
-      this.target = s;
-      this.offset = s;
-      this.ready = true;
-      return;
-    }
-    // Trust a quicker delivery at once; let a slower trend creep in.
-    this.target = s < this.target ? s : this.target + (s - this.target) * 0.03;
+/**
+ * Maps server time onto performance.now(), smoothly (see snakes/netsmooth.ts): playback follows
+ * the quickest recent delivery, runs behind it by an adaptive delay that covers the measured
+ * jitter (rising promptly, falling only after a calm spell), and slews by a few percent at most.
+ */
+class Clock extends Timeline {
+  constructor() {
+    super({ period: TICK_MS, start: DELAY_MS, min: TICK_MS + 15, max: 650 });
   }
 
-  /** Server time on screen (DELAY_MS behind). */
-  tick(now: number) {
-    const dt = this.at < 0 ? 0 : Math.min(100, Math.max(0, now - this.at));
-    this.at = now;
-    const diff = this.target - this.offset;
-    if (Math.abs(diff) > 400) this.offset = this.target;
-    else {
-      const max = dt * 0.08;
-      this.offset += Math.max(-max, Math.min(max, diff));
-    }
-    return now - this.offset - DELAY_MS;
+  /**
+   * Playback time for this animation frame: at most a tick's worth of extrapolation past the newest
+   * frame in hand; if the buffer runs drier than that, playback waits (up to 200 ms) instead of
+   * extrapolating further and snapping back, then carries on smoothly.
+   */
+  play(now: number, frames: { t: number }[]) {
+    return this.tick(now, frames.length ? frames[frames.length - 1].t : Infinity, TICK_MS, 200);
   }
 }
 
@@ -200,6 +190,9 @@ interface Scene {
   anim: Anim[];
   pos: number[];
   pred: Pred;
+  /** Where you've walked (for reconciling with the server's old copy of you). */
+  trail: Trail;
+  err: { x: number; y: number };
   pulses: { l: number; t0: number }[];
   bursts: { l: number; t0: number }[];
   sparks: Spark[];
@@ -238,6 +231,8 @@ function newScene(): Scene {
     anim: [],
     pos: [],
     pred: { x: 0, y: 0, vx: 0, vy: 0, ready: false, round: -1, w: -1, at: -1, stillMs: 0, farMs: 0, lm: -1, lmAt: 0 },
+    trail: new Trail(3_000),
+    err: { x: 0, y: 0 },
     pulses: [],
     bursts: [],
     sparks: [],
@@ -861,7 +856,7 @@ function drawScene(g: CanvasRenderingContext2D, sc: Scene, S: Surface, d: ParkDa
   const { dpr, W, H } = S;
   const dt = sc.last < 0 ? 0 : Math.min(0.1, (now - sc.last) / 1000);
   sc.last = now;
-  const rt = sc.clock.tick(now);
+  const rt = sc.clock.play(now, sc.frames);
   sc.rt = rt;
   const frames = sc.frames;
   while (frames.length > 2 && frames[1].t < rt - KEEP_MS) frames.shift();
@@ -898,6 +893,7 @@ function drawScene(g: CanvasRenderingContext2D, sc: Scene, S: Surface, d: ParkDa
     const syw = latest.xy[mine * 2 + 1];
     if (!me.ready || me.round !== view.round || me.w !== mine) {
       Object.assign(me, { x: sxw, y: syw, vx: 0, vy: 0, ready: true, round: view.round, w: mine, at: now, stillMs: 0, farMs: 0, lm: -1 });
+      sc.trail.clear();
     }
     const sdt = Math.min(0.1, Math.max(0, (now - me.at) / 1000));
     me.at = now;
@@ -909,24 +905,12 @@ function drawScene(g: CanvasRenderingContext2D, sc: Scene, S: Surface, d: ParkDa
     const serverStill = !!prev && prev.n === latest.n && prev.xy[mine * 2] === sxw && prev.xy[mine * 2 + 1] === syw;
     const localStill = sc.ix === 0 && sc.iy === 0 && Math.hypot(me.vx, me.vy) < 1;
     me.stillMs = localStill ? me.stillMs + sdt * 1000 : 0;
-    const ex = sxw - me.x;
-    const ey = syw - me.y;
-    const err = Math.hypot(ex, ey);
-    if (err > 160) {
-      me.x = sxw;
-      me.y = syw;
-    } else if (serverStill && me.stillMs > 120 && err > 0.3) {
-      const k = 1 - Math.exp(-sdt / 0.12);
-      me.x += ex * k;
-      me.y += ey * k;
-    } else if (err > 36 + Math.hypot(me.vx, me.vy) * 0.5) {
-      me.farMs += sdt * 1000;
-      if (me.farMs > 300) {
-        const k = 1 - Math.exp(-sdt / 0.2);
-        me.x += ex * k;
-        me.y += ey * k;
-      }
-    } else me.farMs = 0;
+    // The server's copy is old by a jittery network trip (often 100-600 ms), so it's compared
+    // with the path you actually walked, not with where you are now: latency isn't an error,
+    // only being blocked on the server is, and that's eased out, not snapped.
+    sc.trail.push(now, me.x, me.y);
+    reconcile(me, sc.trail, sxw, syw, sdt * 1000, { ...RECONCILE, still: serverStill && me.stillMs > 120 }, sc.err);
+    debugFrame("incognito", { t: now, x: me.x, y: me.y, rt });
   } else me.ready = false;
 
   // Snipe records: who's down, who's exposed, which bots shrug.

@@ -13,6 +13,8 @@ import game, {
   type SnakeView,
 } from "./server";
 import { SnakePredictor, emptyShape } from "./predict";
+import { Timeline } from "./netsmooth";
+import { WIFI, WIFI_BAD, burstyLink, fixedLink, type Link } from "./netsim";
 import { applyDelta, hear, isSnakeEvent, nothingHeard, rebuild, type Heard } from "./delta";
 import {
   COUNTDOWN_MS,
@@ -1051,6 +1053,12 @@ interface NetResult {
   corrections: number;
   late: number;
   lead: number;
+  /** Seconds of play measured (after calibration). */
+  secs: number;
+  /** Per 16 ms frame: |head movement drawn - one cell per step| (cells), and the frames where it jumped (> 0.3) or stalled. */
+  jitter: number[];
+  snaps: number;
+  stalls: number;
 }
 
 /**
@@ -1058,7 +1066,11 @@ interface NetResult {
  * of one-way delay and a client clock that is `skew` ms off. The other snake drives safely.
  */
 const res0 = { views: 0, events: 0 };
-function netGame(up: number, down: number, skew: number, seed: number): NetResult {
+function netGame(up: number | Link, down: number | Link, skew: number, seed: number, opts: { clock?: boolean; secs?: number } = {}): NetResult {
+  const upLink = typeof up === "number" ? fixedLink(up) : up;
+  const downLink = typeof down === "number" ? fixedLink(down) : down;
+  // The renderer's clock (snakes/netsmooth.ts), fed with the step timestamps as frames arrive.
+  const tl = opts.clock ? new Timeline({ period: TICK_MS, start: TICK_MS + 90, min: TICK_MS + 10, max: 700 }) : null;
   const h = start(2, seed);
   const [me, other] = h.t.ids;
   quiet(h);
@@ -1066,15 +1078,16 @@ function netGame(up: number, down: number, skew: number, seed: number): NetResul
   // The other snake chases its tail round a 2x2 square forever, so the round never ends.
   place(h, other, [[3, 3], [3, 4], [4, 4], [4, 3]], "up");
   const pred = new SnakePredictor();
+  if (tl) pred.attachClock(tl);
   // What reaches the client: full views (when tick() returns true) and events (deltas, echoes).
   const toClient: { at: number; v?: SnakeView; e?: unknown }[] = [];
   const toServer: { at: number; a: SnakeAction }[] = [];
-  const send = () => toClient.push({ at: h.t.ctx.now() + down, v: JSON.parse(JSON.stringify(viewOf(h, me))) });
+  const send = () => toClient.push({ at: downLink.send(h.t.ctx.now()), v: JSON.parse(JSON.stringify(viewOf(h, me))) });
   let seen = 0;
   const flushEvents = () => {
     for (; seen < h.t.events.length; seen++) {
       const ev = h.t.events[seen];
-      if (!ev.to || ev.to === me) toClient.push({ at: h.t.ctx.now() + down, e: JSON.parse(JSON.stringify(ev.event)) });
+      if (!ev.to || ev.to === me) toClient.push({ at: downLink.send(h.t.ctx.now()), e: JSON.parse(JSON.stringify(ev.event)) });
     }
   };
   let base: SnakeView | null = null;
@@ -1085,14 +1098,18 @@ function netGame(up: number, down: number, skew: number, seed: number): NetResul
   let rnd = seed * 9301 + 49297;
   const rand = () => ((rnd = (rnd * 233280 + 49297) % 2147483647) / 2147483647);
   const square: Dir[] = ["up", "left", "down", "right"];
-  const res: NetResult = { presses: 0, accepted: 0, latency: [], corrections: 0, late: 0, lead: 0 };
+  const res: NetResult = { presses: 0, accepted: 0, latency: [], corrections: 0, late: 0, lead: 0, secs: 0, jitter: [], snaps: 0, stalls: 0 };
+  let frameAt = -1;
+  let frameX = NaN;
+  let frameY = NaN;
+  const drawn = emptyShape();
   const watching: { dir: Dir; at: number }[] = [];
   let nextTick = h.t.ctx.now() + TICK_MS;
   let nextPress = h.t.ctx.now() + 3_300;
   let turn = 0;
   let lastRx = 0;
   const sh = emptyShape();
-  const end = h.t.ctx.now() + 3_000 + 7_000;
+  const end = h.t.ctx.now() + 3_000 + (opts.secs ?? 7) * 1_000;
   for (let now = h.t.ctx.now(); now < end && h.s.phase !== "final"; now += 2) {
     h.t.advance(now - h.t.ctx.now());
     const cnow = now + skew;
@@ -1111,13 +1128,15 @@ function netGame(up: number, down: number, skew: number, seed: number): NetResul
       const msg = toClient.shift()!;
       if (msg.v) {
         base = msg.v;
+        if (tl && msg.v.phase === "play" && typeof msg.v.at === "number") tl.observe(msg.v.at, now);
         res0.views += 1;
       } else if (isSnakeEvent(msg.e)) {
         heard = hear(heard, msg.e);
+        if (tl && msg.e.k === "d") tl.observe(msg.e.at, now);
         res0.events += 1;
       }
       const built = rebuild(base, heard, me);
-      assert(!built.gap, "no missing steps on a reliable link");
+      assert(!built.gap, "no missing steps on a reliable (in-order) link");
       const v = built.view;
       if (!v) continue;
       const tau = pred.advance(now, cnow);
@@ -1130,7 +1149,24 @@ function netGame(up: number, down: number, skew: number, seed: number): NetResul
         if (calibrated && v.me[2] < 0) res.late += 1;
       }
     }
+    tl?.tick(now);
     const tau = pred.advance(now, cnow);
+    // What the screen shows, once per 16 ms frame: a steady glide of one cell per step.
+    if (now - frameAt >= 16 && h.s.phase === "play") {
+      if (pred.shapeSmooth(tau, drawn) && !drawn.lunge) {
+        if (calibrated && frameAt >= 0 && !Number.isNaN(frameX)) {
+          const want = (now - frameAt) / TICK_MS;
+          const moved = Math.hypot(drawn.hx - frameX, drawn.hy - frameY);
+          res.jitter.push(Math.abs(moved - want));
+          if (moved - want > 0.3) res.snaps += 1;
+          if (moved < want * 0.5) res.stalls += 1;
+          res.secs += (now - frameAt) / 1000;
+        }
+        frameX = drawn.hx;
+        frameY = drawn.hy;
+      } else frameX = NaN;
+      frameAt = now;
+    }
     if (pred.shape(tau, sh)) {
       for (let i = watching.length - 1; i >= 0; i--) {
         const [dx, dy] = DELTA[watching[i].dir];
@@ -1149,7 +1185,7 @@ function netGame(up: number, down: number, skew: number, seed: number): NetResul
         turn += 1;
         res.accepted += 1;
         watching.push({ dir, at: now });
-        toServer.push({ at: now + up, a: { type: "turn", dir, ...stamp } });
+        toServer.push({ at: upLink.send(now), a: { type: "turn", dir, ...stamp } });
       }
     }
   }
@@ -1176,6 +1212,30 @@ for (const [up, down, skew] of [
   assert(r.corrections === 0, `${label}: no corrections once calibrated (${r.corrections})`);
   assert(r.late === 0, `${label}: turns arrive in time (${r.late} late)`);
   assert(r.lead >= up - skew && r.lead <= up - skew + 40, `${label}: lead tracks clock error + uplink (${r.lead.toFixed(0)})`);
+}
+
+// ---------- the same over a jittery, bursty link (what the live server sees from Wi-Fi) ----------
+// Deliveries stall for 80-900 ms and then land in a bunch, on a ~100-200 ms grid. Your snake must
+// still glide one cell per step on screen: no freezes while frames are missing, no jumps when the
+// bunch lands, and few corrections (only a turn that arrived after its step is ever corrected).
+const q95 = (a: number[]) => [...a].sort((x, y) => x - y)[Math.floor(a.length * 0.95)] ?? 0;
+// Limits per second of play: [jumps, freezes, corrections]. On the bad link some turns can't reach
+// the server in time at all (uplink stalls of a second); those are corrected, smoothly.
+for (const [name, link, seed, lim] of [
+  ["wifi", WIFI, 11, [0.3, 1, 0.8]],
+  ["wifi", WIFI, 12, [0.3, 1, 0.8]],
+  ["bad wifi", WIFI_BAD, 13, [1, 2.5, 2.5]],
+] as const) {
+  const r = netGame(burstyLink(seed, link), burstyLink(seed + 100, link), 0, 3, { clock: true, secs: 14 });
+  const label = `net ${name} #${seed}`;
+  const p95 = q95(r.jitter);
+  if (process.env.NET_VERBOSE)
+    console.log(label, { p95: p95.toFixed(3), snapsPerS: (r.snaps / r.secs).toFixed(2), stallsPerS: (r.stalls / r.secs).toFixed(2), corrPerS: (r.corrections / r.secs).toFixed(2), late: r.late, lead: r.lead.toFixed(0), accepted: r.accepted });
+  assert(r.accepted >= 20, `${label}: enough turns (${r.accepted})`);
+  assert(p95 < 0.12, `${label}: your head glides evenly (p95 ${p95.toFixed(3)} cells/frame off)`);
+  assert(r.snaps / r.secs < lim[0], `${label}: no jumps (${r.snaps} in ${r.secs.toFixed(0)}s)`);
+  assert(r.stalls / r.secs < lim[1], `${label}: no freezes while frames are late (${r.stalls} in ${r.secs.toFixed(0)}s)`);
+  assert(r.corrections / r.secs < lim[2], `${label}: few corrections (${r.corrections} in ${r.secs.toFixed(0)}s)`);
 }
 
 // ---------- the predictor: validation, eyes and hint at once, predicted crash ----------

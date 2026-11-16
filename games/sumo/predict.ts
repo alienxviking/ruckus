@@ -13,11 +13,15 @@
 
 import { CENTER, TICK_MS } from "./shared";
 import { BRAKE_FRICTION, FRICTION, SUB_MS, applyDash, integrate, keepOnIce, type Kin } from "./physics";
+import { LeadFilter } from "../snakes/netsmooth";
 
-/** Never replay further than this past the newest snapshot (ms): a stalled connection freezes you. */
-export const MAX_PREDICT_MS = 400;
+/**
+ * Never replay further than this past the newest snapshot (ms): a stalled connection freezes you.
+ * Generous, because real connections deliver in bunches after gaps of 0.5-1.5 s, and your avatar
+ * has to keep moving through those gaps instead of freezing and then jumping.
+ */
+export const MAX_PREDICT_MS = 1_500;
 const MAX_EVENTS = 64;
-const LEAD_ALPHA = 0.2;
 /** Before the first acknowledgement and without a measured round trip: a typical phone one (ms). */
 const LEAD_GUESS = 80;
 
@@ -60,7 +64,7 @@ export class SumoPredictor {
   events: InputEvent[] = [];
   base: Base | null = null;
   /** Sim time your newest input takes effect, minus your clock when you sent it (ms). */
-  private leadEst = NaN;
+  private readonly leadF = new LeadFilter(-60, 1_200, { quantile: 0.5, margin: 0, keep: 24, ttl: 30_000, slew: 0.05 });
   /** Round over / match over: discs brake and can't be steered. */
   decided = false;
   clock: ClockLike | null = null;
@@ -119,7 +123,7 @@ export class SumoPredictor {
   }
 
   /** The server acknowledged input `seq` as taking effect from sim time `t`. */
-  ack(seq: number, t: number) {
+  ack(seq: number, t: number, perf: number = performance.now()) {
     for (const ev of this.events) {
       if (ev.seq > seq) break;
       if (ev.t !== null) continue;
@@ -127,9 +131,8 @@ export class SumoPredictor {
         ev.t = t;
         if (Number.isFinite(ev.sent)) {
           const sample = t - ev.sent;
-          if (sample > -200 && sample < 1_000) {
-            this.leadEst = Number.isNaN(this.leadEst) ? sample : this.leadEst + (sample - this.leadEst) * LEAD_ALPHA;
-          }
+          // Filtered (median, hysteresis, slewed): one slow or quick input mustn't shove your avatar.
+          if (sample > -200 && sample < 2_000) this.leadF.add(sample, perf);
         }
       } else {
         // Overwritten before the server's next tick: it took effect no later than this one.
@@ -139,8 +142,9 @@ export class SumoPredictor {
   }
 
   /** ms from your clock to the sim time an input sent now takes effect. */
-  lead(): number {
-    if (!Number.isNaN(this.leadEst)) return this.leadEst;
+  lead(perf?: number): number {
+    const v = this.leadF.value(perf);
+    if (!Number.isNaN(v)) return v;
     // Until an input has been acknowledged: the room's measured round trip. An input lands about
     // one round trip after the quickest snapshot time, less the half tick the server backdates it.
     const rtt = this.rtt?.();
@@ -240,38 +244,5 @@ export class SumoPredictor {
   dashDir(stickX: number, stickY: number, k: Kin): [number, number] {
     const probe: Kin = { x: 0, y: 0, vx: k.vx, vy: k.vy };
     return applyDash(probe, stickX, stickY, this.faceX, this.faceY);
-  }
-}
-
-// ---------- adaptive playback delay ----------
-
-const JITTER_WINDOW = 40;
-
-/**
- * How far behind the quickest delivery everyone else's discs are drawn. A frame is needed on
- * both sides of the playback time, so the delay must cover one frame interval plus how late
- * frames typically run behind the quickest one: the 90th percentile of recent lateness.
- */
-export class JitterDelay {
-  private late: number[] = [];
-  /** Current target (ms). */
-  value: number;
-  constructor(
-    readonly min = 55,
-    readonly max = 120,
-    start = 100,
-  ) {
-    this.value = start;
-  }
-
-  /** A frame arrived `ms` later than the quickest delivery would have brought it. */
-  add(ms: number) {
-    if (!Number.isFinite(ms)) return;
-    this.late.push(Math.max(0, ms));
-    if (this.late.length > JITTER_WINDOW) this.late.shift();
-    if (this.late.length < 8) return;
-    const sorted = this.late.slice().sort((a, b) => a - b);
-    const p90 = sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * 0.9))];
-    this.value = Math.min(this.max, Math.max(this.min, TICK_MS + p90 + 8));
   }
 }

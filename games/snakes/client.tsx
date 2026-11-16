@@ -4,7 +4,7 @@ import { useEffect, useEffectEvent, useMemo, useState, useSyncExternalStore, typ
 import type { GameClientProps } from "@/shared/client-game";
 import { PLAYER_COLORS, type Player } from "@/shared/types";
 import { Note, StatusBanner, TimerBar, useSecondsLeft } from "@/components/game-ui";
-import type { FeedItem, RoundResult, SnakeAction, SnakeView } from "./server";
+import type { FeedItem, RoundResult, SnakeAction, SnakeDelta, SnakeView } from "./server";
 import {
   COUNTDOWN_MS,
   MAX_ROUNDS,
@@ -145,10 +145,21 @@ export default function SnakeBrawl(props: Props) {
     };
   }, [gap, act]);
   if (!live.view) return <Note>Setting up the arena…</Note>;
-  return <Brawl {...props} view={live.view} />;
+  return <Brawl {...props} view={live.view} steps={live.steps} deltas={heard.deltas} />;
 }
 
-function Brawl({ view, me, players, byId, isPlayer, act, serverNow, accent }: Omit<Props, "view"> & { view: SnakeView }) {
+function Brawl({
+  view,
+  steps,
+  deltas,
+  me,
+  players,
+  byId,
+  isPlayer,
+  act,
+  serverNow,
+  accent,
+}: Omit<Props, "view"> & { view: SnakeView; steps?: SnakeView[]; deltas?: SnakeDelta[] }) {
   const reduced = useReducedMotion();
   const colorKey = players.map((p) => `${p.id}\t${p.color}`).join("\n");
   const colors = useMemo(() => assignColors(colorKey), [colorKey]);
@@ -291,6 +302,8 @@ function Brawl({ view, me, players, byId, isPlayer, act, serverNow, accent }: Om
 
       <Arena
         view={view}
+        steps={steps}
+        deltas={deltas}
         me={me}
         colors={colors}
         byId={byId}

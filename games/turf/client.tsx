@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import type { GameClientProps } from "@/shared/client-game";
 import { Note, StatusBanner, TimerBar, useSecondsLeft } from "@/components/game-ui";
 import { PLAYER_COLORS, type Player } from "@/shared/types";
-import type { TurfAction, TurfEvent, TurfView } from "./server";
+import type { TurfAction, TurfDelta, TurfEvent, TurfView } from "./server";
 import { DIRS, FREEZE_MS, PLAY_MS, POWER_INFO } from "./shared";
 import { TurfBoard, parsePainters, rgba, textureCss, type Painter } from "./board";
 import { TurfPredictor } from "./predict";
@@ -57,7 +57,7 @@ export default function TurfWar(props: Props) {
       </div>
     );
   }
-  return <TurfGame {...props} view={live.view} />;
+  return <TurfGame {...props} view={live.view} steps={live.steps} deltas={heard.deltas} />;
 }
 
 /** Server time, refreshed every `ms` (kept in state so rendering stays pure). */
@@ -124,7 +124,17 @@ const pctText = (n: number, total: number, digits = 0) => ((100 * n) / total).to
 /** Remaining time with one decimal, rounded up so a running effect never reads "0.0". */
 const secondsText = (ms: number) => (Math.ceil(ms / 100) / 10).toFixed(1);
 
-function TurfGame({ view, byId, isPlayer, act, serverNow, onEvent, accent }: Props & { view: TurfView }) {
+function TurfGame({
+  view,
+  steps,
+  deltas,
+  byId,
+  isPlayer,
+  act,
+  serverNow,
+  onEvent,
+  accent,
+}: Props & { view: TurfView; steps?: TurfView[]; deltas?: TurfDelta[] }) {
   const now = useServerClock(serverNow, 200);
   const secsLeft = useSecondsLeft(view.endsAt, serverNow);
   const painters = useMemo(() => parsePainters(view.players), [view.players]);
@@ -267,6 +277,8 @@ function TurfGame({ view, byId, isPlayer, act, serverNow, onEvent, accent }: Pro
 
       <TurfBoard
         view={view}
+        steps={steps}
+        deltas={deltas}
         colors={colors}
         avatars={avatars}
         away={away}

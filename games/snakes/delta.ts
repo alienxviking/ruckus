@@ -100,10 +100,17 @@ export function hear(h: Heard, e: SnakeEvent): Heard {
  * delta since applied in order. `gap` is true when deltas arrived that can't be applied yet
  * (a step went missing): the client then asks for a keyframe.
  */
-export function rebuild(view: SnakeView | null, h: Heard, me: string): { view: SnakeView | null; gap: boolean } {
+export function rebuild(
+  view: SnakeView | null,
+  h: Heard,
+  me: string,
+): { view: SnakeView | null; gap: boolean; steps: SnakeView[] } {
   let cur = newer(view, h.key);
-  if (!cur) return { view: null, gap: false };
+  if (!cur) return { view: null, gap: false, steps: [] };
   let gap = false;
+  // Every step on the way, so the renderer can play each one even when several land at once
+  // (a bunched delivery is rendered by React as a single update).
+  const steps: SnakeView[] = [cur];
   for (const d of h.deltas) {
     if (d.r !== cur.round || d.n <= cur.tick) continue;
     const next = applyDelta(cur, d, me);
@@ -112,10 +119,14 @@ export function rebuild(view: SnakeView | null, h: Heard, me: string): { view: S
       break;
     }
     cur = next;
+    steps.push(cur);
   }
   const e = h.echo;
-  if (e && cur.me && e.r === cur.round && e.rx >= cur.me[1]) cur = { ...cur, me: [cur.me[0], e.rx, e.sl] };
-  return { view: cur, gap };
+  if (e && cur.me && e.r === cur.round && e.rx >= cur.me[1]) {
+    cur = { ...cur, me: [cur.me[0], e.rx, e.sl] };
+    steps[steps.length - 1] = cur;
+  }
+  return { view: cur, gap, steps };
 }
 
 /** For tools (the bandwidth harness): apply one raw event to a plain state. */

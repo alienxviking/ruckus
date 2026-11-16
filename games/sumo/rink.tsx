@@ -8,7 +8,7 @@
 // so discs glide on smooth curves at display refresh rate. The playback clock maps the
 // frames' server timestamps onto performance.now(): it follows the fastest deliveries
 // and slews gently, so network jitter never shows up as a jerk. How far in the past adapts
-// to the measured jitter (55-120ms, see JitterDelay). If frames run late it extrapolates
+// to the measured jitter (up to 650 ms on a bursty Wi-Fi link; see snakes/netsmooth.ts). If frames run late it extrapolates
 // for a moment. Effects (sparks, falls, dashes) ride in the frames and fire when playback
 // reaches them, so they line up exactly with the motion.
 //
@@ -20,7 +20,7 @@
 import { useEffect, useEffectEvent, useRef, type PointerEvent, type ReactNode, type RefObject } from "react";
 import type { SumoView } from "./server";
 import type { Kin } from "./physics";
-import { JitterDelay, type SumoPredictor } from "./predict";
+import type { SumoPredictor } from "./predict";
 import {
   CENTER,
   DASH_CD_MS,
@@ -47,14 +47,15 @@ import {
   type FxTuple,
   type Snap,
 } from "./shared";
+import { Spring2D, Timeline, debugFrame } from "../snakes/netsmooth";
 
 const TAU = Math.PI * 2;
 /** Playback starts this far behind the newest frame the network could have delivered (then adapts). */
 const DELAY_MS = 100;
-/** Your disc: server corrections fade out with this time constant (ms; ~95% gone in 3x)... */
-const CORR_MS = 40;
+/** Your disc: server corrections fade out like a critically damped spring with this time constant (ms; ~95% gone in 5x)... */
+export const CORR_MS = 100;
 /** ...unless they're this big (units): then it just jumps. */
-const CORR_SNAP = 160;
+export const CORR_SNAP = 160;
 /** Late frames: keep sliding along the last known velocity for at most this long. */
 const EXTRAP_MS = 150;
 const TRAIL_MS = 150;
@@ -105,49 +106,23 @@ function toFrame(s: Snap): Frame {
   };
 }
 
-/** Maps server time onto performance.now(), smoothly. */
-class Clock {
-  /** performance.now() - server time of the quickest recent delivery. */
-  target = 0;
-  /** What playback uses: slews toward target. */
-  offset = 0;
-  ready = false;
-  at = -1;
-  /** How far behind the quickest delivery playback runs: follows the measured jitter, gently. */
-  readonly jitter = new JitterDelay(55, 120, DELAY_MS);
-  delay = DELAY_MS;
-
-  observe(t: number, now: number) {
-    const s = now - t;
-    if (!this.ready || Math.abs(s - this.target) > 750) {
-      this.target = s;
-      this.offset = s;
-      this.ready = true;
-      return;
-    }
-    // Trust a quicker delivery at once; let a slower trend creep in.
-    this.target = s < this.target ? s : this.target + (s - this.target) * 0.03;
-    this.jitter.add(s - this.target);
+/**
+ * Maps server time onto performance.now(), smoothly (see snakes/netsmooth.ts): playback follows
+ * the quickest recent delivery, runs behind it by an adaptive delay that covers the measured
+ * jitter (rising promptly, falling only after a calm spell), and slews by a few percent at most.
+ */
+class Clock extends Timeline {
+  constructor() {
+    super({ period: TICK_MS, start: DELAY_MS, min: TICK_MS + 15, max: 650 });
   }
 
-  /** Server time on screen (`delay` behind the quickest delivery). */
-  tick(now: number) {
-    const dt = this.at < 0 ? 0 : Math.min(100, Math.max(0, now - this.at));
-    this.at = now;
-    const diff = this.target - this.offset;
-    if (Math.abs(diff) > 400) this.offset = this.target;
-    else {
-      const max = dt * 0.08; // playback never runs more than 8% fast or slow
-      this.offset += Math.max(-max, Math.min(max, diff));
-    }
-    const dd = this.jitter.value - this.delay;
-    const maxd = dt * 0.04; // and the delay itself changes by at most 4%
-    this.delay += Math.max(-maxd, Math.min(maxd, dd));
-    return now - this.offset - this.delay;
-  }
-
-  serverNow(now: number) {
-    return now - this.offset;
+  /**
+   * Playback time for this animation frame: at most a tick's worth of extrapolation past the newest
+   * frame in hand; if the buffer runs drier than that, playback waits (up to 200 ms) instead of
+   * extrapolating further and snapping back, then carries on smoothly.
+   */
+  play(now: number, frames: { t: number }[]) {
+    return this.tick(now, frames.length ? frames[frames.length - 1].t : Infinity, TICK_MS, 200);
   }
 }
 
@@ -283,8 +258,8 @@ interface Scene {
   /** Your disc: predicted this frame (world units), the correction still fading out, where it was drawn. */
   my: Kin;
   myOn: boolean;
-  corrX: number;
-  corrY: number;
+  /** Your leftover correction, fading out like a critically damped spring (no twitch). */
+  corr: Spring2D;
   myX: number;
   myY: number;
   /** Where your disc was drawn lately (for its trail). */
@@ -339,8 +314,7 @@ export function newScene(): Scene {
     perf: 0,
     my: { x: 0, y: 0, vx: 0, vy: 0 },
     myOn: false,
-    corrX: 0,
-    corrY: 0,
+    corr: new Spring2D(CORR_MS),
     myX: NaN,
     myY: NaN,
     myTrail: [],
@@ -366,8 +340,17 @@ const scratch2: Kin = { x: 0, y: 0, vx: 0, vy: 0 };
 /** Hand a frame to your predictor: acknowledgements, your disc's newest state, your fall. */
 function feedMine(sc: Scene, f: Frame, newest: boolean, prev: Frame | undefined, me: Mine, now: number) {
   const { pred, slot } = me;
-  if (Array.isArray(f.fxAcks)) for (const a of f.fxAcks) if (a[0] === slot) pred.ack(a[1], f.t + a[2]);
-  if (!newest) return;
+  // What you see right now, before this frame changes anything. Acknowledgements move your replay
+  // too (an input landed earlier or later than guessed: on a jittery uplink, by 100+ ms), so that
+  // change has to be blended out like any other correction, not shown as a jump.
+  const T = sc.clock.serverNow(now) + pred.lead(now);
+  const round = pred.base?.n;
+  const had = sc.clock.ready && pred.predict(T, scratch);
+  if (Array.isArray(f.fxAcks)) for (const a of f.fxAcks) if (a[0] === slot) pred.ack(a[1], f.t + a[2], now);
+  if (!newest) {
+    blendCorrection(sc, pred, had, T);
+    return;
+  }
   const dt = f.d[slot];
   if (!dt) {
     // Gone from the ice: show your fall now (you've been running ahead of the playback).
@@ -387,21 +370,19 @@ function feedMine(sc: Scene, f: Frame, newest: boolean, prev: Frame | undefined,
   const old = pred.base;
   if (!old || old.n !== f.n || !sc.clock.ready) {
     pred.setBase(base);
-    sc.corrX = 0;
-    sc.corrY = 0;
+    sc.corr.reset();
     return;
   }
   // Same moment, two answers: keep showing the old one and fade the difference out.
-  const T = sc.clock.serverNow(now) + pred.lead();
-  const had = pred.predict(T, scratch);
   pred.setBase(base);
+  blendCorrection(sc, pred, had && round === f.n, T);
+}
+
+/** Your replay changed under you (`scratch` = what was shown): fade the difference out. */
+function blendCorrection(sc: Scene, pred: Mine["pred"], had: boolean, T: number) {
   if (had && pred.predict(T, scratch2)) {
-    sc.corrX += scratch.x - scratch2.x;
-    sc.corrY += scratch.y - scratch2.y;
-    if (Math.hypot(sc.corrX, sc.corrY) > CORR_SNAP) {
-      sc.corrX = 0;
-      sc.corrY = 0;
-    }
+    sc.corr.add(scratch.x - scratch2.x, scratch.y - scratch2.y, (scratch.vx - scratch2.vx) / 1000, (scratch.vy - scratch2.vy) / 1000);
+    if (sc.corr.size > CORR_SNAP) sc.corr.reset();
   }
 }
 
@@ -885,7 +866,7 @@ function drawScene(
   pred: SumoPredictor | null,
 ) {
   const frames = sc.frames;
-  const rt = sc.clock.tick(now);
+  const rt = sc.clock.play(now, sc.frames);
   const wallDt = sc.wall < 0 ? 16 : Math.min(60, Math.max(0, now - sc.wall));
   sc.wall = now;
   sc.rt = rt;
@@ -924,11 +905,10 @@ function drawScene(
   const myNewest = latest && mySlot >= 0 ? latest.d[mySlot] : undefined;
   if (pred && myNewest && phase !== "countdown" && pred.base && pred.base.n === latest!.n && sc.myGone !== latest!.n) {
     pred.decided = phase !== "fight";
-    if (pred.predict(sc.clock.serverNow(now) + pred.lead(), sc.my)) {
-      const k = Math.exp(-wallDt / CORR_MS);
-      sc.corrX *= k;
-      sc.corrY *= k;
+    if (pred.predict(sc.clock.serverNow(now) + pred.lead(now), sc.my)) {
+      sc.corr.step(wallDt);
       sc.myOn = true;
+      debugFrame("sumo", { t: now, x: sc.my.x + sc.corr.x, y: sc.my.y + sc.corr.y, rt });
     }
   }
 
@@ -1190,8 +1170,8 @@ function drawScene(
     sc.wr[slot] = sc.radius[slot] ?? DISC_R;
   }
   if (sc.myOn) {
-    let x = sc.my.x + sc.corrX;
-    let y = sc.my.y + sc.corrY;
+    let x = sc.my.x + sc.corr.x;
+    let y = sc.my.y + sc.corr.y;
     const R = sc.radius[mySlot] ?? DISC_R;
     // Collisions are the server's call; as drawn, your disc just never sinks into another one.
     for (let slot = 0; slot < slots; slot++) {

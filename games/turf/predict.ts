@@ -15,30 +15,44 @@
 
 import type { TurfView } from "./server";
 import { DX, DY, QUEUE_MAX, TICK_MS } from "./shared";
+import { LeadFilter } from "../snakes/netsmooth";
 
-/** How far the display may run ahead of the newest server frame (ticks). */
-const MAX_AHEAD = 2.5;
-const HORIZON = 5;
+/**
+ * How far the display may run ahead of the newest server frame (ticks). Generous: on a real
+ * connection frames regularly arrive in bunches after gaps of 0.5-1.5 s, and your painter has to
+ * keep gliding along its predicted path through those gaps instead of freezing.
+ */
+const MAX_AHEAD = 13;
+const HORIZON = MAX_AHEAD + 3;
+/** A head that moved when a frame arrived (the prediction was wrong) eases over (time constant, ms)... */
+const CORR_MS = 110;
+/** ...unless it jumped this far (tiles). */
+const CORR_SNAP = 2.5;
 const STALE_RX_MS = 1_500;
 const STALE_MS = 4_000;
 const SNAP_TICKS = 1.5;
 const SLEW = 0.15;
-const LEAD_SAMPLES = 8;
-const LEAD_TTL_MS = 20_000;
-const LEAD_MARGIN = 6;
+const LEAD_SAMPLES = 16;
+const LEAD_TTL_MS = 30_000;
+const LEAD_MARGIN = 8;
 
 const clamp = (v: number, lo: number, hi: number) => (v < lo ? lo : v > hi ? hi : v);
 
 /** How many ms ahead of `serverNow()` a turn must be sent to land on time (see snakes/predict.ts). */
 export class LeadEstimator {
-  private samples: { v: number; at: number }[] = [];
+  /** A high percentile of recent samples, raised promptly, lowered after a calm spell, slewed. */
+  private readonly filter = new LeadFilter(-TICK_MS / 2, 4 * TICK_MS, {
+    quantile: 0.9,
+    margin: LEAD_MARGIN,
+    keep: LEAD_SAMPLES,
+    ttl: LEAD_TTL_MS,
+    slew: 0.08,
+  });
   private oneWay: number[] = [];
   fallback = 20;
 
   addSample(v: number, now: number) {
-    if (!Number.isFinite(v)) return;
-    this.samples.push({ v, at: now });
-    if (this.samples.length > LEAD_SAMPLES) this.samples.shift();
+    this.filter.add(v, now);
   }
 
   addOneWay(ms: number) {
@@ -49,10 +63,8 @@ export class LeadEstimator {
   }
 
   value(now: number): number {
-    let best = -Infinity;
-    for (const s of this.samples) if (now - s.at < LEAD_TTL_MS && s.v > best) best = s.v;
-    const v = best === -Infinity ? this.fallback : best + LEAD_MARGIN;
-    return clamp(v, -TICK_MS / 2, 3 * TICK_MS);
+    const v = this.filter.value(now);
+    return Number.isNaN(v) ? clamp(this.fallback, -TICK_MS / 2, 4 * TICK_MS) : v;
   }
 }
 
@@ -77,6 +89,9 @@ export interface Head {
 
 const dirBetween = (ax: number, ay: number, bx: number, by: number, dflt: number) =>
   bx > ax ? 1 : bx < ax ? 3 : by > ay ? 2 : by < ay ? 0 : dflt;
+
+const before: Head = { x: 0, y: 0, dir: 0, next: 0 };
+const after: Head = { x: 0, y: 0, dir: 0, next: 0 };
 
 export class TurfPredictor {
   seq = 0;
@@ -112,6 +127,21 @@ export class TurfPredictor {
 
   tau = 0;
   private tauAt = -1;
+  /** The renderer's smoothed server clock (see snakes/netsmooth.ts); `now` arguments are used until it's ready. */
+  private clock: { ready: boolean; serverNow(perf: number): number } | null = null;
+  /** Visual offset (tiles) of your head left over from a correction, fading out. */
+  private corrX = 0;
+  private corrY = 0;
+  /** Frames that moved your head as predicted (the prediction was wrong). */
+  corrections = 0;
+
+  attachClock(clock: { ready: boolean; serverNow(perf: number): number }) {
+    this.clock = clock;
+  }
+
+  private clockNow(now: number, perf: number) {
+    return this.clock?.ready ? this.clock.serverNow(perf) : now;
+  }
 
   private reset() {
     this.pending = [];
@@ -129,6 +159,24 @@ export class TurfPredictor {
 
   /** Take in a server frame. `now` = serverNow(), `perf` = performance.now(). */
   ingest(view: TurfView, now: number, perf: number) {
+    now = this.clockNow(now, perf);
+    const me = this.me;
+    const had = this.tauAt >= 0 && this.phase === "play" && this.head(this.tau, before);
+    this.ingestFrame(view, now, perf);
+    if (had && this.me === me && this.phase === "play" && this.head(this.tau, after)) {
+      const dx = before.x - after.x;
+      const dy = before.y - after.y;
+      if (Math.hypot(dx, dy) > 0.01) {
+        this.corrections += 1;
+        // Ease the head over instead of jumping (a big jump just jumps).
+        this.corrX += dx;
+        this.corrY += dy;
+        if (Math.hypot(this.corrX, this.corrY) > CORR_SNAP) this.corrX = this.corrY = 0;
+      }
+    } else this.corrX = this.corrY = 0;
+  }
+
+  private ingestFrame(view: TurfView, now: number, perf: number) {
     if (view.tick < this.tick || view.w !== this.w || view.h !== this.h) {
       this.reset();
       this.playFrom = view.tick;
@@ -217,6 +265,7 @@ export class TurfPredictor {
    * replaces the last one).
    */
   press(d: number, now: number, perf: number): { seq: number; at?: number } | null {
+    now = this.clockNow(now, perf);
     if (this.me < 0 || (this.phase !== "countdown" && this.phase !== "play")) return null;
     if (this.phase === "countdown") {
       if (this.pending.length && this.pending[this.pending.length - 1].d === d) return null;
@@ -310,6 +359,12 @@ export class TurfPredictor {
 
   /** Advance the display clock to `perf` and return it (ticks). */
   advance(perf: number, now: number): number {
+    now = this.clockNow(now, perf);
+    if (this.tauAt >= 0 && perf > this.tauAt) {
+      const k = Math.exp(-(perf - this.tauAt) / CORR_MS);
+      this.corrX *= k;
+      this.corrY *= k;
+    }
     if (this.phase !== "play" || this.me < 0) {
       this.tau = this.tick;
       this.tauAt = perf;
@@ -326,6 +381,14 @@ export class TurfPredictor {
     this.tauAt = perf;
     this.tau = clamp(this.tau, Math.max(this.playFrom, this.tick - 4), this.tick + MAX_AHEAD);
     return this.tau;
+  }
+
+  /** Your head as drawn: `head` plus what's left of the last correction, fading out. */
+  headSmooth(tau: number, out: Head): boolean {
+    if (!this.head(tau, out)) return false;
+    out.x += this.corrX;
+    out.y += this.corrY;
+    return true;
   }
 
   /** Your head at display time `tau`. False when you have no painter. */

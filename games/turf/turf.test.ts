@@ -16,6 +16,8 @@ import game, {
 } from "./server";
 import { BOMB_RADIUS, COUNTDOWN_MS, DASH_MS, FREEZE_MS, MAX_HOLD, PLAY_MS, TICK_MS, boardSize, type Dir } from "./shared";
 import { TurfPredictor } from "./predict";
+import { Timeline } from "../snakes/netsmooth";
+import { WIFI, WIFI_BAD, burstyLink, fixedLink, type Link } from "../snakes/netsim";
 import { applyDelta, hear, isTurfWire, nothingHeard, rebuild, type Heard } from "./delta";
 
 // ---------- helpers ----------
@@ -740,10 +742,19 @@ interface NetResult {
   corrections: number;
   late: number;
   lead: number;
+  secs: number;
+  /** Per 16 ms frame: |head movement drawn - one tile per tick| (tiles); jumps (> 0.3) and stalls. */
+  jitter: number[];
+  snaps: number;
+  stalls: number;
 }
 
 /** Painter 0 zigzags through the predictor with `up`/`down` ms of delay and a clock `skew` ms off. */
-function netGame(up: number, down: number, skew: number, dash: boolean): NetResult {
+function netGame(up: number | Link, down: number | Link, skew: number, dash: boolean, opts: { clock?: boolean; secs?: number } = {}): NetResult {
+  const upLink = typeof up === "number" ? fixedLink(up) : up;
+  const downLink = typeof down === "number" ? fixedLink(down) : down;
+  // The board's clock (snakes/netsmooth.ts), fed with step timestamps as frames arrive.
+  const tl = opts.clock ? new Timeline({ period: TICK_MS, start: TICK_MS + 90, min: TICK_MS + 10, max: 700 }) : null;
   const { t, s } = playing(2);
   clearBoard(s);
   place(s, 0, 8, 12, "right");
@@ -752,15 +763,16 @@ function netGame(up: number, down: number, skew: number, dash: boolean): NetResu
   if (dash) s.painters[0].dashUntil = FOREVER;
   const me = t.ids[0];
   const pred = new TurfPredictor();
+  if (tl) pred.attachClock(tl);
   // What reaches the client: full views (when tick() returns true) and events (deltas, echoes).
   const toClient: { at: number; v?: TurfView; e?: unknown }[] = [];
   const toServer: { at: number; a: unknown }[] = [];
-  const send = () => toClient.push({ at: t.ctx.now() + down, v: JSON.parse(JSON.stringify(view(s, me, t))) });
+  const send = () => toClient.push({ at: downLink.send(t.ctx.now()), v: JSON.parse(JSON.stringify(view(s, me, t))) });
   let seen = t.events.length;
   const flushEvents = () => {
     for (; seen < t.events.length; seen++) {
       const ev = t.events[seen];
-      if (!ev.to || ev.to === me) toClient.push({ at: t.ctx.now() + down, e: JSON.parse(JSON.stringify(ev.event)) });
+      if (!ev.to || ev.to === me) toClient.push({ at: downLink.send(t.ctx.now()), e: JSON.parse(JSON.stringify(ev.event)) });
     }
   };
   let base: TurfView | null = null;
@@ -769,14 +781,18 @@ function netGame(up: number, down: number, skew: number, dash: boolean): NetResu
   let rnd = 12345;
   const rand = () => ((rnd = (rnd * 1103515245 + 12345) % 2147483648) / 2147483648);
   // A zigzag that stays on the board: right, up, right, down, ... (and back left when near the edge).
-  const res: NetResult = { accepted: 0, latency: [], corrections: 0, late: 0, lead: 0 };
+  const res: NetResult = { accepted: 0, latency: [], corrections: 0, late: 0, lead: 0, secs: 0, jitter: [], snaps: 0, stalls: 0 };
+  const drawn = { x: 0, y: 0, dir: 0, next: 0 };
+  let frameAt = -1;
+  let frameX = NaN;
+  let frameY = NaN;
   const watching: { dir: number; at: number }[] = [];
   const head = { x: 0, y: 0, dir: 0, next: 0 };
   let nextTick = t.ctx.now() + TICK_MS;
   let nextPress = t.ctx.now() + 200;
   let k = 0;
   let lastRx = 0;
-  const end = t.ctx.now() + 7_000;
+  const end = t.ctx.now() + (opts.secs ?? 7) * 1_000;
   for (let now = t.ctx.now(); now < end; now += 2) {
     t.advance(now - t.ctx.now());
     const cnow = now + skew;
@@ -790,8 +806,13 @@ function netGame(up: number, down: number, skew: number, dash: boolean): NetResu
     const calibrated = res.accepted >= 3;
     while (toClient.length && toClient[0].at <= now) {
       const msg = toClient.shift()!;
-      if (msg.v) base = msg.v;
-      else if (isTurfWire(msg.e)) heard = hear(heard, msg.e);
+      if (msg.v) {
+        base = msg.v;
+        if (tl && msg.v.phase === "play" && typeof msg.v.at === "number") tl.observe(msg.v.at, now);
+      } else if (isTurfWire(msg.e)) {
+        heard = hear(heard, msg.e);
+        if (tl && msg.e.k === "d") tl.observe(msg.e.at, now);
+      }
       const built = rebuild(base, heard);
       check(!built.gap, "no missing ticks on a reliable link");
       const v = built.view;
@@ -807,7 +828,24 @@ function netGame(up: number, down: number, skew: number, dash: boolean): NetResu
         if (calibrated && v.me[2] < 0) res.late += 1;
       }
     }
+    tl?.tick(now);
     pred.head(pred.advance(now, cnow), head);
+    // What the screen shows, once per 16 ms frame: a steady glide of one tile per tick.
+    if (now - frameAt >= 16) {
+      if (pred.headSmooth(pred.tau, drawn)) {
+        if (res.accepted >= 3 && frameAt >= 0 && !Number.isNaN(frameX)) {
+          const want = (now - frameAt) / TICK_MS;
+          const moved = Math.hypot(drawn.x - frameX, drawn.y - frameY);
+          res.jitter.push(Math.abs(moved - want));
+          if (moved - want > 0.3) res.snaps += 1;
+          if (moved < want * 0.5) res.stalls += 1;
+          res.secs += (now - frameAt) / 1000;
+        }
+        frameX = drawn.x;
+        frameY = drawn.y;
+      } else frameX = NaN;
+      frameAt = now;
+    }
     for (let i = watching.length - 1; i >= 0; i--) {
       if (head.dir === watching[i].dir) {
         if (res.accepted > 5) res.latency.push(now - watching[i].at);
@@ -826,7 +864,7 @@ function netGame(up: number, down: number, skew: number, dash: boolean): NetResu
         res.accepted += 1;
         watching.length = 0;
         watching.push({ dir, at: now });
-        toServer.push({ at: now + up, a: { type: "turn", dir: ["up", "right", "down", "left"][dir], ...stamp } });
+        toServer.push({ at: upLink.send(now), a: { type: "turn", dir: ["up", "right", "down", "left"][dir], ...stamp } });
       }
     }
   }
@@ -851,6 +889,28 @@ for (const [up, down, skew, dash] of [
   check(r.corrections === 0, `${label}: no corrections once calibrated (${r.corrections})`);
   check(r.late === 0, `${label}: turns arrive in time (${r.late} late)`);
   check(r.lead >= up - skew && r.lead <= up - skew + 40, `${label}: lead tracks clock error + uplink (${r.lead.toFixed(0)})`);
+}
+
+// ---------- the same over a jittery, bursty link (what the live server sees from Wi-Fi) ----------
+// Deliveries stall and then land in a bunch. Your painter must keep gliding a tile per tick on
+// screen: no freezes while frames are missing, no jumps when they land, few corrections.
+// Limits per second: [jumps, freezes, corrections] (the bad link has turns that can't make it).
+const q95 = (a: number[]) => [...a].sort((x, y) => x - y)[Math.floor(a.length * 0.95)] ?? 0;
+for (const [name, link, seed, lim] of [
+  ["wifi", WIFI, 21, [0.5, 1, 0.8]],
+  ["wifi", WIFI, 22, [0.5, 1, 0.8]],
+  ["bad wifi", WIFI_BAD, 23, [1.5, 2.5, 2.5]],
+] as const) {
+  const r = netGame(burstyLink(seed, link), burstyLink(seed + 100, link), 0, false, { clock: true, secs: 12 });
+  const label = `net ${name} #${seed}`;
+  const p95 = q95(r.jitter);
+  if (process.env.NET_VERBOSE)
+    console.log(label, { p95: p95.toFixed(3), snapsPerS: (r.snaps / r.secs).toFixed(2), stallsPerS: (r.stalls / r.secs).toFixed(2), corrPerS: (r.corrections / r.secs).toFixed(2), late: r.late, lead: r.lead.toFixed(0), accepted: r.accepted });
+  check(r.accepted >= 20, `${label}: enough turns (${r.accepted})`);
+  check(p95 < 0.12, `${label}: your head glides evenly (p95 ${p95.toFixed(3)} tiles/frame off)`);
+  check(r.snaps / r.secs < lim[0], `${label}: no jumps (${r.snaps} in ${r.secs.toFixed(0)}s)`);
+  check(r.stalls / r.secs < lim[1], `${label}: no freezes while frames are late (${r.stalls} in ${r.secs.toFixed(0)}s)`);
+  check(r.corrections / r.secs < lim[2], `${label}: few corrections (${r.corrections} in ${r.secs.toFixed(0)}s)`);
 }
 
 // ---------- the predictor: local queue mirror, countdown aim, walls ----------

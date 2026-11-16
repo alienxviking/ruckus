@@ -17,11 +17,20 @@
 
 import type { SnakeView } from "./server";
 import { DELTA, GOLDEN_VALUE, MAX_QUEUE, OPPOSITE, TICK_MS, type Dir } from "./shared";
+import { LeadFilter } from "./netsmooth";
 
-/** How far the display may run ahead of the newest server frame (steps). */
-export const MAX_AHEAD = 2.5;
+/**
+ * How far the display may run ahead of the newest server frame (steps). Generous: on a real
+ * connection frames regularly arrive in bunches after gaps of 0.5-1.5 s, and your snake has to
+ * keep gliding along its (deterministic) path through those gaps instead of freezing.
+ */
+export const MAX_AHEAD = 14;
 /** Steps walked forward from each server frame. */
-const HORIZON = 5;
+const HORIZON = MAX_AHEAD + 3;
+/** A head that moved when a frame arrived (the prediction was wrong) eases over with this time constant (ms)... */
+const CORR_MS = 110;
+/** ...unless it jumped this far (cells). */
+const CORR_SNAP = 2.5;
 /** A crashing head pushes this far (cells) into whatever it hits. */
 export const LUNGE = 0.32;
 /** A turn the server has received but not applied after this long was refused: forget it. */
@@ -33,31 +42,36 @@ const SNAP_STEPS = 1.5;
 /** ...by running at most this much faster or slower than real time. */
 const SLEW = 0.15;
 
-const LEAD_SAMPLES = 8;
-const LEAD_TTL_MS = 20_000;
-/** Safety margin (ms) on top of the slowest recent arrival. */
-const LEAD_MARGIN = 6;
+const LEAD_SAMPLES = 16;
+const LEAD_TTL_MS = 30_000;
+/** Safety margin (ms) on top of the (90th percentile) arrival. */
+const LEAD_MARGIN = 8;
 
 const clamp = (v: number, lo: number, hi: number) => (v < lo ? lo : v > hi ? hi : v);
 
 /**
  * How many ms ahead of `serverNow()` a turn needs to be sent to reach the server in time.
  * Each sample is (ms between pressing and the step's server time) minus (ms the turn arrived
- * before its step), i.e. clock error plus uplink. The estimate is the slowest recent sample
- * plus a margin: running a bit too far ahead only shifts your snake a few ms, arriving late
- * costs a correction.
+ * before its step), i.e. clock error plus uplink. The estimate is a high percentile of recent
+ * samples plus a margin (running a bit too far ahead only shifts your snake a few ms, arriving
+ * late costs a correction), and it is filtered: raised promptly, lowered only after a calm spell,
+ * and slewed, so one slow or fast turn never makes your snake surge or hang back.
  */
 export class LeadEstimator {
-  private samples: { v: number; at: number }[] = [];
+  private readonly filter = new LeadFilter(-TICK_MS / 2, 4 * TICK_MS, {
+    quantile: 0.9,
+    margin: LEAD_MARGIN,
+    keep: LEAD_SAMPLES,
+    ttl: LEAD_TTL_MS,
+    slew: 0.08,
+  });
   private oneWay: number[] = [];
   /** Used until a turn has reported back: the quickest downlink seen (assumes a symmetric link). */
   fallback = 20;
 
   /** A turn reported back: `v` = clock error + uplink (ms). */
   addSample(v: number, now: number) {
-    if (!Number.isFinite(v)) return;
-    this.samples.push({ v, at: now });
-    if (this.samples.length > LEAD_SAMPLES) this.samples.shift();
+    this.filter.add(v, now);
   }
 
   /** A frame arrived `ms` after its step (by our clock). */
@@ -68,11 +82,10 @@ export class LeadEstimator {
     this.fallback = Math.max(0, Math.min(...this.oneWay)) + 10;
   }
 
+  /** The lead at wall time `now` (performance.now()). */
   value(now: number): number {
-    let best = -Infinity;
-    for (const s of this.samples) if (now - s.at < LEAD_TTL_MS && s.v > best) best = s.v;
-    const v = best === -Infinity ? this.fallback : best + LEAD_MARGIN;
-    return clamp(v, -TICK_MS / 2, 3 * TICK_MS);
+    const v = this.filter.value(now);
+    return Number.isNaN(v) ? clamp(this.fallback, -TICK_MS / 2, 4 * TICK_MS) : v;
   }
 }
 
@@ -111,6 +124,9 @@ export function emptyShape(): Shape {
 
 const dirFrom = (dx: number, dy: number): Dir | null =>
   dx === 1 && dy === 0 ? "right" : dx === -1 && dy === 0 ? "left" : dx === 0 && dy === 1 ? "down" : dx === 0 && dy === -1 ? "up" : null;
+
+const before = emptyShape();
+const after = emptyShape();
 
 export class SnakePredictor {
   /** Last input number used (never reused, even across rounds or a page refresh). */
@@ -159,6 +175,21 @@ export class SnakePredictor {
   // ----- display clock -----
   tau = 0;
   private tauAt = -1;
+  /** The renderer's smoothed server clock (see netsmooth.ts); `now` arguments are used until it's ready. */
+  private clock: { ready: boolean; serverNow(perf: number): number } | null = null;
+  /** Visual offset (cells) of your head, left over from a correction and fading out. */
+  private corrX = 0;
+  private corrY = 0;
+  /** Frames that moved your head as predicted (the prediction was wrong). */
+  corrections = 0;
+
+  attachClock(clock: { ready: boolean; serverNow(perf: number): number }) {
+    this.clock = clock;
+  }
+
+  private clockNow(now: number, perf: number) {
+    return this.clock?.ready ? this.clock.serverNow(perf) : now;
+  }
 
   private reset() {
     this.pending = [];
@@ -178,6 +209,24 @@ export class SnakePredictor {
 
   /** Take in a server frame. `now` = serverNow(), `perf` = performance.now(). */
   ingest(view: SnakeView, me: string, now: number, perf: number) {
+    now = this.clockNow(now, perf);
+    const round = this.round;
+    const had = this.tauAt >= 0 && this.phase === "play" && this.shape(this.tau, before);
+    this.ingestFrame(view, me, now, perf);
+    if (had && this.round === round && this.phase === "play" && this.shape(this.tau, after)) {
+      const dx = before.hx - after.hx;
+      const dy = before.hy - after.hy;
+      if (Math.hypot(dx, dy) > 0.01) {
+        this.corrections += 1;
+        // Ease the head over instead of jumping (a big jump, say a respawn, just jumps).
+        this.corrX += dx;
+        this.corrY += dy;
+        if (Math.hypot(this.corrX, this.corrY) > CORR_SNAP) this.corrX = this.corrY = 0;
+      }
+    } else this.corrX = this.corrY = 0;
+  }
+
+  private ingestFrame(view: SnakeView, me: string, now: number, perf: number) {
     if (view.round !== this.round || view.tick < this.tick) {
       this.reset();
       this.round = view.round;
@@ -265,6 +314,7 @@ export class SnakePredictor {
    * would ignore it anyway (a reversal, a repeat, a full queue, no live snake).
    */
   press(dir: Dir, now: number, perf: number): { seq: number; at?: number } | null {
+    now = this.clockNow(now, perf);
     if (!this.alive || (this.phase !== "countdown" && this.phase !== "play")) return null;
     if (this.pending.length >= MAX_QUEUE) return null;
     const last = this.lastDir();
@@ -375,6 +425,12 @@ export class SnakePredictor {
 
   /** Advance the display clock to `perf` and return it (steps). */
   advance(perf: number, now: number): number {
+    now = this.clockNow(now, perf);
+    if (this.tauAt >= 0 && perf > this.tauAt) {
+      const k = Math.exp(-(perf - this.tauAt) / CORR_MS);
+      this.corrX *= k;
+      this.corrY *= k;
+    }
     if (this.phase !== "play" || !this.alive) {
       this.tau = this.tick;
       this.tauAt = perf;
@@ -391,6 +447,18 @@ export class SnakePredictor {
     this.tauAt = perf;
     this.tau = clamp(this.tau, Math.max(this.playFrom, this.tick - 3), this.tick + MAX_AHEAD);
     return this.tau;
+  }
+
+  /** Your snake as drawn: `shape` plus what's left of the last correction, fading out. */
+  shapeSmooth(tau: number, out: Shape): boolean {
+    if (!this.shape(tau, out)) return false;
+    if (this.corrX !== 0 || this.corrY !== 0) {
+      out.hx += this.corrX;
+      out.hy += this.corrY;
+      out.pts[0] += this.corrX;
+      out.pts[1] += this.corrY;
+    }
+    return true;
   }
 
   /** Your snake at display time `tau`. False when there's nothing to draw. */

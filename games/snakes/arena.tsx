@@ -4,10 +4,11 @@
 //
 // The server moves every snake one cell per tick (~9/s). Drawing those frames as they
 // land would make snakes hop, so the renderer keeps a short buffer of server frames and
-// plays them back on its own clock, a little behind the newest one: every snake glides
-// cell to cell at display refresh rate. The playback rate nudges itself so the buffer
-// never runs dry (no stalls) and never drifts far behind (no extra lag). React only
-// re-renders when a frame arrives; everything here runs in one requestAnimationFrame loop.
+// plays them back a little behind the newest one, timed by the server's own step stamps
+// (playback.ts): every snake glides cell to cell at display refresh rate, and how far behind
+// adapts to the connection's measured jitter, so bunched or late deliveries never make snakes
+// surge, stall or jump. React only re-renders when a frame arrives; everything here runs in
+// one requestAnimationFrame loop.
 //
 // Your own snake is the exception: it's drawn by the predictor (predict.ts) on its own clock,
 // a network trip ahead, so a turn shows up at the very next cell boundary and the eyes and a
@@ -16,9 +17,12 @@
 
 import { useEffect, useEffectEvent, useRef, type PointerEvent, type ReactNode } from "react";
 import type { Player } from "@/shared/types";
-import type { SnakeView } from "./server";
-import { DELTA, GHOST_MS, GOLDEN_VALUE, ROUND_MS, TICK_MS, type Dir } from "./shared";
+import type { SnakeDelta, SnakeView } from "./server";
+import { applyDelta } from "./delta";
+import { DELTA, GHOST_MS, GOLDEN_VALUE, ROUND_MS, type Dir } from "./shared";
 import { LUNGE, emptyShape, type Shape, type SnakePredictor } from "./predict";
+import { SnakePlayback as Playback, type SnakeSnap as Snap } from "./playback";
+import { debugFrame } from "./netsmooth";
 
 const TAU = Math.PI * 2;
 const POP_MS = 850;
@@ -29,96 +33,11 @@ const GOLD = "#ffd34d";
 const GOLD_GLOW = "255, 196, 40";
 const EMOJI_FONT = '"Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif';
 const SANS = "ui-sans-serif, system-ui, sans-serif";
-/** How far behind the newest frame playback sits just as a frame lands (in ticks). */
-const LAG_TARGET = 1.3;
-/** Bigger jumps than this between frames aren't animated (missed frames, a new round). */
-const MAX_GAP = 3;
 const SPAWN_MS = 520;
 /** A pellet your snake just ate stays hidden this long while the delayed board catches up. */
 const EATEN_MS = 1_500;
 
 // ---------- playback clock ----------
-
-interface Snap {
-  tick: number;
-  view: SnakeView;
-}
-
-/**
- * Server frames on a timeline measured in ticks. `t` is the (fractional) tick on screen;
- * it advances at the server's tick rate, scaled by `rate` so the gap to the newest frame
- * settles near LAG_TARGET. The rate is chosen once per frame arrival, so motion speed is
- * constant between frames (no visible pulsing).
- */
-class Playback {
-  snaps: Snap[] = [];
-  t = 0;
-  rate = 1;
-  /** Measured ms per server tick. */
-  period = TICK_MS;
-  /** performance.now() of the last frame that moved the timeline on. */
-  arrived = 0;
-  at = -1;
-
-  /** Add a server frame. True when the timeline restarted (first frame, new round, a jump). */
-  push(view: SnakeView, now: number): boolean {
-    const last = this.snaps[this.snaps.length - 1];
-    if (!last || view.round !== last.view.round || view.tick < last.tick || view.tick - last.tick > MAX_GAP) {
-      this.reset(view, now);
-      return true;
-    }
-    if (view.tick === last.tick) {
-      last.view = view; // same moment, new facts (phase change, someone left)
-      return false;
-    }
-    const gap = view.tick - last.tick;
-    // Learn the real tick interval (server timers and networks are never exact).
-    const per = (now - this.arrived) / gap;
-    if (this.arrived > 0 && per > TICK_MS * 0.5 && per < TICK_MS * 2) this.period += (per - this.period) * 0.08;
-    this.arrived = now;
-    this.snaps.push({ tick: view.tick, view });
-    let lag = view.tick - this.t;
-    if (lag > MAX_GAP) {
-      this.t = view.tick - LAG_TARGET; // fell far behind (busy tab): catch up in one go
-      lag = LAG_TARGET;
-    }
-    this.rate = Math.min(1.8, Math.max(0.6, 1 + 0.35 * (lag - LAG_TARGET)));
-    if (this.snaps.length > 8) this.snaps.shift();
-    return false;
-  }
-
-  reset(view: SnakeView, now: number) {
-    this.snaps.length = 0;
-    this.snaps.push({ tick: view.tick, view });
-    this.t = view.tick;
-    this.rate = 1;
-    this.arrived = now;
-  }
-
-  /** Jump to the newest frame (after the tab was hidden). */
-  snapToEnd() {
-    const last = this.snaps[this.snaps.length - 1];
-    if (last) this.reset(last.view, 0);
-  }
-
-  advance(now: number) {
-    const dt = this.at < 0 ? 0 : Math.min(100, Math.max(0, now - this.at));
-    this.at = now;
-    const last = this.snaps[this.snaps.length - 1];
-    if (!last) return;
-    const lag = last.tick - this.t;
-    if (lag <= 0) {
-      this.t = last.tick;
-    } else {
-      let step = (dt / this.period) * this.rate;
-      // Ease in to the newest frame instead of slamming into it if the next one is late.
-      if (lag < 0.15) step *= Math.max(0.25, lag / 0.15);
-      this.t = Math.min(last.tick, this.t + step);
-    }
-    // Drop frames we've fully played past (keep the one on screen).
-    while (this.snaps.length > 1 && this.snaps[1].tick <= this.t) this.snaps.shift();
-  }
-}
 
 // ---------- surfaces & small helpers ----------
 
@@ -748,7 +667,8 @@ function drawScene(g: CanvasRenderingContext2D, sc: Scene, s: Surface, p: Props,
   // Your snake, from the predictor: where it is on your clock, and the pellets it reaches.
   const pred = p.pred;
   const tau = pred.advance(now, p.serverNow);
-  sc.minePredicted = pred.shape(tau, sc.mine);
+  sc.minePredicted = pred.shapeSmooth(tau, sc.mine);
+  debugFrame("snakes", { t: now, x: sc.mine.hx, y: sc.mine.hy, on: sc.minePredicted ? 1 : 0, pb: pb.t, tau });
   if (sc.eaten.size) for (const [c, until] of sc.eaten) if (until <= now) sc.eaten.delete(c);
   if (sc.minePredicted) {
     const reached = Math.floor(sc.mine.lunge ? pred.deathAt - 1 : tau);
@@ -1051,6 +971,8 @@ function busy(sc: Scene, now: number) {
 
 export function Arena({
   view,
+  steps,
+  deltas,
   me,
   colors,
   byId,
@@ -1064,6 +986,10 @@ export function Arena({
   children,
 }: {
   view: SnakeView;
+  /** Every step since the last full view, ending with `view` (several can land in one render). */
+  steps?: SnakeView[];
+  /** The step deltas heard lately: they fill in steps a full view skipped over. */
+  deltas?: SnakeDelta[];
   me: string;
   colors: Record<string, string>;
   byId: Record<string, Player>;
@@ -1087,14 +1013,32 @@ export function Arena({
   const { w, h } = view;
 
   // Feed each new server frame into the playback buffer and your snake's predictor.
-  const onFrame = useEffectEvent((v: SnakeView) => {
+  const onFrame = useEffectEvent((v: SnakeView, all: SnakeView[] | undefined, heard: SnakeDelta[] | undefined) => {
     const sc = scene.current;
     const perf = performance.now();
+    pred.attachClock(sc.pb.clock);
     const before = sc.pb.snaps[sc.pb.snaps.length - 1]?.view;
-    if (sc.pb.push(v, perf)) {
-      const roundChanged = !sc.shown || sc.shown.round !== v.round;
-      sc.shown = roundChanged ? null : sc.shown;
-      if (roundChanged) sc.roundAt = v.phase === "countdown" ? perf : -1e9;
+    // Play every step, not just the newest: a bunched delivery is still several steps of motion.
+    const list = all && all.length && all[all.length - 1] === v ? all : [v];
+    for (const step of list) {
+      const last = sc.pb.snaps[sc.pb.snaps.length - 1];
+      if (step !== v && last && step.round === last.view.round && step.tick <= last.tick) continue;
+      // A full view that skipped steps (it came in the same bunch as their deltas): play those too.
+      if (last && heard && step.round === last.view.round && step.phase === "play" && last.view.phase === "play") {
+        let cur = last.view;
+        for (const d of heard) {
+          if (d.r !== cur.round || d.n <= cur.tick || d.n >= step.tick) continue;
+          const next = applyDelta(cur, d, me);
+          if (!next) break;
+          sc.pb.push(next, perf);
+          cur = next;
+        }
+      }
+      if (sc.pb.push(step, perf)) {
+        const roundChanged = !sc.shown || sc.shown.round !== step.round;
+        sc.shown = roundChanged ? null : sc.shown;
+        if (roundChanged) sc.roundAt = step.phase === "countdown" ? perf : -1e9;
+      }
     }
     pred.ingest(v, me, serverNow(), perf);
     // Your crash shows the moment the server reports it: your snake runs ahead of the playback.
@@ -1107,7 +1051,7 @@ export function Arena({
       crashFx(sc, now, was.body, v, p, colors[me] ?? "#94a3b8", perf);
     }
   });
-  useEffect(() => onFrame(view), [view]);
+  useEffect(() => onFrame(view, steps, deltas), [view, steps, deltas]);
 
   // Match the backing store to the element's size (crisp at any devicePixelRatio).
   useEffect(() => {

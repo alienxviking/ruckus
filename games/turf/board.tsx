@@ -14,9 +14,12 @@
 // rolls out under it right away. Its arrow swings to a queued turn on the frame you press.
 
 import { useEffect, useEffectEvent, useRef, type ReactNode } from "react";
-import type { PainterTuple, TurfEvent, TurfView } from "./server";
-import { DX, DY, POWER_INFO, POWER_KINDS, TICK_MS, type PowerKind } from "./shared";
+import type { PainterTuple, TurfDelta, TurfEvent, TurfView } from "./server";
+import { applyDelta } from "./delta";
+import { DX, DY, POWER_INFO, POWER_KINDS, type PowerKind } from "./shared";
 import type { Head, TurfPredictor } from "./predict";
+import { TurfPlayback, type TurfSnap } from "./playback";
+import { debugFrame } from "../snakes/netsmooth";
 
 export interface Painter {
   id: string;
@@ -136,91 +139,12 @@ export function textureCss(kind: number, color: string): string {
 
 // ---------- playback clock ----------
 
-interface Snap {
-  tick: number;
-  view: TurfView;
-  painters: Painter[];
-}
+type Snap = TurfSnap<Painter>;
 
-/** Ticks behind the newest frame, just as one lands. */
-const LAG_TARGET = 1.3;
-const MAX_GAP = 4;
-
-/**
- * Server frames on a timeline measured in ticks; `t` is the (fractional) tick on screen.
- * It advances at the measured tick rate, scaled once per arrival so the distance to the
- * newest frame settles near LAG_TARGET: smooth constant speed, no stalls, little lag.
- */
-class Playback {
-  snaps: Snap[] = [];
-  t = 0;
-  rate = 1;
-  period = TICK_MS;
-  arrived = 0;
-  at = -1;
-
-  /** True when the timeline restarted (first frame, new game, a jump). */
-  push(view: TurfView, now: number): boolean {
-    const last = this.snaps[this.snaps.length - 1];
-    const snap = { tick: view.tick, view, painters: parsePainters(view.players) };
-    if (
-      !last ||
-      view.tick < last.tick ||
-      view.tick - last.tick > MAX_GAP ||
-      view.w !== last.view.w ||
-      view.h !== last.view.h ||
-      view.players.length !== last.view.players.length ||
-      view.seq < last.view.seq
-    ) {
-      this.reset(snap, now);
-      return true;
-    }
-    if (view.tick === last.tick) {
-      this.snaps[this.snaps.length - 1] = snap; // same moment, new facts (aim, someone left, the end)
-      return false;
-    }
-    const gap = view.tick - last.tick;
-    const per = (now - this.arrived) / gap;
-    if (this.arrived > 0 && per > TICK_MS * 0.5 && per < TICK_MS * 2) this.period += (per - this.period) * 0.08;
-    this.arrived = now;
-    this.snaps.push(snap);
-    let lag = view.tick - this.t;
-    if (lag > MAX_GAP) {
-      this.t = view.tick - LAG_TARGET;
-      lag = LAG_TARGET;
-    }
-    this.rate = Math.min(1.8, Math.max(0.6, 1 + 0.35 * (lag - LAG_TARGET)));
-    if (this.snaps.length > 8) this.snaps.shift();
-    return false;
-  }
-
-  reset(snap: Snap, now: number) {
-    this.snaps.length = 0;
-    this.snaps.push(snap);
-    this.t = snap.tick;
-    this.rate = 1;
-    this.arrived = now;
-  }
-
-  snapToEnd() {
-    const last = this.snaps[this.snaps.length - 1];
-    if (last) this.reset(last, 0);
-  }
-
-  advance(now: number) {
-    const dt = this.at < 0 ? 0 : Math.min(100, Math.max(0, now - this.at));
-    this.at = now;
-    const last = this.snaps[this.snaps.length - 1];
-    if (!last) return;
-    const lag = last.tick - this.t;
-    if (lag <= 0) {
-      this.t = last.tick;
-    } else {
-      let step = (dt / this.period) * this.rate;
-      if (lag < 0.15) step *= Math.max(0.25, lag / 0.15);
-      this.t = Math.min(last.tick, this.t + step);
-    }
-    while (this.snaps.length > 1 && this.snaps[1].tick <= this.t) this.snaps.shift();
+/** Frames on the step timeline: timed by the server's step stamps, not by arrival (playback.ts). */
+class Playback extends TurfPlayback<Painter> {
+  constructor() {
+    super(parsePainters);
   }
 }
 
@@ -693,7 +617,8 @@ function drawFrame(
   const tEnd = b ? b.tick : a.tick;
   // Your painter runs on the predictor's clock (ahead of this playback).
   const tau = d.pred.advance(now, sNow);
-  const mineOn = d.me >= 0 && d.me < a.painters.length && d.pred.head(tau, sc.myHead);
+  const mineOn = d.me >= 0 && d.me < a.painters.length && d.pred.headSmooth(tau, sc.myHead);
+  debugFrame("turf", { t: now, x: sc.myHead.x, y: sc.myHead.y, on: mineOn ? 1 : 0, pb: pb.t, tau });
 
   // Fills & bomb splashes flash white, then settle.
   if (sc.flashes.length) {
@@ -984,6 +909,10 @@ function drawFrame(
 
 export interface TurfBoardProps {
   view: TurfView;
+  /** Every tick since the last full view, ending with `view` (several can land in one render). */
+  steps?: TurfView[];
+  /** The tick deltas heard lately: they fill in ticks a full view skipped over. */
+  deltas?: TurfDelta[];
   colors: string[];
   avatars: string[];
   away: boolean[];
@@ -1000,7 +929,7 @@ export interface TurfBoardProps {
 }
 
 export function TurfBoard(props: TurfBoardProps) {
-  const { view, colors, avatars, away, me, steer, pred, serverNow, onEvent, label, children } = props;
+  const { view, steps, deltas, colors, avatars, away, me, steer, pred, serverNow, onEvent, label, children } = props;
   const wrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const sizeRef = useRef<Size>({ cssW: 0, cssH: 0, dpr: 1 });
@@ -1031,20 +960,39 @@ export function TurfBoard(props: TurfBoardProps) {
   });
 
   // Feed each new server frame into the playback buffer and your painter's predictor.
-  const onFrame = useEffectEvent((v: TurfView) => {
+  const onFrame = useEffectEvent((v: TurfView, all: TurfView[] | undefined, heard: TurfDelta[] | undefined) => {
     const sc = sceneRef.current;
     const now = performance.now();
+    pred.attachClock(sc.pb.clock);
     const before = sc.pb.snaps[sc.pb.snaps.length - 1]?.view;
-    if (sc.pb.push(v, now)) {
-      sc.shown = null;
-      sc.pending.length = 0;
-      sc.pops.length = 0;
-      if (!before || before.phase === "over" || v.seq < before.seq) sc.startAt = v.phase === "countdown" ? now : -1e9;
+    // Play every tick, not just the newest: a bunched delivery is still several ticks of motion.
+    const list = all && all.length && all[all.length - 1] === v ? all : [v];
+    for (const step of list) {
+      const last = sc.pb.snaps[sc.pb.snaps.length - 1];
+      if (step !== v && last && step.seq === last.view.seq && step.tick <= last.tick) continue;
+      // A full view that skipped ticks (it came in the same bunch as their deltas): play those too.
+      if (last && heard && step.seq === last.view.seq && step.phase === "play" && last.view.phase === "play") {
+        let cur = last.view;
+        for (const d of heard) {
+          if (d.n <= cur.tick || d.n >= step.tick) continue;
+          const next = applyDelta(cur, d);
+          if (!next) break;
+          sc.pb.push(next, now);
+          cur = next;
+        }
+      }
+      const prev = last?.view;
+      if (sc.pb.push(step, now)) {
+        sc.shown = null;
+        sc.pending.length = 0;
+        sc.pops.length = 0;
+        if (!prev || prev.phase === "over" || step.seq < prev.seq) sc.startAt = step.phase === "countdown" ? now : -1e9;
+      }
     }
     if (v.phase === "over" && before?.phase !== "over") sc.overAt = before ? now : -1e9;
     pred.ingest(v, serverNow(), now);
   });
-  useEffect(() => onFrame(view), [view]);
+  useEffect(() => onFrame(view, steps, deltas), [view, steps, deltas]);
 
   // Score pops from transient server events, held until playback reaches the step that caused them.
   useEffect(

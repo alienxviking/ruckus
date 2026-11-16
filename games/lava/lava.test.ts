@@ -2,6 +2,9 @@
 import { assert, makeTestCtx } from "../../shared/testing";
 import lava, { collide, type LavaState, type LavaView } from "./server";
 import { LavaPredictor } from "./predict";
+import { CORR_MS, CORR_SNAP } from "./arena";
+import { Spring2D, Timeline } from "../snakes/netsmooth";
+import { WIFI, WIFI_BAD, burstyLink, type BurstyOptions } from "../snakes/netsim";
 import {
   ABANDON_MS,
   CAMP_MS,
@@ -728,6 +731,110 @@ function gapRun(jump: boolean, gaps: number) {
   run(s, t, 150);
   const me = s.runners[0];
   assert(Math.hypot(out.x - me.x, out.y - me.y) < 6, `prediction ahead matches (${Math.hypot(out.x - me.x, out.y - me.y).toFixed(2)})`);
+}
+
+// ---------- your runner over a jittery, bursty link (what the live server sees from Wi-Fi) ----------
+// Drawn the way arena.tsx draws it (the renderer's clock, the replay at serverNow + lead, every
+// correction, acknowledgements included, blended out by a spring): no lurches when a bunch lands.
+function lavaJitter(link: BurstyOptions, seed: number, secs = 10) {
+  const { s, t } = setup(2, seed);
+  startFight(s, t);
+  clearFloor(s);
+  place(s, 0, 0, 0);
+  place(s, 1, 4, -4);
+  const upLink = burstyLink(seed, link);
+  const downLink = burstyLink(seed + 100, link);
+  const clock = new Timeline({ period: TICK_MS, start: 100, min: TICK_MS + 15, max: 650 });
+  const pred = new LavaPredictor();
+  pred.attachClock(clock);
+  let rnd = seed * 7919 + 13;
+  const rand = () => ((rnd = (rnd * 1103515245 + 12345) % 2147483648) / 2147483648);
+  const toServer: { at: number; a: unknown }[] = [];
+  const toClient: { at: number; snap: Snap }[] = [];
+  const deliver = (snap: Snap) => toClient.push({ at: downLink.send(t.ctx.now()), snap: JSON.parse(JSON.stringify(snap)) });
+  deliver(s.snap);
+  const k = { x: 0, y: 0, vx: 0, vy: 0 };
+  const k2 = { x: 0, y: 0, vx: 0, vy: 0 };
+  const corr = new Spring2D(CORR_MS);
+  const drawn: [number, number][] = [];
+  const t0 = t.ctx.now();
+  let nextTick = t0 + TICK_MS;
+  let nextInput = t0 + 100;
+  let nextFrame = t0;
+  let target: [number, number] = [CENTER, CENTER];
+  for (let now = t0; now < t0 + secs * 1_000; now += 1) {
+    t.advance(now - t.ctx.now());
+    while (toServer.length && toServer[0].at <= now) lava.action(s, "p0", toServer.shift()!.a as never, t.ctx);
+    if (now >= nextTick) {
+      nextTick += TICK_MS;
+      t.events.length = 0;
+      // Solid floor throughout: only motion is under test.
+      clearFloor(s);
+      for (const r of s.runners) r.tileSince = simT(s);
+      if (lava.tick!(s, t.ctx)) deliver(s.snap);
+      for (const e of snaps(t)) deliver(e);
+    }
+    while (toClient.length && toClient[0].at <= now) {
+      const { snap } = toClient.shift()!;
+      clock.observe(snap.t, now);
+      const T = clock.serverNow(now) + pred.lead(now);
+      const had = pred.base?.n === snap.n && pred.predict(T, k);
+      for (const a of snap.a ?? []) if (a[0] === 0) pred.ack(a[1], snap.t + a[2], now);
+      const me = snap.p.find((x) => x[0] === 0);
+      if (me) pred.setBase({ n: snap.n, t: snap.t, x: me[1], y: me[2], vx: me[3], vy: me[4], cd: me[6] ?? 0 });
+      if (had && pred.predict(T, k2)) {
+        corr.add(k.x - k2.x, k.y - k2.y, (k.vx - k2.vx) / 1000, (k.vy - k2.vy) / 1000);
+        if (corr.size > CORR_SNAP) corr.reset();
+      }
+    }
+    if (now >= nextFrame) {
+      nextFrame += 1000 / 60;
+      clock.tick(now);
+      if (pred.predict(clock.serverNow(now) + pred.lead(now), k)) {
+        corr.step(1000 / 60);
+        if (now - t0 > 1_500) drawn.push([k.x + corr.x, k.y + corr.y]);
+      }
+    }
+    if (now >= nextInput) {
+      nextInput = now + 150 + Math.floor(rand() * 200);
+      if (rand() < 0.4) {
+        const a = rand() * Math.PI * 2;
+        target = [CENTER + Math.cos(a) * 100, CENTER + Math.sin(a) * 100];
+      }
+      if (!pred.predict(clock.serverNow(now) + pred.lead(now), k)) continue;
+      let ix = (target[0] - k.x) * 0.9 - k.vx * 0.45;
+      let iy = (target[1] - k.y) * 0.9 - k.vy * 0.45;
+      const m = Math.hypot(ix, iy) || 1;
+      [ix, iy] = [Math.round((ix / m) * 100), Math.round((iy / m) * 100)];
+      const seq = pred.recordInput(ix, iy, now);
+      toServer.push({ at: upLink.send(now), a: { type: "input", x: ix, y: iy, s: seq } });
+    }
+  }
+  const lurch: number[] = [];
+  for (let i = 2; i < drawn.length; i++) {
+    lurch.push(Math.hypot(drawn[i][0] - 2 * drawn[i - 1][0] + drawn[i - 2][0], drawn[i][1] - 2 * drawn[i - 1][1] + drawn[i - 2][1]));
+  }
+  lurch.sort((a, b) => a - b);
+  const span = secs - 1.5;
+  return {
+    alive: s.runners[0].alive,
+    p95: lurch[Math.floor(lurch.length * 0.95)],
+    max: lurch[lurch.length - 1],
+    lurchesPerS: lurch.filter((v) => v > 3).length / span,
+  };
+}
+
+for (const [name, link, seed, lim] of [
+  ["wifi", WIFI, 41, [2.5, 2.5]],
+  ["wifi", WIFI, 42, [2.5, 2.5]],
+  ["bad wifi", WIFI_BAD, 43, [4, 4]],
+] as const) {
+  const r = lavaJitter(link, seed);
+  const label = `lava net ${name} #${seed}`;
+  if (process.env.NET_VERBOSE) console.log(label, { p95: r.p95.toFixed(2), max: r.max.toFixed(1), lurchesPerS: r.lurchesPerS.toFixed(2) });
+  assert(r.alive, `${label}: still standing`);
+  assert(r.p95 < lim[0], `${label}: your runner moves smoothly (p95 lurch ${r.p95.toFixed(2)} units/frame)`);
+  assert(r.lurchesPerS < lim[1], `${label}: no visible lurches (${r.lurchesPerS.toFixed(2)}/s)`);
 }
 
 void CRACK_STAGE_MS;

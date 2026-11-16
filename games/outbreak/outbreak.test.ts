@@ -27,6 +27,9 @@ import {
   isSnap,
   type Snap,
 } from "./shared";
+import { TICK_MS } from "./shared";
+import { Timeline, Trail, reconcile } from "../snakes/netsmooth";
+import { WIFI, WIFI_BAD, burstyLink } from "../snakes/netsim";
 
 type T = ReturnType<typeof makeTestCtx>;
 
@@ -446,6 +449,68 @@ const lastSnap = (t: T): Snap => {
   run(t, s, 2_000);
   const quiet = t.events.filter((e) => isSnap(e.event)).length;
   assert(quiet <= 3, `heartbeat only when still (${quiet})`);
+}
+
+// ---------- network smoothing over a jittery, bursty link (snakes/netsmooth.ts) ----------
+// What the live server sees from Wi-Fi: frames stall for 0.1-1 s and land in bunches.
+{
+  // The playback clock: never runs backwards, never jumps, keeps an even pace almost always, and
+  // the adaptive delay keeps the next frame in hand (so remote players rarely extrapolate).
+  for (const [name, link, seed, maxOff, maxUnder] of [
+    ["wifi", WIFI, 51, 0.04, 0.03],
+    ["bad wifi", WIFI_BAD, 52, 0.08, 0.06],
+  ] as const) {
+    const net = burstyLink(seed, link);
+    const tl = new Timeline({ period: TICK_MS, start: 100, min: TICK_MS + 15, max: 650 });
+    const arrivals: { t: number; at: number }[] = [];
+    for (let k = 0; k < 30_000 / TICK_MS; k++) arrivals.push({ t: 5_000 + k * TICK_MS, at: net.send(5_000 + k * TICK_MS) });
+    let i = 0;
+    let newest = -Infinity;
+    let prev = NaN;
+    let frames = 0;
+    let off = 0;
+    let under = 0;
+    let back = 0;
+    for (let p = arrivals[0].at; p < arrivals[arrivals.length - 1].at; p += 1000 / 60) {
+      while (i < arrivals.length && arrivals[i].at <= p) {
+        tl.observe(arrivals[i].t, arrivals[i].at);
+        newest = Math.max(newest, arrivals[i++].t);
+      }
+      const rt = tl.tick(p, newest, TICK_MS, 200);
+      if (!Number.isNaN(prev) && p > arrivals[0].at + 3_000) {
+        const rate = (rt - prev) / (1000 / 60);
+        frames += 1;
+        if (rate < 0) back += 1;
+        if (Math.abs(rate - 1) > 0.2) off += 1;
+        if (rt > newest) under += 1;
+      }
+      prev = rt;
+    }
+    assert(back === 0, `${name}: playback never runs backwards`);
+    assert(off / frames < maxOff, `${name}: even pace (${((100 * off) / frames).toFixed(1)}% of frames off by >20%)`);
+    assert(under / frames < maxUnder, `${name}: next frame in hand (${((100 * under) / frames).toFixed(1)}% extrapolated)`);
+  }
+
+  // Reconciling a walker with the server's (old) copy of it: latency isn't an error, a real
+  // difference is eased out (never snapped), and only a teleport-sized one jumps.
+  const trail = new Trail(3_000);
+  const me = { x: 0, y: 0 };
+  const err = { x: 0, y: 0 };
+  const o = { tol: 6, snap: 180, tauMs: 150 };
+  for (let k = 0; k <= 60; k++) {
+    me.x = k * 3; // walking right at 180 units/s, a frame every 16.7 ms
+    trail.push(k * 16.7, me.x, me.y);
+  }
+  // The server shows you where you were 300 ms ago: on your path, so nothing moves.
+  assert(reconcile(me, trail, me.x - 54, 0, 16.7, o, err) === 0, "latency alone: no correction");
+  // The server says you're 40 units off your path (you were blocked): eased, a bit per frame.
+  const first = reconcile(me, trail, me.x - 54, 40, 16.7, o, err);
+  assert(first > 0 && first < 8, `a real error is eased, not snapped (${first.toFixed(2)})`);
+  for (let k = 0; k < 120; k++) reconcile(me, trail, 126, 40, 16.7, o, err);
+  assert(Math.abs(me.y - 40) < 7, `...and fully taken within 2 s (${me.y.toFixed(1)})`);
+  // A respawn across the map: jump.
+  reconcile(me, trail, 900, 600, 16.7, o, err);
+  assert(me.x === 900 && me.y === 600, "a teleport-sized difference jumps");
 }
 
 console.log("✓ outbreak: all tests passed");

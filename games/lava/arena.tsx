@@ -17,7 +17,7 @@
 import { useEffect, useEffectEvent, useRef, type PointerEvent, type ReactNode, type RefObject } from "react";
 import type { LavaView } from "./server";
 import type { Kin } from "./physics";
-import { JitterDelay, type LavaPredictor } from "./predict";
+import type { LavaPredictor } from "./predict";
 import {
   APOTHEM,
   CAMP_MS,
@@ -51,11 +51,12 @@ import {
   type PlayerTuple,
   type Snap,
 } from "./shared";
+import { Spring2D, Timeline, debugFrame } from "../snakes/netsmooth";
 
 const TAU = Math.PI * 2;
 const DELAY_MS = 100;
-const CORR_MS = 40;
-const CORR_SNAP = 160;
+export const CORR_MS = 100;
+export const CORR_SNAP = 160;
 const EXTRAP_MS = 150;
 const KEEP_MS = 400;
 const MAX_FRAMES = 120;
@@ -118,44 +119,23 @@ function toFrame(s: Snap, boardStr: string | null): Frame {
   };
 }
 
-/** Maps server time onto performance.now(), smoothly. */
-class Clock {
-  target = 0;
-  offset = 0;
-  ready = false;
-  at = -1;
-  readonly jitter = new JitterDelay(55, 120, DELAY_MS);
-  delay = DELAY_MS;
-
-  observe(t: number, now: number) {
-    const s = now - t;
-    if (!this.ready || Math.abs(s - this.target) > 750) {
-      this.target = s;
-      this.offset = s;
-      this.ready = true;
-      return;
-    }
-    this.target = s < this.target ? s : this.target + (s - this.target) * 0.03;
-    this.jitter.add(s - this.target);
+/**
+ * Maps server time onto performance.now(), smoothly (see snakes/netsmooth.ts): playback follows
+ * the quickest recent delivery, runs behind it by an adaptive delay that covers the measured
+ * jitter (rising promptly, falling only after a calm spell), and slews by a few percent at most.
+ */
+class Clock extends Timeline {
+  constructor() {
+    super({ period: TICK_MS, start: DELAY_MS, min: TICK_MS + 15, max: 650 });
   }
 
-  tick(now: number) {
-    const dt = this.at < 0 ? 0 : Math.min(100, Math.max(0, now - this.at));
-    this.at = now;
-    const diff = this.target - this.offset;
-    if (Math.abs(diff) > 400) this.offset = this.target;
-    else {
-      const max = dt * 0.08;
-      this.offset += Math.max(-max, Math.min(max, diff));
-    }
-    const dd = this.jitter.value - this.delay;
-    const maxd = dt * 0.04;
-    this.delay += Math.max(-maxd, Math.min(maxd, dd));
-    return now - this.offset - this.delay;
-  }
-
-  serverNow(now: number) {
-    return now - this.offset;
+  /**
+   * Playback time for this animation frame: at most a tick's worth of extrapolation past the newest
+   * frame in hand; if the buffer runs drier than that, playback waits (up to 200 ms) instead of
+   * extrapolating further and snapping back, then carries on smoothly.
+   */
+  play(now: number, frames: { t: number }[]) {
+    return this.tick(now, frames.length ? frames[frames.length - 1].t : Infinity, TICK_MS, 200);
   }
 }
 
@@ -269,8 +249,8 @@ interface Scene {
   perf: number;
   my: Kin;
   myOn: boolean;
-  corrX: number;
-  corrY: number;
+  /** Your leftover correction, fading out like a critically damped spring (no twitch). */
+  corr: Spring2D;
   myX: number;
   myY: number;
   myGone: number;
@@ -317,8 +297,7 @@ export function newScene(): Scene {
     perf: 0,
     my: { x: 0, y: 0, vx: 0, vy: 0 },
     myOn: false,
-    corrX: 0,
-    corrY: 0,
+    corr: new Spring2D(CORR_MS),
     myX: NaN,
     myY: NaN,
     myGone: -1,
@@ -366,8 +345,17 @@ function setStage(sc: Scene, i: number, stage: number, rt: number, animate: bool
 /** Hand a frame to your predictor: acknowledgements, your newest state, your fall. */
 function feedMine(sc: Scene, f: Frame, newest: boolean, prev: Frame | undefined, me: Mine, now: number) {
   const { pred, slot } = me;
-  if (Array.isArray(f.acks)) for (const a of f.acks) if (a[0] === slot) pred.ack(a[1], f.t + a[2]);
-  if (!newest) return;
+  // What you see right now, before this frame changes anything. Acknowledgements move your replay
+  // too (an input landed earlier or later than guessed: on a jittery uplink, by 100+ ms), so that
+  // change has to be blended out like any other correction, not shown as a jump.
+  const T = sc.clock.serverNow(now) + pred.lead(now);
+  const round = pred.base?.n;
+  const had = sc.clock.ready && pred.predict(T, scratch);
+  if (Array.isArray(f.acks)) for (const a of f.acks) if (a[0] === slot) pred.ack(a[1], f.t + a[2], now);
+  if (!newest) {
+    blendCorrection(sc, pred, had, T);
+    return;
+  }
   const dt = f.d[slot];
   if (!dt) {
     if (prev && prev.n === f.n && prev.d[slot] && sc.myGone !== f.n && !Number.isNaN(sc.myX)) {
@@ -381,20 +369,19 @@ function feedMine(sc: Scene, f: Frame, newest: boolean, prev: Frame | undefined,
   const old = pred.base;
   if (!old || old.n !== f.n || !sc.clock.ready) {
     pred.setBase(base);
-    sc.corrX = 0;
-    sc.corrY = 0;
+    sc.corr.reset();
     return;
   }
-  const T = sc.clock.serverNow(now) + pred.lead();
-  const had = pred.predict(T, scratch);
+  // Same moment, two answers: keep showing the old one and fade the difference out.
   pred.setBase(base);
+  blendCorrection(sc, pred, had && round === f.n, T);
+}
+
+/** Your replay changed under you (`scratch` = what was shown): fade the difference out. */
+function blendCorrection(sc: Scene, pred: Mine["pred"], had: boolean, T: number) {
   if (had && pred.predict(T, scratch2)) {
-    sc.corrX += scratch.x - scratch2.x;
-    sc.corrY += scratch.y - scratch2.y;
-    if (Math.hypot(sc.corrX, sc.corrY) > CORR_SNAP) {
-      sc.corrX = 0;
-      sc.corrY = 0;
-    }
+    sc.corr.add(scratch.x - scratch2.x, scratch.y - scratch2.y, (scratch.vx - scratch2.vx) / 1000, (scratch.vy - scratch2.vy) / 1000);
+    if (sc.corr.size > CORR_SNAP) sc.corr.reset();
   }
 }
 
@@ -966,7 +953,7 @@ function drawScene(
   pred: LavaPredictor | null,
 ) {
   const frames = sc.frames;
-  const rt = sc.clock.tick(now);
+  const rt = sc.clock.play(now, sc.frames);
   const wallDt = sc.wall < 0 ? 16 : Math.min(60, Math.max(0, now - sc.wall));
   sc.wall = now;
   sc.rt = rt;
@@ -1004,11 +991,10 @@ function drawScene(
   const myNewest = latest && mySlot >= 0 ? latest.d[mySlot] : undefined;
   if (pred && myNewest && phase !== "countdown" && pred.base && pred.base.n === latest!.n && sc.myGone !== latest!.n) {
     pred.decided = phase !== "fight";
-    if (pred.predict(sc.clock.serverNow(now) + pred.lead(), sc.my)) {
-      const k = Math.exp(-wallDt / CORR_MS);
-      sc.corrX *= k;
-      sc.corrY *= k;
+    if (pred.predict(sc.clock.serverNow(now) + pred.lead(now), sc.my)) {
+      sc.corr.step(wallDt);
       sc.myOn = true;
+      debugFrame("lava", { t: now, x: sc.my.x + sc.corr.x, y: sc.my.y + sc.corr.y, rt });
     }
   }
 
@@ -1234,9 +1220,9 @@ function drawScene(
   for (let slot = 0; slot < slots; slot++) {
     if (slot === mySlot && latest && sc.myGone === latest.n) continue;
     if (slot === mySlot && sc.myOn && myNewest) {
-      const x = sc.my.x + sc.corrX;
-      const y = sc.my.y + sc.corrY;
-      const jp = pred && Number.isFinite(pred.jumpT) ? (sc.clock.serverNow(now) + pred.lead() - pred.jumpT) / JUMP_MS : -1;
+      const x = sc.my.x + sc.corr.x;
+      const y = sc.my.y + sc.corr.y;
+      const jp = pred && Number.isFinite(pred.jumpT) ? (sc.clock.serverNow(now) + pred.lead(now) - pred.jumpT) / JUMP_MS : -1;
       draws.push({ slot, x, y, vx: sc.my.vx, vy: sc.my.vy, flags: myNewest[5], jp: jp >= 0 && jp < 1 ? jp : -1, cd: myNewest[6], cdAt: latest!.t });
       continue;
     }

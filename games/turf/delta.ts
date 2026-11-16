@@ -97,10 +97,12 @@ const newer = (a: TurfView | null, b: TurfView | null) => (!a ? b : !b ? a : b.t
  * The view to show: the newest full view (from the room or a requested keyframe) with every
  * delta since applied in order. `gap` is true when a tick went missing (ask for a keyframe).
  */
-export function rebuild(view: TurfView | null, h: Heard): { view: TurfView | null; gap: boolean } {
+export function rebuild(view: TurfView | null, h: Heard): { view: TurfView | null; gap: boolean; steps: TurfView[] } {
   let cur = newer(view, h.key);
-  if (!cur) return { view: null, gap: false };
+  if (!cur) return { view: null, gap: false, steps: [] };
   let gap = false;
+  // Every tick on the way, so the board can play each one even when several land in one render.
+  const steps: TurfView[] = [cur];
   for (const d of h.deltas) {
     if (d.n <= cur.tick) continue;
     const next = applyDelta(cur, d);
@@ -109,10 +111,14 @@ export function rebuild(view: TurfView | null, h: Heard): { view: TurfView | nul
       break;
     }
     cur = next;
+    steps.push(cur);
   }
   const e = h.echo;
-  if (e && cur.me && e.rx >= cur.me[1]) cur = { ...cur, me: [Math.max(cur.me[0], e.ap ?? 0), e.rx, e.sl] };
-  return { view: cur, gap };
+  if (e && cur.me && e.rx >= cur.me[1]) {
+    cur = { ...cur, me: [Math.max(cur.me[0], e.ap ?? 0), e.rx, e.sl] };
+    steps[steps.length - 1] = cur;
+  }
+  return { view: cur, gap, steps };
 }
 
 /** For tools (the bandwidth harness): apply one raw event to a plain state. */

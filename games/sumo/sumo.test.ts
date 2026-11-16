@@ -1,8 +1,10 @@
 // Run with: npx tsx games/sumo/sumo.test.ts
 import { assert, makeTestCtx } from "../../shared/testing";
 import sumo, { collide, type SumoState, type SumoView } from "./server";
-import { newScene, pushFrame, sampleDisc, type Sample } from "./rink";
-import { JitterDelay, SumoPredictor } from "./predict";
+import { CORR_MS, CORR_SNAP, newScene, pushFrame, sampleDisc, type Sample } from "./rink";
+import { SumoPredictor } from "./predict";
+import { Spring2D, Timeline } from "../snakes/netsmooth";
+import { WIFI, WIFI_BAD, burstyLink, type BurstyOptions } from "../snakes/netsim";
 import {
   ABANDON_MS,
   CENTER,
@@ -805,6 +807,112 @@ for (const [up, down, jitter] of [
   assert(r.lead > rtt - TICK_MS - 5 && r.lead < rtt + jitter + 5, `${label}: lead ~ one round trip (${r.lead.toFixed(0)})`);
 }
 
+// ---------- your disc over a jittery, bursty link (what the live server sees from Wi-Fi) ----------
+// Snapshots stall and then land in a bunch; inputs do the same on the way up. Drawn the way
+// rink.tsx draws it (the renderer's clock, the replay at serverNow + lead, corrections blended
+// out), your disc must move smoothly: no lurches when a bunch lands, few visible corrections.
+function sumoJitter(link: BurstyOptions, seed: number, secs = 10) {
+  const { s, t } = setup(2, seed);
+  startFight(s, t);
+  Object.assign(s.discs[0], { x: CENTER, y: CENTER + 60, vx: 0, vy: 0 });
+  const upLink = burstyLink(seed, link);
+  const downLink = burstyLink(seed + 100, link);
+  const clock = new Timeline({ period: TICK_MS, start: 100, min: TICK_MS + 15, max: 650 });
+  const pred = new SumoPredictor();
+  pred.attachClock(clock);
+  let rnd = seed * 7919 + 13;
+  const rand = () => ((rnd = (rnd * 1103515245 + 12345) % 2147483648) / 2147483648);
+  const toServer: { at: number; a: unknown }[] = [];
+  const toClient: { at: number; snap: Snap }[] = [];
+  const deliver = (snap: Snap) => toClient.push({ at: downLink.send(t.ctx.now()), snap: JSON.parse(JSON.stringify(snap)) });
+  deliver(s.snap);
+  const k = { x: 0, y: 0, vx: 0, vy: 0 };
+  const k2 = { x: 0, y: 0, vx: 0, vy: 0 };
+  // The renderer's blend of corrections (rink.tsx: CORR_MS / CORR_SNAP).
+  const corr = new Spring2D(CORR_MS);
+  let corrections = 0;
+  const drawn: [number, number][] = [];
+  const t0 = t.ctx.now();
+  let nextTick = t0 + TICK_MS;
+  let nextInput = t0 + 100;
+  let nextFrame = t0;
+  let target: [number, number] = [CENTER, CENTER];
+  for (let now = t0; now < t0 + secs * 1_000; now += 1) {
+    t.advance(now - t.ctx.now());
+    while (toServer.length && toServer[0].at <= now) sumo.action(s, "p0", toServer.shift()!.a as never, t.ctx);
+    if (now >= nextTick) {
+      nextTick += TICK_MS;
+      t.events.length = 0;
+      if (sumo.tick!(s, t.ctx)) deliver(s.snap);
+      for (const e of snaps(t)) deliver(e);
+    }
+    while (toClient.length && toClient[0].at <= now) {
+      const { snap } = toClient.shift()!;
+      clock.observe(snap.t, now);
+      // As rink.tsx does it: what's shown first, then the acknowledgements and the new base.
+      const T = clock.serverNow(now) + pred.lead(now);
+      const had = pred.base?.n === snap.n && pred.predict(T, k);
+      for (const a of snap.a ?? []) if (a[0] === 0) pred.ack(a[1], snap.t + a[2], now);
+      const d = snap.p.find((p) => p[0] === 0);
+      if (d) pred.setBase({ n: snap.n, t: snap.t, x: d[1], y: d[2], vx: d[3], vy: d[4], heavy: false, r: snap.r });
+      if (had && pred.predict(T, k2)) {
+        corr.add(k.x - k2.x, k.y - k2.y, (k.vx - k2.vx) / 1000, (k.vy - k2.vy) / 1000);
+        if (now - t0 > 1_500 && Math.hypot(k.x - k2.x, k.y - k2.y) > 1) corrections += 1;
+        if (corr.size > CORR_SNAP) corr.reset();
+      }
+    }
+    if (now >= nextFrame) {
+      nextFrame += 1000 / 60;
+      clock.tick(now);
+      if (pred.predict(clock.serverNow(now) + pred.lead(now), k)) {
+        corr.step(1000 / 60);
+        if (now - t0 > 1_500) drawn.push([k.x + corr.x, k.y + corr.y]);
+      }
+    }
+    if (now >= nextInput) {
+      nextInput = now + 150 + Math.floor(rand() * 200);
+      if (rand() < 0.4) {
+        const a = rand() * Math.PI * 2;
+        target = [CENTER + Math.cos(a) * 120, CENTER + Math.sin(a) * 120];
+      }
+      if (!pred.predict(clock.serverNow(now) + pred.lead(now), k)) continue;
+      let ix = (target[0] - k.x) * 0.9 - k.vx * 0.45;
+      let iy = (target[1] - k.y) * 0.9 - k.vy * 0.45;
+      const m = Math.hypot(ix, iy) || 1;
+      [ix, iy] = [Math.round((ix / m) * 100), Math.round((iy / m) * 100)];
+      const seq = pred.recordInput(ix, iy, now);
+      toServer.push({ at: upLink.send(now), a: { type: "input", x: ix, y: iy, s: seq } });
+    }
+  }
+  // Lurch: the frame-to-frame change of velocity on screen (units/frame); steering alone stays < 1.
+  const lurch: number[] = [];
+  for (let i = 2; i < drawn.length; i++) {
+    lurch.push(Math.hypot(drawn[i][0] - 2 * drawn[i - 1][0] + drawn[i - 2][0], drawn[i][1] - 2 * drawn[i - 1][1] + drawn[i - 2][1]));
+  }
+  lurch.sort((a, b) => a - b);
+  const span = secs - 1.5;
+  return {
+    alive: s.discs.every((d) => d.alive),
+    p95: lurch[Math.floor(lurch.length * 0.95)],
+    max: lurch[lurch.length - 1],
+    lurchesPerS: lurch.filter((v) => v > 3).length / span,
+    corrPerS: corrections / span,
+  };
+}
+
+for (const [name, link, seed, lim] of [
+  ["wifi", WIFI, 31, [2.5, 2.5]],
+  ["wifi", WIFI, 32, [2.5, 2.5]],
+  ["bad wifi", WIFI_BAD, 33, [4, 4]],
+] as const) {
+  const r = sumoJitter(link, seed);
+  const label = `sumo net ${name} #${seed}`;
+  if (process.env.NET_VERBOSE) console.log(label, { p95: r.p95.toFixed(2), max: r.max.toFixed(1), lurchesPerS: r.lurchesPerS.toFixed(2), corrPerS: r.corrPerS.toFixed(2) });
+  assert(r.alive, `${label}: nobody fell`);
+  assert(r.p95 < lim[0], `${label}: your disc moves smoothly (p95 lurch ${r.p95.toFixed(2)} units/frame)`);
+  assert(r.lurchesPerS < lim[1], `${label}: no visible lurches (${r.lurchesPerS.toFixed(2)}/s)`);
+}
+
 // ---------- dash: predicted at once; a refused one disappears once acknowledged ----------
 {
   const { s, t } = setup(2);
@@ -856,15 +964,18 @@ for (const [up, down, jitter] of [
 
 // ---------- adaptive playback delay ----------
 {
-  const steady = new JitterDelay(55, 120, 100);
-  for (let i = 0; i < 40; i++) steady.add(i % 5);
-  assert(steady.value >= 55 && steady.value <= 70, `low jitter: short delay (${steady.value})`);
-  const rough = new JitterDelay(55, 120, 100);
-  for (let i = 0; i < 40; i++) rough.add((i * 37) % 90);
-  assert(rough.value === 120, `heavy jitter: capped (${rough.value})`);
-  const mid = new JitterDelay(55, 120, 100);
-  for (let i = 0; i < 40; i++) mid.add((i * 13) % 30);
-  assert(mid.value > 70 && mid.value < 100, `some jitter: in between (${mid.value})`);
+  // Frames every TICK_MS arriving `late(i)` ms after the quickest delivery.
+  const feed = (late: (i: number) => number) => {
+    const c = new Timeline({ period: TICK_MS, start: 100, min: TICK_MS + 15, max: 650 });
+    for (let i = 0; i < 400; i++) c.observe(i * TICK_MS, 5_000 + i * TICK_MS + late(i));
+    return c;
+  };
+  const steady = feed((i) => i % 5);
+  assert(steady.goal >= TICK_MS + 15 && steady.goal <= TICK_MS + 40, `low jitter: short delay (${steady.goal})`);
+  const rough = feed((i) => ((i * 37) % 90) * 9);
+  assert(rough.goal === 650, `heavy jitter: capped (${rough.goal})`);
+  const mid = feed((i) => ((i * 13) % 30) * 4);
+  assert(mid.goal > 150 && mid.goal < 200, `some jitter: in between (${mid.goal})`);
 }
 
 console.log("✓ sumo tests passed");
