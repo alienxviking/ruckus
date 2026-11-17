@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { Flame, Gamepad2, Heart, Trophy } from "lucide-react";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { CATALOG_BY_ID } from "@/games/catalog";
 import { loadIdentity, saveIdentity, type Identity } from "@/lib/identity";
@@ -29,7 +30,8 @@ export function MePage() {
   const mine = useSyncExternalStore(subscribeMyGames, readMyGames, serverMyGames);
   const [editing, setEditing] = useState(false);
 
-  const played = Object.values(p.played).reduce((a, b) => a + b, 0);
+  // Older versions only counted wins, so "played" can lag behind: never show fewer games than wins.
+  const played = Math.max(p.wins, Object.values(p.played).reduce((a, b) => a + b, 0));
   const topGames = Object.entries(p.played)
     .sort((a, b) => b[1] - a[1])
     .slice(0, 3)
@@ -87,10 +89,10 @@ export function MePage() {
 
       {/* ---------- stats ---------- */}
       <section className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <Stat label="Wins" value={p.wins} emoji="🏆" />
-        <Stat label="Games played" value={played} emoji="🎮" />
-        <Stat label="Best win streak" value={p.bestRun} emoji="🔥" />
-        <Stat label="Favourites" value={mine.favs.length} emoji="♥" />
+        <Stat label="Wins" value={p.wins} Icon={Trophy} color="var(--color-sun)" tilt={-6} />
+        <Stat label="Games played" value={played} Icon={Gamepad2} color="var(--color-cyan)" tilt={5} />
+        <Stat label="Best win streak" value={p.bestRun} Icon={Flame} color="var(--color-pink)" tilt={-4} />
+        <Stat label="Favourites" value={mine.favs.length} Icon={Heart} color="var(--color-volt)" tilt={6} />
       </section>
       <p className="-mt-2 text-center text-xs text-muted">Counts room games with at least one other person (bots and solo don&apos;t count).</p>
 
@@ -178,10 +180,16 @@ export function MePage() {
   );
 }
 
-function Stat({ label, value, emoji }: { label: string; value: number; emoji: string }) {
+function Stat({ label, value, Icon, color, tilt }: { label: string; value: number; Icon: typeof Trophy; color: string; tilt: number }) {
   return (
-    <div className="card p-3 text-center">
-      <div className="text-2xl leading-none">{emoji}</div>
+    <div className="card flex flex-col items-center p-3 text-center">
+      <span
+        aria-hidden
+        className="grid size-10 place-items-center rounded-xl border-2 border-ink text-ink shadow-[2px_3px_0_rgb(0_0_0/0.5)]"
+        style={{ background: color, transform: `rotate(${tilt}deg)` }}
+      >
+        <Icon className="size-5" strokeWidth={2.5} />
+      </span>
       <div className="mt-1 font-hero text-3xl font-extrabold tabular-nums">{value}</div>
       <div className="text-xs font-semibold text-muted">{label}</div>
     </div>
