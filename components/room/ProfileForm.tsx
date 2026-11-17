@@ -126,7 +126,7 @@ export function ProfileForm({
       <fieldset>
         <div className="mb-2 flex items-center justify-between">
           <legend className="label">Wear</legend>
-          <span className="font-mono text-[11px] text-muted">
+          <span className="text-xs font-semibold text-muted">
             {wins} {wins === 1 ? "win" : "wins"} · win &amp; earn badges to unlock more
           </span>
         </div>
@@ -156,20 +156,20 @@ export function ProfileForm({
                 style={on ? { background: `${color}26`, boxShadow: `inset 0 0 0 1.5px ${color}` } : undefined}
               >
                 {a ? (
-                  <span className={locked ? "opacity-25 grayscale" : ""}>
-                    <Avatar id={`${base}+${a}`} size="2.1rem" />
+                  <span className={`grid size-full place-items-center ${locked ? "opacity-30 grayscale" : ""}`}>
+                    <Avatar id={`${base}+${a}`} size="80%" />
                   </span>
                 ) : (
-                  <Ban aria-hidden className="size-4 text-muted" strokeWidth={2} />
+                  <Ban aria-hidden className="size-6 text-muted" strokeWidth={2} />
                 )}
                 {locked && (
-                  <span className="absolute inset-0 grid place-items-center">
-                    <span className="flex items-center gap-0.5 rounded-sm bg-ink/85 px-1 py-px font-mono text-[9px] text-text">
+                  <span className="absolute right-0.5 bottom-0.5">
+                    <span className="flex items-center gap-0.5 rounded-md bg-ink/90 px-1.5 py-0.5 text-[11px] font-bold text-text">
                       {badge ? (
-                        <Trophy aria-hidden className="size-2.5 text-brand-2" strokeWidth={2.5} />
+                        <Trophy aria-hidden className="size-3 text-brand-2" strokeWidth={2.5} />
                       ) : (
                         <>
-                          <Lock aria-hidden className="size-2.5" strokeWidth={2.5} />
+                          <Lock aria-hidden className="size-3" strokeWidth={2.5} />
                           {a ? lockReason(a, progress)?.match(/\((\d+)\/(\d+)\)/)?.[2] : null}
                         </>
                       )}
