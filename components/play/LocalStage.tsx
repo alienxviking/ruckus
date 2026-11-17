@@ -37,7 +37,7 @@ export function loadLocalGame(id: string): Promise<LoadedGame> {
 /** You, as saved in this browser (or a friendly default before you've picked a name). */
 export function localMe(): Pick<Player, "name" | "color" | "avatar"> {
   const id = loadIdentity();
-  return id ? { name: id.name, color: id.color, avatar: id.avatar } : { name: "You", color: PLAYER_COLORS[5], avatar: "fox" };
+  return id ? { name: id.name, color: id.color, avatar: id.avatar } : { name: "Player", color: PLAYER_COLORS[5], avatar: "fox" };
 }
 
 const noRtt = () => 0;
@@ -95,7 +95,7 @@ export function LocalStage({
           {meta && <GameBadge id={meta.id} accent={meta.accent} size="sm" sheen />}
           <span className="truncate">{meta?.name}</span>
           {label && (
-            <span className="label hidden shrink-0 rounded-sm border border-line px-1.5 py-0.5 text-[10px] min-[420px]:inline">
+            <span className="hidden shrink-0 rounded-full border border-line px-2 py-0.5 text-xs font-semibold text-muted min-[420px]:inline">
               {label}
             </span>
           )}

@@ -84,7 +84,7 @@ function SoloCard({ line, asked, accent, title }: { line: PlayerLine; asked: num
         {stats.map((s) => (
           <div key={s.label} className="rounded-xl bg-panel-2 px-2 py-2">
             <div className="font-mono text-lg font-bold">{s.value}</div>
-            <div className="text-[11px] text-muted">{s.label}</div>
+            <div className="text-xs text-muted">{s.label}</div>
           </div>
         ))}
       </div>
@@ -132,7 +132,7 @@ export function FinalScreen({
 
       {!solo && (
         <div className="card p-1.5">
-          <div className="flex items-center justify-between gap-2 px-2 pt-1 pb-1.5 text-[11px] text-muted" aria-hidden>
+          <div className="flex items-center justify-between gap-2 px-2 pt-1 pb-1.5 text-xs text-muted" aria-hidden>
             <span>✓ correct · ⚡ fastest right answer · 🔥 best streak</span>
             <span>points</span>
           </div>

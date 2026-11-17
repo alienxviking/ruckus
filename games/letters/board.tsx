@@ -45,7 +45,7 @@ export function Board({
           <h3 className="mb-1 flex items-start gap-2 px-1 pt-0.5 text-sm leading-snug font-bold">
             <span
               aria-hidden
-              className="mt-px grid size-5 shrink-0 place-items-center rounded-md text-[11px] font-black text-ink"
+              className="mt-px grid size-5 shrink-0 place-items-center rounded-md text-xs font-black text-ink"
               style={{ background: accent }}
             >
               {ci + 1}

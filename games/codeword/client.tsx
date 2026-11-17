@@ -691,7 +691,7 @@ function Board({ view, byId, me }: { view: CodeView; byId: Record<string, Player
             <MiniGrid rows={r.rows} size="w-[3.4rem] shrink-0" />
             <div className="flex min-w-0 flex-1 flex-col justify-between gap-1">
               <div className="min-w-0">
-                <div className="flex items-center gap-1 text-[11px] text-muted">
+                <div className="flex items-center gap-1 text-xs text-muted">
                   <span className="font-mono">#{i + 1}</span>
                 </div>
                 <div className="truncate text-xs font-bold" style={{ color: byId[r.id]?.color }}>
@@ -711,7 +711,7 @@ function Board({ view, byId, me }: { view: CodeView; byId: Record<string, Player
                   />
                 ))}
               </div>
-              <div className="font-mono text-[10px] whitespace-nowrap text-muted">
+              <div className="font-mono text-xs whitespace-nowrap text-muted">
                 {r.done ? "done" : `word ${r.idx + 1} · ${r.rows.length}/6`}
               </div>
             </div>

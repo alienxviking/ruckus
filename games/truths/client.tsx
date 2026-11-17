@@ -265,6 +265,7 @@ function Writer({ view, act, accent }: { view: TruthView; act: Props["act"]; acc
               <textarea
                 ref={refs[i]}
                 className="input min-h-[3.2rem] flex-1 resize-none text-lg"
+                style={{ fieldSizing: "content" } as React.CSSProperties}
                 rows={2}
                 maxLength={MAX_LEN}
                 value={line}
@@ -329,7 +330,7 @@ function SeatStrip({ view, who, me, doneIcon }: { view: TruthView; who: Who; me:
         .map((s) => (
           <PlayerChip key={s.id} player={who(s.id)} size="sm" dim={s.away}>
             <span className={s.done ? "" : "text-muted"}>{s.done ? doneIcon : "…"}</span>
-            {s.id === me ? <span className="text-[10px] text-muted">you</span> : null}
+            {s.id === me ? <span className="text-xs text-muted">you</span> : null}
           </PlayerChip>
         ))}
     </div>

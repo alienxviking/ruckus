@@ -529,7 +529,7 @@ function Seat({
         <span
           aria-hidden
           className="ld-glow pointer-events-none absolute -inset-px rounded-2xl"
-          style={{ boxShadow: `0 0 0 1px ${p.color}, 0 0 18px ${p.color}55` }}
+          style={{ boxShadow: `0 0 0 1px ${p.color}, 3px 4px 0 color-mix(in oklab, ${p.color} 45%, #000)` }}
         />
       )}
       <div aria-hidden className="flex min-w-0 items-center gap-1.5">
@@ -539,20 +539,21 @@ function Seat({
         </span>
         <span className="min-w-0 flex-1 truncate text-sm font-bold" style={{ color: p.color }}>
           {p.name}
-          {isMe && <span className="ml-1 text-[10px] font-semibold text-muted uppercase">you</span>}
+          {isMe && p.name.trim().toLowerCase() !== "you" && <span className="ml-1 hidden text-xs font-medium text-muted sm:inline">(you)</span>}
         </span>
         {myBid ? (
+          // A sticker on the seat's top edge, so the name keeps its room on a phone.
           <span
             key={`${myBid.qty}-${myBid.face}`}
-            className="animate-pop inline-flex shrink-0 items-center gap-0.5 rounded-full border px-1.5 py-0.5 text-xs font-bold"
-            style={{ borderColor: `${p.color}88`, background: `${p.color}22` }}
+            className="animate-pop absolute -top-2.5 right-2 inline-flex items-center gap-0.5 rounded-full border-2 bg-panel px-1.5 py-0.5 text-xs font-bold shadow-[2px_2px_0_rgb(0_0_0/0.5)]"
+            style={{ borderColor: p.color }}
           >
             {myBid.qty}
-            <span className="text-[10px] text-muted">×</span>
+            <span className="text-xs text-muted">×</span>
             <Die value={myBid.face} size={13} />
           </span>
         ) : role ? (
-          <span className="shrink-0 rounded-full bg-panel-2 px-1.5 py-0.5 text-[10px] font-bold text-muted uppercase">{role}</span>
+          <span className="absolute -top-2.5 right-2 rounded-full border-2 border-line bg-panel px-1.5 py-0.5 text-xs font-bold text-muted">{role}</span>
         ) : null}
       </div>
       <div aria-hidden className="mt-1.5 flex min-h-[22px] items-center gap-1">
@@ -620,7 +621,7 @@ function BidBoard({
         <div key={view.bids.length} className="ld-in flex flex-wrap items-center gap-x-3 gap-y-1">
           <span className="min-w-0 truncate text-sm">
             <Who id={bid.by} you={you} P={P} /> {verb(bid.by, you, "bids", "bid")}
-            {bid.auto && <span className="ml-1 rounded bg-panel-2 px-1 text-[10px] font-semibold text-muted uppercase">auto</span>}
+            {bid.auto && <span className="ml-1 rounded bg-panel-2 px-1 text-xs font-semibold text-muted">auto</span>}
           </span>
           <span className="flex items-center gap-2 font-display text-4xl leading-none font-extrabold">
             <span className="tabular-nums">{bid.qty}</span>
@@ -730,7 +731,7 @@ function ShowdownPanel({
     >
       <div className="flex items-center justify-between gap-2">
         <span className="label">{view.phase === "over" ? "Final showdown" : `Showdown · round ${sd.round}`}</span>
-        {sd.auto && <span className="rounded bg-panel-2 px-1.5 text-[10px] font-semibold text-muted uppercase">auto call</span>}
+        {sd.auto && <span className="rounded bg-panel-2 px-1.5 text-xs font-semibold text-muted">auto call</span>}
       </div>
       <p className="text-sm">
         <Who id={sd.caller} you={you} P={P} /> {verb(sd.caller, you, "calls", "call")}{" "}
@@ -1121,7 +1122,7 @@ function BidControls({
               aria-label={`Call spot on: exactly ${prev.qty} ${FACE_PLURAL[prev.face]}`}
             >
               <span className="text-base leading-tight font-extrabold">🎯 Spot on</span>
-              <span className="text-[10px] leading-tight font-medium opacity-75 tabular-nums">
+              <span className="text-xs leading-tight font-medium opacity-80 tabular-nums">
                 exactly {prev.qty}: {Math.round(pExact * 100)}%
               </span>
             </button>
@@ -1158,7 +1159,7 @@ function RoundLog({ view, P, you, accent }: { view: LiarsView; P: Lookup; you: s
                 <span className="tabular-nums">{b.qty}</span>
                 <span className="text-xs text-muted">×</span>
                 <Die value={b.face} size={16} accent={accent} label={FACE_PLURAL[b.face]} />
-                {b.auto && <span className="text-[9px] font-semibold text-muted uppercase">auto</span>}
+                {b.auto && <span className="text-xs font-semibold text-muted">auto</span>}
               </li>
             );
           })}
@@ -1169,7 +1170,7 @@ function RoundLog({ view, P, you, accent }: { view: LiarsView; P: Lookup; you: s
       {last && (
         <p className="border-t border-line pt-2 text-xs text-muted">
           <span className="font-semibold text-text">Last showdown:</span> <Who id={last.caller} you={you} P={P} />{" "}
-          {verb(last.caller, you, "called", "called")} {last.kind === "liar" ? "Liar" : "spot on"} on{" "}
+          {verb(last.caller, you, "called", "called")} {last.kind === "liar" ? "Liar on" : "Spot on for"}{" "}
           <BidText qty={last.qty} face={last.face} size={13} accent={accent} />; there {last.count === 1 ? "was" : "were"}{" "}
           {last.count}.{" "}
           {last.loser ? (
@@ -1258,7 +1259,7 @@ function Final({ view, P, you, accent }: { view: LiarsView; P: Lookup; you: stri
               </span>
               <span className="min-w-0 flex-1 truncate text-sm font-bold" style={{ color: p.color }}>
                 {p.name}
-                {id === you && <span className="ml-1 text-[10px] font-semibold text-muted uppercase">you</span>}
+                {id === you && p.name.trim().toLowerCase() !== "you" && <span className="ml-1 text-xs font-medium text-muted">(you)</span>}
               </span>
               <span className="flex shrink-0 items-center gap-1 text-xs text-muted">
                 {won && <span aria-hidden>👑</span>}

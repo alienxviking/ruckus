@@ -210,7 +210,7 @@ function BookPage({
     <figure className="flex flex-col gap-1.5">
       <figcaption className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted">
         <span
-          className="grid size-6 place-items-center rounded-full text-[11px] font-black text-ink tabular-nums"
+          className="grid size-6 place-items-center rounded-full text-xs font-black text-ink tabular-nums"
           style={{ background: accent }}
         >
           {n + 1}

@@ -548,18 +548,20 @@ const LOCK_UI: Record<LockState | "offline", { icon: string; text: string; color
 
 function LockList({ locks, who }: { locks: MmView["locks"]; who: Who }) {
   const done = locks.filter((l) => l.state === "locked").length;
+  // Offline players don't hold the round up, so they don't count towards the total.
+  const total = locks.filter((l) => l.state === "locked" || who(l.id).connected).length;
   return (
     <section className="card p-3" aria-label="Who has locked in">
       <div className="mb-2 flex items-center justify-between gap-2">
         <span className="label">Locked in</span>
         <span className="font-mono text-sm font-bold tabular-nums">
-          {done}/{locks.length}
+          {done}/{total}
         </span>
       </div>
       <div className="mb-2 h-1 overflow-hidden rounded-full bg-panel-2" aria-hidden>
         <div
           className="h-full w-full origin-left rounded-full bg-[#4ade80] transition-transform duration-300 ease-[cubic-bezier(.2,.8,.2,1)] motion-reduce:transition-none"
-          style={{ transform: `scaleX(${locks.length ? done / locks.length : 0})` }}
+          style={{ transform: `scaleX(${total ? done / total : 0})` }}
         />
       </div>
       <ul className="flex flex-wrap gap-1.5">

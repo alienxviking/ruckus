@@ -519,8 +519,8 @@ function Kbd({ children }: { children: ReactNode }) {
 function HoleIntro({ hole, n, total }: { hole: Hole; n: number; total: number }) {
   return (
     <div className="pointer-events-none absolute inset-0 flex items-start justify-center p-2 @xl:p-4" aria-hidden>
-      <div className="putt-intro max-w-[90%] rounded-2xl border border-white/15 bg-ink/80 px-4 py-2 text-center shadow-xl backdrop-blur-sm">
-        <div className="text-[11px] font-bold tracking-widest text-muted uppercase">
+      <div className="putt-intro card max-w-[90%] px-4 py-2 text-center shadow-xl shadow-black/40">
+        <div className="text-xs font-semibold text-muted">
           Hole {n} of {total} · par {hole.par}
         </div>
         <div className="font-display text-lg leading-tight font-extrabold @xl:text-2xl">{hole.name}</div>
@@ -869,7 +869,7 @@ function Scorecard({
           <col className="w-8 @xl:w-10" />
         </colgroup>
         <thead>
-          <tr className="text-[10px] text-muted">
+          <tr className="text-[11px] text-muted">
             <th scope="col" className="px-1 text-left font-semibold">
               Golfer
             </th>
@@ -934,7 +934,7 @@ function Scorecard({
           })}
         </tbody>
       </table>
-      <p className="mt-1.5 px-1 text-[10px] text-muted">
+      <p className="mt-1.5 px-1 text-xs text-muted">
         ★ hole in one · <span style={{ color: "#86efac" }}>green</span> under par ·{" "}
         <span style={{ color: "#fdba74" }}>orange</span> over · {PICKUP_SCORE} = picked up after {MAX_STROKES} strokes
       </p>

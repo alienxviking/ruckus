@@ -48,7 +48,7 @@ export function RoundTable({
         </colgroup>
         <thead>
           <tr>
-            <th scope="col" className="text-left text-[11px] font-semibold text-muted">
+            <th scope="col" className="text-left text-xs font-semibold text-muted">
               Castle →
             </th>
             {rec.values.map((v, c) => {
@@ -70,7 +70,7 @@ export function RoundTable({
                 </th>
               );
             })}
-            <th scope="col" className="text-right align-bottom text-[11px] font-semibold text-muted">
+            <th scope="col" className="text-right align-bottom text-xs font-semibold text-muted">
               pts
             </th>
           </tr>
@@ -88,7 +88,7 @@ export function RoundTable({
                       {p.name}
                     </span>
                     {mark && (
-                      <span className="shrink-0 text-[10px] text-muted" title={mark.text}>
+                      <span className="shrink-0 text-[11px] text-muted" title={mark.text}>
                         {mark.icon}
                         <span className="sr-only"> ({mark.text})</span>
                       </span>
@@ -149,7 +149,7 @@ function TendencyGrid({ history, who, me }: { history: RoundRecord[]; who: Who; 
         <col className="w-10" />
       </colgroup>
       <thead>
-        <tr className="text-[11px] text-muted">
+        <tr className="text-xs text-muted">
           <th scope="col" className="text-left font-semibold">
             Warlord
           </th>
@@ -338,7 +338,7 @@ export function Final({ view, who, accent }: { view: WlView; who: Who; accent: s
                     <span className="flex min-w-0 flex-1 items-baseline gap-1.5">
                       <span className="truncate text-sm font-bold" style={{ color: p.color }}>
                         {p.name}
-                        {seat === me && <span className="font-medium text-muted"> (you)</span>}
+                        {seat === me && p.name.trim().toLowerCase() !== "you" && <span className="font-medium text-muted"> (you)</span>}
                       </span>
                       <span className="hidden shrink-0 text-xs text-muted @sm:inline">{statText}</span>
                     </span>
@@ -346,7 +346,7 @@ export function Final({ view, who, accent }: { view: WlView; who: Who; accent: s
                     <span className="min-w-0 flex-1">
                       <span className="block truncate font-bold" style={{ color: p.color }}>
                         {p.name}
-                        {seat === me && <span className="font-medium text-muted"> (you)</span>}
+                        {seat === me && p.name.trim().toLowerCase() !== "you" && <span className="font-medium text-muted"> (you)</span>}
                       </span>
                       <span className="block truncate text-xs text-muted">{statText}</span>
                     </span>
@@ -370,7 +370,7 @@ export function Final({ view, who, accent }: { view: WlView; who: Who; accent: s
                 {b.icon}
               </span>
               <span className="min-w-0">
-                <span className="block text-xs font-bold tracking-wide uppercase" style={{ color: accent }}>
+                <span className="block text-xs font-bold" style={{ color: accent }}>
                   {b.title}
                 </span>
                 <span className="block truncate text-sm">{b.text}</span>

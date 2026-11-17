@@ -91,7 +91,8 @@ export default function MemoryPairs({ view, isPlayer, byId, act, serverNow, acce
   const cols = view.n === 16 ? "grid-cols-4" : view.n === 24 ? "grid-cols-4 @lg:grid-cols-6" : "grid-cols-6";
   const maxW = view.n === 16 ? "max-w-[30rem]" : view.n === 24 ? "max-w-[40rem]" : "max-w-[38rem]";
   const lastFresh = view.last && view.phase !== "over" ? view.last : null;
-  const elapsed = Math.max(0, Math.floor((serverNow() - view.startedAt) / 1000));
+  // The clock stops when the run ends.
+  const elapsed = view.secs ?? Math.max(0, Math.floor((serverNow() - view.startedAt) / 1000));
 
   let status: string;
   let sub = "";
@@ -143,7 +144,7 @@ export default function MemoryPairs({ view, isPlayer, byId, act, serverNow, acce
                   <span className="font-mono text-lg font-bold tabular-nums" style={{ color: p.color }}>
                     {view.scores[i]}
                   </span>
-                  {i === you && <span className="label text-[9px]">you</span>}
+                  {i === you && <span className="label">you</span>}
                 </span>
               ))}
             </div>
@@ -236,7 +237,7 @@ function Final({ view, seats, you }: { view: PairsView; seats: Player[]; you: nu
           {view.final ?? 0}
         </div>
         <div className="mt-2 font-mono text-xs text-muted">
-          {found} pairs × {PAIR_POINTS} − {view.misses[0]} misses × {MISS_COST} − seconds × {SECOND_COST}
+          {found} pairs × {PAIR_POINTS} − {view.misses[0]} misses × {MISS_COST} − {view.secs ?? 0}s × {SECOND_COST}
         </div>
         <div className="mt-1 text-sm text-muted">
           {view.flips[0]} flips (a perfect memory needs {view.n})

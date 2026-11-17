@@ -483,7 +483,7 @@ function PickPanel({
                 </span>
                 <span className="min-w-0 flex-1 font-display text-lg leading-tight font-bold [overflow-wrap:anywhere]">{o.text}</span>
                 {mine && (
-                  <span className="animate-pop shrink-0 text-xs font-bold tracking-wider uppercase" style={{ color: accent }}>
+                  <span className="animate-pop shrink-0 text-sm font-bold" style={{ color: accent }}>
                     <span aria-hidden>🔒</span>
                     <span className="hidden @sm:inline"> Your pick</span>
                   </span>

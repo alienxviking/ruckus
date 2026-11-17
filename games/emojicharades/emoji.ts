@@ -96,9 +96,9 @@ const RAW: [id: string, label: string, icon: string, lines: string][] = [
 👀 eyes|look see watch
 👁️ eye|see vision
 👄 mouth|lips kiss speak
-👶 baby|child infant birth
-👨 man|guy father dad
-👩 woman|lady mother mom
+👶 baby|child infant birth kid
+👨 man|guy father dad boy
+👩 woman|lady mother mom girl
 👴 old man|grandpa grandfather
 👵 old woman|grandma grandmother granny
 👮 police officer|cop law
@@ -158,7 +158,7 @@ const RAW: [id: string, label: string, icon: string, lines: string][] = [
 🐌 snail|slow
 🕷️ spider|creepy
 🕸️ spider web|cobweb
-🐢 turtle|slow tortoise
+🐢 turtle|slow tortoise shell
 🐍 snake|serpent
 🦖 t rex|dinosaur
 🐙 octopus|tentacles
@@ -225,8 +225,8 @@ const RAW: [id: string, label: string, icon: string, lines: string][] = [
 🍞 bread|loaf toast
 🥐 croissant|french pastry
 🧀 cheese
-🥚 egg
-🍳 fried egg|cooking breakfast pan
+🥚 egg|shell
+🍳 fried egg|cooking breakfast pan kitchen
 🥞 pancakes|breakfast
 🥓 bacon|breakfast
 🍗 drumstick|chicken leg

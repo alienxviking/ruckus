@@ -316,10 +316,10 @@ function Seat({
         {isMe && !crowned && (
           <span
             aria-hidden
-            className="absolute -top-2 left-1/2 -translate-x-1/2 rounded-full px-1.5 py-px text-[9px] font-black tracking-wide text-ink"
+            className="absolute -top-2 left-1/2 -translate-x-1/2 rounded-full px-1.5 py-px text-[11px] leading-none font-black text-ink"
             style={{ background: p.color }}
           >
-            YOU
+            You
           </span>
         )}
         {crowned && (
@@ -344,20 +344,20 @@ function Seat({
         {targetable && keyHint && (
           <span
             aria-hidden
-            className="pot-key absolute -top-1 -left-1 size-5 place-items-center rounded-md border border-line bg-ink font-mono text-[10px] font-bold text-text"
+            className="pot-key absolute -top-1 -left-1 size-5 place-items-center rounded-md border border-line bg-ink font-mono text-[11px] font-bold text-text"
           >
             {keyHint}
           </span>
         )}
       </span>
       <span
-        className={`max-w-full truncate px-0.5 leading-tight font-bold ${L.narrow ? "text-[11px]" : "text-xs"}`}
+        className={`max-w-full truncate px-0.5 leading-tight font-bold text-xs`}
         style={{ color: seat.out ? "var(--color-muted)" : p.color }}
       >
         {p.name}
       </span>
       {seat.out ? (
-        <span className="text-[9px] leading-none font-black tracking-widest text-muted">OUT</span>
+        <span className="text-[11px] leading-none font-black text-muted">Out</span>
       ) : (
         <Hearts lives={seat.lives} max={maxLives} size={L.narrow ? 9 : 11} />
       )}

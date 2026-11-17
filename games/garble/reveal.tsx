@@ -326,7 +326,7 @@ function PrevMini({ page, strokes, byId }: { page: PageView; strokes: DrawStroke
   return (
     <div className="gb-paper max-w-full rounded-xl px-3 py-1.5 text-center opacity-90">
       <p className="text-sm font-bold break-words @md:text-base">{page.blank ? "🤐 (blank)" : `“${page.text}”`}</p>
-      <p className="text-[11px]" style={{ color: page.auto ? "#7a6e93" : shade(p.color) }}>
+      <p className="text-xs" style={{ color: page.auto ? "#7a6e93" : shade(p.color) }}>
         {page.auto ? "🎲 picked by the game" : <><Avatar id={p.avatar} /> {p.name}</>}
       </p>
     </div>
@@ -394,13 +394,13 @@ export function Tile({
       )}
       {tag && (
         <span
-          className="absolute top-1 left-1 rounded-md px-1.5 py-0.5 text-[10px] font-black tracking-wider text-white uppercase"
+          className="absolute top-1 left-1 rounded-md px-1.5 py-0.5 text-xs font-black text-white"
           style={{ background: tag === "start" ? "#16a34a" : "#db2777" }}
         >
-          {tag}
+          {tag === "start" ? "Start" : "End"}
         </span>
       )}
-      <figcaption className="flex min-w-0 items-center gap-1 text-[11px] text-muted">
+      <figcaption className="flex min-w-0 items-center gap-1 text-xs text-muted">
         <span className="tabular-nums">{n + 1}.</span>
         {page.auto ? (
           <span className="truncate">🎲 the game</span>
@@ -478,7 +478,7 @@ function Floaters({ floaters, byId }: { floaters: Floater[]; byId: Record<string
           >
             <span className="text-4xl drop-shadow-[0_4px_8px_rgba(0,0,0,0.45)]">{REACTIONS[f.e]}</span>
             <span
-              className="mt-0.5 rounded-full px-1.5 text-[10px] font-bold whitespace-nowrap text-ink"
+              className="mt-0.5 rounded-full px-1.5 text-xs font-bold whitespace-nowrap text-ink"
               style={{ background: p.color }}
             >
               {p.name}

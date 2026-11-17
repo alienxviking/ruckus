@@ -358,7 +358,7 @@ export function ClueBoard({
       </div>
       <table className="w-full table-fixed border-separate border-spacing-y-1 text-sm">
         <thead>
-          <tr className="text-left text-[11px] tracking-wider text-muted uppercase">
+          <tr className="text-left text-xs text-muted">
             <th scope="col" className="w-[42%] font-semibold">
               <span className="sr-only">Player</span>
             </th>
@@ -379,10 +379,10 @@ export function ClueBoard({
                 <th scope="row" className="pr-1.5 text-left font-normal">
                   <span className="flex min-w-0 flex-wrap items-center gap-1">
                     <FitChip player={p} size="sm" dim={p ? !p.connected : false} />
-                    {id === me && <span className="text-[10px] text-muted">you</span>}
+                    {id === me && <span className="text-xs text-muted">you</span>}
                     {isOdd && (
                       <span
-                        className="oo-pop text-[10px] font-bold whitespace-nowrap uppercase"
+                        className="oo-pop text-xs font-bold whitespace-nowrap"
                         style={{ color: mark?.color, animationDelay: ms(odd.delay) }}
                       >
                         odd one
@@ -494,7 +494,7 @@ export function VoteGrid({
                   <FitChip player={p} size="sm" dim={!p.connected} />
                 </span>
                 {voted.has(id) && (
-                  <span className="oo-pop shrink-0 rounded-full bg-green-400/15 px-1.5 py-0.5 text-[10px] font-bold text-green-300">
+                  <span className="oo-pop shrink-0 rounded-full bg-green-400/15 px-1.5 py-0.5 text-xs font-bold text-green-300">
                     ✓<span className="sr-only @sm:not-sr-only"> voted</span>
                   </span>
                 )}
@@ -520,9 +520,9 @@ export function VoteGrid({
                   </span>
                 ))}
               </span>
-              {self && <span className="mt-auto text-[10px] font-semibold tracking-wider text-muted uppercase">That&apos;s you</span>}
+              {self && <span className="mt-auto text-xs font-semibold text-muted">That&apos;s you</span>}
               {mine && (
-                <span className="oo-pop mt-auto text-[10px] font-bold tracking-wider uppercase" style={{ color: accent }}>
+                <span className="oo-pop mt-auto text-xs font-bold" style={{ color: accent }}>
                   ★ Your vote
                 </span>
               )}
@@ -991,7 +991,7 @@ export function FinalScreen({ view, byId, me, accent }: { view: ImpostorView; by
                       {(view.scores[id] ?? 0) > 0 && r < 3 ? MEDALS[r] : <span className="text-xs text-muted">{r + 1}</span>}
                     </span>
                     <FitChip player={p} size="sm" dim={!p.connected} />
-                    {id === me && <span className="shrink-0 text-[10px] text-muted">you</span>}
+                    {id === me && <span className="shrink-0 text-xs text-muted">you</span>}
                   </span>
                   <span className={`font-mono font-bold tabular-nums ${top ? "text-lg" : ""}`}>{view.scores[id] ?? 0}</span>
                 </li>

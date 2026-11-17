@@ -239,7 +239,7 @@ export function SyncBadge({ record, accent }: { record: RoundRecord; accent: str
     >
       {hot && <span aria-hidden>🧠 </span>}
       {record.sync}/{record.total}
-      <span className="sr-only"> in sync</span>
+      <span className={hot ? "sr-only" : "font-semibold text-muted"}> in sync</span>
     </span>
   );
 }

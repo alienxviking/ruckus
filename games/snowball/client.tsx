@@ -25,7 +25,7 @@ type Props = GameClientProps<SnowView, SnowAction>;
 // Game-local styles and animations, prefixed so they can't clash with other games.
 const CSS = `
 .sb-stage { aspect-ratio: 25 / 16; max-width: min(100%, 98vh); }
-@container (max-width: 559px) { .sb-stage { aspect-ratio: 16 / 25; max-width: min(100%, 46vh); } }
+@container (max-width: 559px) { .sb-stage { aspect-ratio: 16 / 25; max-width: min(100%, 40vh); } }
 .sb-go { animation: sb-go .9s cubic-bezier(.2,1.4,.4,1) both; }
 @keyframes sb-go { 0% { opacity: 0; transform: scale(.4); } 25% { opacity: 1; transform: scale(1.1); } 70% { opacity: 1; transform: scale(1); } 100% { opacity: 0; transform: scale(1.25); } }
 .sb-banner { animation: sb-banner 2.2s ease both; }
@@ -519,7 +519,7 @@ function TeamScore({
                 >
                   <span aria-hidden><Avatar id={p?.avatar ?? "🙂"} /></span>
                   <span className="max-w-[6.5rem] truncate font-semibold">{p?.name ?? "Someone"}</span>
-                  {id === me && <span className="text-[10px] font-bold tracking-wide text-text/80 uppercase">you</span>}
+                  {id === me && <span className="text-xs font-semibold text-text/80">you</span>}
                   <span className="font-mono text-xs text-muted tabular-nums" aria-hidden>
                     {offline ? "🔌" : on ? "⛄" : "💫"}
                     {hits > 0 ? ` 🎯${hits}` : ""}
@@ -606,7 +606,7 @@ function ScoreRow({
             <span className="max-w-[7.5rem] truncate font-semibold" style={{ color }}>
               {p?.name ?? "Someone"}
             </span>
-            {id === me && <span className="text-[10px] font-bold tracking-wide text-text/80 uppercase">you</span>}
+            {id === me && <span className="text-xs font-semibold text-text/80">you</span>}
             <Pips wins={wins} color={color} need={view.winsNeeded} />
             <span className="font-mono text-xs text-muted tabular-nums" aria-hidden>
               {offline ? "🔌" : on ? "⛄" : "💫"}
@@ -691,7 +691,7 @@ function FinalStandings({ view, byId, me, colors }: { view: SnowView; byId: Reco
                     <span className="truncate font-semibold" style={{ color }}>
                       {p?.name ?? "Someone"}
                     </span>
-                    {id === me && <span className="shrink-0 text-[10px] font-bold tracking-wide text-muted uppercase">you</span>}
+                    {id === me && <span className="shrink-0 text-xs font-semibold text-muted">you</span>}
                   </span>
                   <span className="block text-xs text-muted tabular-nums">
                     🎯 {hits(slot)} hit{hits(slot) === 1 ? "" : "s"} · ❄️ {kos(slot)} knockout{kos(slot) === 1 ? "" : "s"}

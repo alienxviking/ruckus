@@ -501,7 +501,7 @@ function Found({
         </div>
         {(live || finished) && (
           <button
-            className="rounded-md px-2 py-1 text-xs font-semibold text-muted hover:text-text disabled:opacity-60"
+            className="btn min-h-10 px-3 py-1.5 text-sm disabled:opacity-60"
             disabled={finished}
             style={arm ? { color: BAD } : undefined}
             onClick={() => (arm ? onFinish() : setArm(true))}
@@ -531,7 +531,7 @@ function Found({
                 style={seven ? { background: "var(--acc)", color: INK, borderColor: INK } : { borderColor: "var(--color-line)" }}
               >
                 {w}
-                <span className="ml-1 text-[10px] opacity-60">{wordPoints(w, all)}</span>
+                <span className="ml-1 text-xs opacity-60">{wordPoints(w, all)}</span>
               </li>
             );
           })}
@@ -561,7 +561,7 @@ function Reveal({ view, serverNow, found, watching }: { view: WheelView; serverN
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <div className="label">{view.rounds > 1 ? `Wheel ${view.round + 1} of ${view.rounds} done` : "Time!"}</div>
+          <div className="label">{view.rounds > 1 ? `Wheel ${view.round + 1} of ${view.rounds} done` : "Wheel done"}</div>
           <div className="mt-1 flex items-center gap-1" aria-label={`Letters: ${all.toUpperCase()}`}>
             {[view.centre, ...view.ring].map((ch, i) => (
               <span
@@ -594,7 +594,7 @@ function Reveal({ view, serverNow, found, watching }: { view: WheelView; serverN
             <div className="font-hero text-3xl font-extrabold" style={{ color: "var(--acc)" }}>
               {pts}
             </div>
-            <div className="font-mono text-[11px] text-muted">
+            <div className="font-mono text-xs text-muted">
               {found.length}/{answers.length} words
             </div>
           </div>
@@ -624,7 +624,7 @@ function Reveal({ view, serverNow, found, watching }: { view: WheelView; serverN
                   }
                 >
                   {w}
-                  {seven && <span className="ml-1 text-[10px]">★ all 7</span>}
+                  {seven && <span className="ml-1 text-xs">★ all 7</span>}
                 </li>
               );
             })}
@@ -687,7 +687,7 @@ function Board({ view, byId, me }: { view: WheelView; byId: Record<string, Playe
           >
             <div className="flex items-center justify-between gap-2">
               <span className="flex min-w-0 items-center gap-1.5">
-                <span className="w-4 font-mono text-[11px] text-muted">{i + 1}</span>
+                <span className="w-4 font-mono text-xs text-muted">{i + 1}</span>
                 <PlayerChip player={byId[r.id]} size="sm" dim={!byId[r.id]?.connected} />
                 {r.seven && (
                   <span
@@ -713,7 +713,7 @@ function Board({ view, byId, me }: { view: WheelView; byId: Record<string, Playe
                   }}
                 />
               </div>
-              <span className="shrink-0 text-right font-mono text-[10px] whitespace-nowrap text-muted">
+              <span className="shrink-0 text-right font-mono text-xs whitespace-nowrap text-muted">
                 {r.words} word{r.words === 1 ? "" : "s"}
                 {r.finished ? " · done" : ""}
               </span>

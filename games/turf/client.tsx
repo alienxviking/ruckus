@@ -282,7 +282,7 @@ function TurfGame({
           "🖌️ Painting…"
         );
     } else if (frozenFor > 0) status = "🧊 Frozen! Hang tight…";
-    else if (mine.out > 0) status = `↩️ Loop open (${mine.out}): get home to fill it`;
+    else if (mine.out > 0) status = `↩️ ${mine.out} ${mine.out === 1 ? "tile" : "tiles"} out: head home to fill the loop`;
     else if (dashFor > 0) status = "⚡ Dash! Double speed";
     else status = "🖌️ Paint! Close loops to fill";
   } else {
@@ -598,7 +598,7 @@ function MyStats({
           )}
           {painter.out > 0 && (
             <span className="rounded-full px-2 py-0.5" style={{ background: rgba(color, 0.15), color }}>
-              ↩️ loop {painter.out}
+              ↩️ {painter.out} out
             </span>
           )}
         </div>

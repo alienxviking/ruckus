@@ -747,6 +747,9 @@ function Final({ view, byId, me }: { view: BlitzView; byId: Record<string, Playe
 
 // ---------- screen reader announcements ----------
 
+/** "Odd word out" → "Odd word out."; "What time?" stays as it is. */
+const stop = (t: string) => (/[.!?]$/.test(t) ? t : `${t}.`);
+
 function liveText(view: BlitzView, me: string, isPlayer: boolean, answered: boolean): string {
   const m = view.micro ? META[view.micro.type] : null;
   switch (view.phase) {
@@ -754,12 +757,12 @@ function liveText(view: BlitzView, me: string, isPlayer: boolean, answered: bool
       return `Blitz is about to start: ${view.total} microgames.`;
     case "ready":
       return m
-        ? `Microgame ${view.round} of ${view.total}: ${m.title}. ${m.how}.${
+        ? `Microgame ${view.round} of ${view.total}: ${stop(m.title)} ${stop(m.how)}${
             view.micro?.twist ? ` Twist: ${TWISTS[view.micro.twist].title} ${TWISTS[view.micro.twist].how}.` : ""
           }${view.micro?.boss ? " Boss round, triple points." : view.micro?.double ? " Double points." : ""}`
         : "";
     case "play":
-      return answered ? "Locked in." : m ? `Go! ${m.title}.` : "";
+      return answered ? "Locked in." : m ? `Go! ${stop(m.title)}` : "";
     case "result": {
       const line = view.last?.res.find((l) => l.id === me);
       if (!isPlayer || !line) return "Results are in.";

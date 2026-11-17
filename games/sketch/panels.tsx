@@ -129,7 +129,7 @@ export function Header({ view, byId, serverNow, accent }: { view: SketchView; by
       <div className="flex items-center justify-between gap-2 font-sans text-xs font-semibold text-muted">
         <span>
           Turn {view.turn + 1} of {view.turns}
-          {view.laps > 1 ? ` · lap ${lap}/${view.laps}` : ""}
+          {view.laps > 1 ? ` · round ${lap} of ${view.laps}` : ""}
         </span>
         <Countdown endsAt={view.endsAt} serverNow={serverNow} urgentAt={view.phase === "draw" ? 10 : -1} />
       </div>
@@ -162,7 +162,7 @@ function WordRow({ view }: { view: SketchView }) {
     );
   }
   if (view.phase === "draw" && view.word) {
-    return <Word word={view.word} mask={view.role === "artist" ? view.mask : null} note={view.role === "artist" ? "your word" : undefined} />;
+    return <Word word={view.word} mask={view.role === "artist" ? view.mask : null} note={view.role === "artist" ? "Your word" : undefined} />;
   }
   if (view.phase === "draw" && view.mask) return <Mask mask={view.mask} />;
   if (view.phase === "reveal") {
@@ -192,7 +192,7 @@ function Word({ word, mask, note, flip }: { word: string; mask?: (string | null)
         ))}
       </div>
       {note && (
-        <span className="font-sans text-[11px] font-semibold tracking-wide text-muted uppercase">
+        <span className="font-sans text-xs font-semibold text-muted">
           {note}
           {hinted ? ` · ${hinted} letter${hinted > 1 ? "s" : ""} hinted` : ""}
         </span>
@@ -313,10 +313,10 @@ function ChooseWord({ options, act, endsAt, serverNow }: { options: Offer[]; act
             style={{ animationDelay: `${i * 70}ms` }}
           >
             <span className="text-sm leading-tight font-bold break-words @md:text-base">{o.word}</span>
-            <span className={`rounded-full px-2 py-px text-[10px] font-semibold tracking-wide uppercase ${LEVELS[o.level].cls}`}>
+            <span className={`rounded-full px-2 py-px text-xs font-semibold ${LEVELS[o.level].cls}`}>
               {LEVELS[o.level].label}
             </span>
-            <kbd className="hidden text-[10px] text-muted @md:block" aria-hidden>
+            <kbd className="hidden text-xs text-muted @md:block" aria-hidden>
               {i + 1}
             </kbd>
           </button>
@@ -467,9 +467,9 @@ function FeedLine({ item, byId, me }: { item: FeedItem; byId: ById; me: string }
         </li>
       );
     case "left":
-      return <li className="text-xs text-amber-300">🚪 {who} left during their turn</li>;
+      return <li className="text-xs text-amber-300">🚪 {who} left during {item.by === me ? "your" : "their"} turn</li>;
     case "skip":
-      return <li className="text-xs text-muted">⏭️ {who} is away, turn skipped</li>;
+      return <li className="text-xs text-muted">⏭️ {who} {item.by === me ? "were" : "was"} away, turn skipped</li>;
   }
 }
 
@@ -605,7 +605,7 @@ export function Final({ view, byId, me, store }: { view: SketchView; byId: ById;
     <div className="flex flex-col gap-3">
       <section className="card p-4" aria-label="Final standings">
         <div className="label mb-3">
-          Final standings{view.endedEarly ? " · ended early" : ""}
+          Final standings{view.endedEarly ? " · game ended early" : ""}
         </div>
         <ol className="flex flex-col gap-2">
           {ids.map((id, i) => {
@@ -659,7 +659,7 @@ export function Final({ view, byId, me, store }: { view: SketchView; byId: ById;
                 <div className="flex items-center justify-between gap-1 px-0.5">
                   <span className="truncate text-sm font-bold">{h.word.charAt(0).toUpperCase() + h.word.slice(1)}</span>
                   <span className="shrink-0 text-xs text-muted" title="Players who guessed it">
-                    {h.guessers.length}/{Math.max(1, view.players.length - 1)} ✓
+                    {h.guessers.length}/{Math.max(1, view.players.length - 1)} got it
                   </span>
                 </div>
                 <span className="min-w-0 px-0.5">

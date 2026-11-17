@@ -177,10 +177,10 @@ export function PuzzleCard({
       key={n}
       aria-label={`Puzzle: ${meta.how}`}
       className="pot-in pointer-events-auto flex w-full flex-col gap-3 rounded-2xl border-2 p-3 shadow-2xl"
-      style={{ borderColor: "#fb923c", background: "var(--color-panel)", boxShadow: "0 20px 50px -10px #000c, 0 0 0 4px #fb923c22" }}
+      style={{ borderColor: "#fb923c", background: "var(--color-panel)", boxShadow: "5px 6px 0 rgb(0 0 0 / 0.6)" }}
     >
       <div className="flex items-center justify-between gap-2">
-        <span className="flex items-center gap-1.5 text-sm font-black tracking-wide uppercase" style={{ color: "#fdba74" }}>
+        <span className="flex items-center gap-1.5 font-hero text-base font-extrabold" style={{ color: "#fdba74" }}>
           <span aria-hidden>{meta.icon}</span>
           {meta.how}
         </span>

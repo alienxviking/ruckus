@@ -742,7 +742,7 @@ function Reveal({
         <div className="card poll-in flex flex-col items-center gap-2 p-4 text-center">
           <div className="flex flex-wrap items-center justify-center gap-2">
             <PlayerChip player={who(spot.id)} />
-            <span className="text-muted">picked</span>
+            <span className="text-muted">{spot.id === me ? "(you) picked" : "picked"}</span>
           </div>
           <div className="flex items-center gap-2 font-display text-xl font-extrabold">
             <Letter i={spot.vote} />
@@ -752,12 +752,14 @@ function Reveal({
             <b className="text-brand">
               <CountUp to={spot.right} delay={500} />
             </b>{" "}
-            of {spot.readers} read them right
+            of {spot.readers} read {spot.id === me ? "you" : "them"} right
             {spot.guess !== null ? (
               <>
                 {" "}
-                · they guessed {spot.guess} → <b>+{spot.pts}</b>
+                · {spot.id === me ? "you" : "they"} guessed {spot.guess} → <b>+{spot.pts}</b>
               </>
+            ) : spot.id === me ? (
+              " · you didn't guess"
             ) : (
               " · they didn't guess"
             )}
@@ -928,7 +930,7 @@ function RecapItem({ r, n, who }: { r: PollRecap; n: number; who: Who }) {
         <span className="shrink-0 text-xs font-bold text-muted tabular-nums">{n}.</span>
         <span className="font-semibold leading-snug">
           {r.q}
-          {KIND_INFO[r.kind] ? <span className="ml-1 text-xs text-muted">({KIND_INFO[r.kind]!.badge})</span> : null}
+          {KIND_INFO[r.kind] ? <span className="ml-1.5 inline-block rounded-full bg-panel-2 px-2 py-0.5 align-middle text-xs font-semibold whitespace-nowrap text-muted">{KIND_INFO[r.kind]!.badge}</span> : null}
         </span>
       </div>
       <div className="flex h-2.5 overflow-hidden rounded-full bg-panel-2" aria-hidden>

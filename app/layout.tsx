@@ -4,6 +4,7 @@ import { preconnect, prefetchDNS } from "react-dom";
 import { MotionProvider } from "@/components/motion/MotionProvider";
 import { ServiceWorker } from "@/components/ServiceWorker";
 import { BlobBackdrop } from "@/components/BlobBackdrop";
+import { INTRO_SCRIPT } from "@/lib/intro-script";
 import "./globals.css";
 
 const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
@@ -48,6 +49,10 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       suppressHydrationWarning
       className={`${geistSans.variable} ${geistMono.variable} ${display.variable} ${hero.variable} ${marker.variable} h-full antialiased`}
     >
+      <head>
+        {/* Landing intro: decide before first paint whether it plays (see RuxIntro). */}
+        <script dangerouslySetInnerHTML={{ __html: INTRO_SCRIPT }} />
+      </head>
       <body className="flex min-h-full flex-col">
         <BlobBackdrop />
         <MotionProvider>{children}</MotionProvider>

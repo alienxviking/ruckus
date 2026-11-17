@@ -625,7 +625,7 @@ function ScoreRow({
             <span className="max-w-[7.5rem] truncate font-semibold" style={{ color }}>
               {p?.name ?? "Someone"}
             </span>
-            {id === me && <span className="text-[10px] font-bold tracking-wide text-text/80 uppercase">you</span>}
+            {id === me && <span className="text-xs font-semibold text-text/80">you</span>}
             <Pips wins={wins} need={view.winsNeeded} color={color} />
             <span className="font-mono text-xs text-muted tabular-nums" aria-hidden>
               {offline ? "🔌" : on ? "🧊" : "💦"}
@@ -744,7 +744,7 @@ function FinalStandings({
                       {p?.name ?? "Someone"}
                     </span>
                     {id === me && (
-                      <span className="shrink-0 text-[10px] font-bold tracking-wide text-muted uppercase">you</span>
+                      <span className="shrink-0 text-xs font-semibold text-muted">you</span>
                     )}
                   </span>
                   <span className="block text-xs text-muted tabular-nums">

@@ -5,9 +5,9 @@ export const rules: GameRules = {
   flow: [
     "Each round makes one monster per player, built from three parts: a head, a body and legs. Everyone draws at the same time, a different monster's part each time, with 60 seconds per part (the host can change this).",
     "You never see the whole monster. When you draw a body or legs, you only see a thin strip from the bottom of the part above, so line your drawing up with it.",
-    "Next you get 30 seconds to name two monsters that you didn't draw (up to 32 characters each).",
+    "Next you get 30 seconds to name two monsters (up to 32 characters each). In bigger groups these are monsters you didn't draw; with 3 or 4 players you may get one you helped draw.",
     "The finished monsters are revealed one at a time, all stitched together, with their names.",
-    "Then you have 35 seconds to give one ⭐ to your favourite monster and one 🏷️ to your favourite name. You can't vote for your own work.",
+    "Then you have 35 seconds to give one ⭐ to your favourite monster and one 🏷️ to your favourite name. You can't vote for your own name, or for a monster you drew part of (with only 3 or 4 players you drew part of almost every monster, so any monster can get your star).",
   ],
   controls: {
     desktop: [

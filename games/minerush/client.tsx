@@ -486,7 +486,7 @@ function Scores({
               )}
             </span>
             <span className="min-w-0 flex-1 leading-none">
-              <span className="block truncate text-[11px] font-bold" style={{ color: c }}>
+              <span className="block truncate text-xs font-bold" style={{ color: c }}>
                 {isMe ? "You" : (p?.name ?? "Player")}
                 {state && <span className="sr-only"> ({state})</span>}
               </span>
@@ -552,7 +552,7 @@ function Standings({
     <section className="card animate-rise flex flex-col gap-2 p-3" aria-label="Final standings">
       <div className="flex items-baseline justify-between gap-2">
         <span className="label">Final standings</span>
-        {view.you >= 0 && <span className="text-[11px] text-muted">✓ right flag +{FLAG_POINTS} · ✗ wrong −{FLAG_POINTS}</span>}
+        {view.you >= 0 && <span className="text-xs text-muted">✓ right flag +{FLAG_POINTS} · ✗ wrong −{FLAG_POINTS}</span>}
       </div>
       <ol className="flex flex-col gap-1.5">
         {order.map((i) => {

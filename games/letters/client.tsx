@@ -62,11 +62,9 @@ function Hud({ view, accent, serverNow, children }: PhaseProps & { children?: Re
         <LetterTile letter={view.letter} spin={view.phase === "answer"} spinKey={view.round} accent={accent} />
         <div className="min-w-0 flex-1">
           <div className="flex items-baseline justify-between gap-2">
-            <span className="truncate text-[11px] font-bold tracking-widest text-muted uppercase">
+            <span className="truncate text-xs font-semibold text-muted">
               <span className="hidden @lg:inline">{label} · </span>
-              <span className="hidden @sm:inline">Round </span>
-              <span className="sr-only @sm:hidden">Round </span>
-              {view.round}/{view.rounds}
+              Round {view.round}/{view.rounds}
             </span>
             <span
               className={`font-mono text-lg leading-none font-bold tabular-nums ${urgent ? "text-red-400 motion-safe:animate-pulse" : ""}`}
@@ -123,7 +121,7 @@ function PlayerStrip({
         return (
           <li key={id} className={settled ? "rounded-full ring-1 ring-green-400/60" : undefined}>
             <PlayerChip player={p} size="sm" dim={!p.connected}>
-              <span key={label} className="animate-pop inline-flex items-center gap-1 text-[11px] font-medium text-muted">
+              <span key={label} className="animate-pop inline-flex items-center gap-1 text-xs font-medium text-muted">
                 <span aria-hidden className={`${settled ? "font-black text-green-300" : ""} ${typing && !settled ? "motion-safe:animate-pulse" : ""}`}>
                   {icon}
                 </span>
@@ -148,7 +146,7 @@ function CategoryNumber({ i }: { i: number }) {
   return (
     <span
       aria-hidden
-      className="mt-px grid size-5 shrink-0 place-items-center rounded-md bg-panel-2 text-[11px] font-bold text-muted"
+      className="mt-px grid size-5 shrink-0 place-items-center rounded-md bg-panel-2 text-xs font-bold text-muted"
     >
       {i + 1}
     </span>
@@ -444,7 +442,7 @@ function ReviewPhase(props: PhaseProps) {
         extra={(k) => (
           <span
             key={projected[k]}
-            className="animate-pop inline-block font-mono text-[11px] font-bold tabular-nums"
+            className="animate-pop inline-block font-mono text-xs font-bold tabular-nums"
             style={{ color: accent }}
           >
             +{projected[k]}

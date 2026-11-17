@@ -9,7 +9,7 @@ import { cardShort } from "./cards";
 import { Name, Panel, type WhoFn } from "./ui";
 
 const W = 320;
-const H = 132;
+const H = 140;
 const X0 = 26;
 const X1 = 312;
 const Y0 = 10;
@@ -100,7 +100,7 @@ export function PriceChart({
         {gridVals.map((v, i) => (
           <g key={i}>
             <line x1={X0} x2={X1} y1={y(v)} y2={y(v)} stroke="var(--color-line)" strokeWidth={0.6} />
-            <text x={X0 - 4} y={y(v) + 3} textAnchor="end" fontSize={8.5} fill="var(--color-muted)" className="tabular-nums">
+            <text x={X0 - 4} y={y(v) + 3} textAnchor="end" fontSize={11} fill="var(--color-muted)" className="tabular-nums">
               {v}
             </text>
           </g>
@@ -110,16 +110,16 @@ export function PriceChart({
           return (
             <g key={i}>
               <line x1={x(ms / 100)} x2={x(ms / 100)} y1={Y0 - 4} y2={Y1} stroke="var(--color-line)" strokeDasharray="2 3" />
-              <text x={x(ms / 100)} y={H - 6} textAnchor="middle" fontSize={9} fontWeight={700} fill={c === null ? "var(--color-muted)" : accent}>
+              <text x={x(ms / 100)} y={H - 6} textAnchor="middle" fontSize={11} fontWeight={700} fill={c === null ? "var(--color-muted)" : accent}>
                 {c === null ? `#${i + 1}` : cardShort(c)}
               </text>
             </g>
           );
         })}
-        <text x={X0} y={H - 6} textAnchor="middle" fontSize={8.5} fill="var(--color-muted)">
+        <text x={X0} y={H - 6} textAnchor="middle" fontSize={11} fill="var(--color-muted)">
           0:00
         </text>
-        <text x={X1} y={H - 6} textAnchor="middle" fontSize={9}>
+        <text x={X1} y={H - 6} textAnchor="middle" fontSize={11}>
           🔔
         </text>
         <path d={steps(fair)} fill="none" stroke="var(--color-muted)" strokeWidth={1.2} strokeDasharray="5 3" opacity={0.8} />
@@ -127,7 +127,7 @@ export function PriceChart({
         {settle !== null && (
           <g>
             <line x1={X0} x2={X1} y1={y(settle)} y2={y(settle)} stroke={accent} strokeWidth={1.6} />
-            <text x={X1 - 2} y={y(settle) - 3} textAnchor="end" fontSize={9} fontWeight={800} fill={accent}>
+            <text x={X1 - 2} y={y(settle) - 3} textAnchor="end" fontSize={11} fontWeight={800} fill={accent}>
               settled {settle}
             </text>
           </g>
@@ -137,12 +137,12 @@ export function PriceChart({
           <circle key={i} cx={x(t)} cy={y(v)} r={i === pts.length - 1 ? 3.2 : 1.8} fill={accent} />
         ))}
         {last && (
-          <text x={Math.min(x(last[0]) + 5, X1 - 14)} y={y(last[1]) - 5} fontSize={9.5} fontWeight={800} fill="var(--color-text)">
+          <text x={Math.min(x(last[0]) + 5, X1 - 14)} y={y(last[1]) - 5} fontSize={11.5} fontWeight={800} fill="var(--color-text)">
             {last[1]}
           </text>
         )}
         {pts.length === 0 && (
-          <text x={(X0 + X1) / 2} y={(Y0 + Y1) / 2} textAnchor="middle" fontSize={10} fill="var(--color-muted)">
+          <text x={(X0 + X1) / 2} y={(Y0 + Y1) / 2} textAnchor="middle" fontSize={12} fill="var(--color-muted)">
             No trades yet this round
           </text>
         )}
@@ -186,7 +186,7 @@ export function Tape({ tape, nt, me, who, accent }: { tape: Trade[]; nt: number;
                   ["--mk-flash" as string]: `${accent}55`,
                 }}
               >
-                <span className="w-8 shrink-0 font-mono text-[10px] text-muted tabular-nums">{clock(t)}</span>
+                <span className="w-8 shrink-0 font-mono text-xs text-muted tabular-nums">{clock(t)}</span>
                 <span className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-1">
                   <Name p={who(b)} you={mineB} />
                   <span className="text-muted">bought</span>

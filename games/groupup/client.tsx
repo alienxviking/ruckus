@@ -47,8 +47,8 @@ const CSS = `
   padding: .45rem .75rem; border-radius: .9rem; border: 2.5px solid ${INK}; color: ${INK}; text-align: center; box-shadow: 0 4px 0 rgb(0 0 0 / .5); }
 .gu-band[data-missed="true"] { opacity: .8; background-image: repeating-linear-gradient(-45deg, rgb(0 0 0 / .08) 0 8px, transparent 8px 16px); }
 .gu-band .t { font-family: var(--font-hero), var(--font-display); font-weight: 800; font-size: clamp(.95rem, 3.6cqi, 1.2rem); line-height: 1.1; }
-.gu-band .w { font-size: clamp(.72rem, 2.7cqi, .9rem); font-weight: 600; letter-spacing: .02em; }
-.gu-band .lv { position: absolute; top: .3rem; right: .55rem; font-family: var(--font-mono); font-size: .6rem; font-weight: 700; opacity: .65; text-transform: uppercase; }
+.gu-band .w { font-size: clamp(.78rem, 2.7cqi, .9rem); font-weight: 600; letter-spacing: .02em; }
+.gu-band .lv { position: absolute; top: .3rem; right: .55rem; font-family: var(--font-sans); font-size: .75rem; font-weight: 700; opacity: .7; }
 .gu-slap { animation: gu-slap .5s var(--ease-spring) both; }
 @keyframes gu-slap { 0% { transform: scale(1.25) rotate(-3deg); opacity: 0; } 60% { transform: scale(.97) rotate(.6deg); opacity: 1; } 100% { transform: none; } }
 .gu-dot { width: .85rem; height: .85rem; border-radius: 999px; border: 2px solid var(--color-muted); transition: background .2s, border-color .2s, transform .25s var(--ease-spring); }
@@ -431,7 +431,7 @@ function Race({ view, byId, me }: { view: GroupUpView; byId: Record<string, Play
           <li key={r.id} className={`flex flex-col gap-1 rounded-md px-2 py-1.5 ${r.id === me ? "bg-panel-2 shadow-[inset_2px_0_0_var(--acc)]" : ""}`}>
             <div className="flex items-center justify-between gap-2">
               <span className="flex min-w-0 items-center gap-1.5">
-                <span className="w-4 font-mono text-[11px] text-muted">{i + 1}</span>
+                <span className="w-4 font-mono text-xs text-muted">{i + 1}</span>
                 <PlayerChip player={byId[r.id]} size="sm" dim={!byId[r.id]?.connected} />
               </span>
               <span className="font-mono text-sm font-bold">{r.total}</span>
@@ -442,7 +442,7 @@ function Race({ view, byId, me }: { view: GroupUpView; byId: Record<string, Play
                   <span key={k} className="h-2.5 w-4 rounded-sm" style={{ background: k < r.found && !r.done ? LEVEL_COLORS[k] : "var(--color-panel-2)" }} />
                 ))}
               </span>
-              <span className="flex-1 text-right font-mono text-[10px] text-muted">
+              <span className="flex-1 text-right font-mono text-xs text-muted">
                 {r.done ? `done · ${r.totalFound}/${4 * view.n}` : `${view.n > 1 ? `#${r.idx + 1} · ` : ""}${r.mistakes}✗`}
               </span>
             </div>

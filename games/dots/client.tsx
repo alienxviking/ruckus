@@ -199,7 +199,7 @@ export default function DotsAndBoxes({
               className="card p-2 transition-[border-color,box-shadow] duration-300 @sm:p-3"
               style={
                 myTurn
-                  ? { borderColor: seats[you].color, boxShadow: `0 0 0 1px ${seats[you].color}, 0 0 28px ${seats[you].color}33` }
+                  ? { borderColor: seats[you].color, boxShadow: `4px 5px 0 color-mix(in oklab, ${seats[you].color} 45%, #000)` }
                   : undefined
               }
             >
@@ -303,12 +303,12 @@ function SeatList({ view, seats, you }: { view: DotsView; seats: Player[]; you: 
           <li
             key={p.id}
             aria-current={active ? "true" : undefined}
-            className={`flex min-w-0 flex-col gap-0.5 rounded-xl border px-2.5 py-1.5 transition-[background-color,border-color,box-shadow,opacity] duration-300 @3xl:min-h-14 @3xl:flex-row @3xl:items-center @3xl:gap-2 @3xl:py-2 ${
+            className={`flex min-w-0 flex-col gap-0.5 rounded-xl border-2 px-2.5 py-1.5 transition-[background-color,border-color,box-shadow,opacity] duration-300 @3xl:min-h-14 @3xl:flex-row @3xl:items-center @3xl:gap-2 @3xl:py-2 ${
               active ? "" : "border-line bg-panel"
             } ${p.connected ? "" : "opacity-60"}`}
             style={
               active
-                ? { borderColor: p.color, background: `${p.color}1f`, boxShadow: `0 0 0 1px ${p.color}, 0 0 18px ${p.color}40` }
+                ? { borderColor: p.color, background: `${p.color}1f`, boxShadow: `3px 4px 0 color-mix(in oklab, ${p.color} 45%, #000)` }
                 : undefined
             }
           >
@@ -320,11 +320,11 @@ function SeatList({ view, seats, you }: { view: DotsView; seats: Player[]; you: 
                 <span className="block truncate text-sm font-semibold" style={{ color: p.color }}>
                   {p.name}
                 </span>
-                {caption && <span className="hidden truncate text-[11px] leading-tight text-muted @3xl:block">{caption}</span>}
+                {caption && <span className="hidden truncate text-xs leading-tight text-muted @3xl:block">{caption}</span>}
               </span>
             </span>
             <span className="flex items-end justify-between gap-1 @3xl:block">
-              <span className="truncate text-[11px] leading-tight text-muted @3xl:hidden">{caption || "\u00a0"}</span>
+              <span className="truncate text-xs leading-tight text-muted @3xl:hidden">{caption || "\u00a0"}</span>
               <span key={view.scores[seat]} className="animate-pop font-mono text-xl leading-none font-bold tabular-nums">
                 {view.scores[seat]}
                 <span className="sr-only"> boxes</span>
@@ -415,8 +415,8 @@ function Standings({ view, seats, you }: { view: DotsView; seats: Player[]; you:
                   </PlayerChip>
                 </span>
                 {won(seat) && (
-                  <span className="shrink-0 text-[11px] font-bold tracking-wide uppercase" style={{ color: p.color }}>
-                    {view.winners.length > 1 ? "tied" : "winner"}
+                  <span className="shrink-0 text-xs font-bold" style={{ color: p.color }}>
+                    {view.winners.length > 1 ? "Tied" : "Winner"}
                   </span>
                 )}
                 <span className="ml-auto shrink-0 font-mono text-lg font-bold tabular-nums">
@@ -631,7 +631,7 @@ function Board({
       )}
 
       {/* last line glow */}
-      {last && seats[last.seat] && (
+      {last && !view.over && seats[last.seat] && (
         <line
           key={`glow-${last.n}`}
           x1={ends(last)[0]}

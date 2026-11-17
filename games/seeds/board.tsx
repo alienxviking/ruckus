@@ -158,7 +158,7 @@ export function Board(props: BoardProps) {
     return [
       <span
         key={`c${i}`}
-        className={`self-center text-center font-mono text-[11px] font-bold tabular-nums sm:text-sm ${count ? "" : "opacity-40"}`}
+        className={`self-center text-center font-mono text-xs font-bold tabular-nums sm:text-sm ${count ? "" : "opacity-40"}`}
         style={{ gridRow: countRow, gridColumn: col, color: seat === bottom && isLegal ? SIDE[seat] : "var(--color-muted)" }}
         aria-hidden
       >
@@ -239,7 +239,7 @@ export function Board(props: BoardProps) {
 
       {hint?.label && centers[hint.slot] && (
         <span
-          className="pointer-events-none absolute z-10 -translate-x-1/2 -translate-y-full rounded-full border border-white/30 bg-black/80 px-2 py-0.5 text-[10px] font-bold whitespace-nowrap text-white"
+          className="pointer-events-none absolute z-10 -translate-x-1/2 -translate-y-full rounded-full border border-white/30 bg-black/80 px-2 py-0.5 text-xs font-bold whitespace-nowrap text-white"
           style={{ left: centers[hint.slot].x, top: centers[hint.slot].y - 18 }}
         >
           {hint.label}

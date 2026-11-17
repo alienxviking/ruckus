@@ -116,7 +116,7 @@ function countEnds(t: ReturnType<typeof makeTestCtx>) {
   game.tick!(s, t.ctx);
   t.ctx.players[away].connected = true;
   game.playerReturned!(s, s.seats[away], t.ctx);
-  t.advance(30_000);
+  t.advance(10_000); // past the old forfeit time, within the fresh move clock
   game.tick!(s, t.ctx);
   assert(!t.result && s.awaySince === null, "no forfeit after returning");
   assert(game.action(s, s.seats[away], { type: "place", cell: 0 }, t.ctx) !== false, "returned player moves");
@@ -184,3 +184,14 @@ for (const [humans, bots] of [[1, 1], [0, 2]] as const) {
 }
 
 console.log("tictactoe: all tests passed");
+
+// ---------- move timer: a stalled player gets a random move ----------
+{
+  const t = makeTestCtx(2);
+  const s = game.setup(t.ctx);
+  const before = s.board.filter((c) => c !== null).length;
+  t.advance(20_001);
+  game.tick!(s, t.ctx);
+  if (s.board.filter((c) => c !== null).length !== before + 1) throw new Error("move timer did not play a move");
+  console.log("✓ move timer plays for a stalled player");
+}

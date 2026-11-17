@@ -87,7 +87,7 @@ export function Talk({
     <section className="card flex min-w-0 flex-col gap-2 p-2.5" aria-label="Quick talk">
       <div className="flex items-center justify-between">
         <span className="label">📻 Quick talk</span>
-        <span className="text-[11px] text-muted">squad only</span>
+        <span className="text-xs text-muted">squad only</span>
       </div>
       <ol ref={list} className="flex max-h-44 min-h-16 flex-col gap-1 overflow-y-auto rounded-xl bg-ink/60 p-2 text-sm" aria-live="polite" aria-label="Squad talk log">
         {msgs.length === 0 && waiting.length === 0 && <li className="m-auto text-xs text-muted">Talk it through here, or out loud.</li>}

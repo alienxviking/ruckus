@@ -148,11 +148,11 @@ function ScoreHeader({ view, myTeam, left }: { view: SmuggleView; myTeam: number
           }
         >
           <div className="min-w-0">
-            <div className="truncate text-xs font-bold uppercase tracking-wider" style={{ color: teamColor(t) }}>
+            <div className="truncate text-sm font-extrabold" style={{ color: teamColor(t) }}>
               {teamName(t)}
               <span className="hidden @md:inline"> team</span>
             </div>
-            <div className="truncate text-[11px] text-muted">
+            <div className="truncate text-xs text-muted">
               {[myTeam === t ? "your team" : "", view.phase === "turn" && view.team === t ? "describing" : ""].filter(Boolean).join(" · ")}
             </div>
           </div>
@@ -161,13 +161,13 @@ function ScoreHeader({ view, myTeam, left }: { view: SmuggleView; myTeam: number
           </div>
         </div>
       ))}
-      <div className="card flex w-[4.5rem] shrink-0 flex-col items-center justify-center px-2 py-1 text-center @md:w-24" style={{ order: 1 }}>
+      <div className="card flex w-[5.25rem] shrink-0 flex-col items-center justify-center px-1.5 py-1 text-center @md:w-24" style={{ order: 1 }}>
         {view.phase === "final" ? (
           <span className="text-2xl">🏁</span>
         ) : (
           <>
             <span className={`font-display text-2xl font-black tabular-nums @md:text-3xl ${view.phase === "turn" && left <= 10 ? "text-brand" : ""}`}>{left}s</span>
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-muted">
+            <span className="whitespace-nowrap text-xs font-semibold text-muted">
               turn {view.turn}/{view.turns}
             </span>
           </>
@@ -498,7 +498,7 @@ function Rosters({ view, who, me }: { view: SmuggleView; who: Who; me: string })
             {view.teams[t].map((id) => (
               <PlayerChip key={id} player={who(id)} size="sm" dim={view.away.includes(id)}>
                 {id === view.describer && view.phase !== "final" ? <span title="describer">🗣️</span> : null}
-                {id === me ? <span className="text-[10px] text-muted">you</span> : null}
+                {id === me ? <span className="text-xs text-muted">you</span> : null}
               </PlayerChip>
             ))}
           </div>
@@ -570,8 +570,8 @@ function FlashOverlay({ flash }: { flash: Flash }) {
   return (
     <div aria-live="assertive" className="pointer-events-none fixed inset-x-0 top-24 z-40 flex justify-center px-4">
       <div
-        className={`sm-flash rounded-3xl border-2 px-8 py-5 text-center backdrop-blur ${flash.kind === "buzz" ? "sm-shake" : ""}`}
-        style={{ borderColor: color, background: color + "26", boxShadow: `0 0 60px -10px ${color}` }}
+        className={`sm-flash rounded-3xl border-[3px] px-8 py-5 text-center ${flash.kind === "buzz" ? "sm-shake" : ""}`}
+        style={{ borderColor: color, background: `color-mix(in oklab, ${color} 20%, var(--color-panel))`, boxShadow: "5px 6px 0 rgb(0 0 0 / .55)" }}
       >
         <div className="font-display text-5xl font-black tracking-tight @md:text-6xl" style={{ color }}>
           {flash.text}

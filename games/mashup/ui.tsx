@@ -175,7 +175,7 @@ export function Tracker({ players, done, accent, label }: { players: Player[]; d
                     <span className="sr-only"> still working</span>
                   </span>
                 ) : (
-                  <span className="text-[10px] text-muted">offline</span>
+                  <span className="text-xs text-muted">offline</span>
                 )}
               </PlayerChip>
             </li>

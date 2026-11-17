@@ -234,7 +234,7 @@ function PlayerCard({ view, player: p, seat }: { view: TttView; player: Player; 
         <span
           aria-hidden
           className="ttt-glow pointer-events-none absolute -inset-px rounded-2xl"
-          style={{ boxShadow: `0 0 0 1px ${p.color}, 0 0 20px ${p.color}55` }}
+          style={{ boxShadow: `0 0 0 1px ${p.color}, 3px 4px 0 color-mix(in oklab, ${p.color} 45%, #000)` }}
         />
       )}
       <span
@@ -255,7 +255,7 @@ function PlayerCard({ view, player: p, seat }: { view: TttView; player: Player; 
           {p.name}
           <span className="sr-only"> plays {NAME[seat]}</span>
         </span>
-        <span className="block truncate text-[11px] font-medium whitespace-pre text-muted">{caption}</span>
+        <span className="block truncate text-xs font-medium whitespace-pre text-muted">{caption}</span>
       </span>
       <span className={`flex shrink-0 flex-col gap-1 ${right ? "items-start" : "items-end"}`}>
         <span key={score} className={`font-display text-2xl leading-none font-extrabold tabular-nums ${score ? "ttt-pop" : ""}`}>
@@ -344,7 +344,7 @@ function Board({
       style={{
         maxWidth: "min(100%, 60vh)",
         borderColor: myTurn ? seats[view.turn].color : undefined,
-        boxShadow: myTurn ? `0 0 0 1px ${seats[view.turn].color}, 0 0 30px ${seats[view.turn].color}2e` : undefined,
+        boxShadow: myTurn ? `0 0 0 1px ${seats[view.turn].color}, 5px 6px 0 color-mix(in oklab, ${seats[view.turn].color} 40%, #000)` : undefined,
         transition: `border-color .3s ${EASE}, box-shadow .3s ${EASE}`,
       }}
     >
@@ -454,6 +454,14 @@ function RoundStrip({ view, seats, serverNow }: { view: TttView; seats: readonly
         </span>
         <History view={view} seats={seats} />
       </div>
+      {!end && !view.over && view.moveEndsAt > 0 && view.forfeitAt === null && (
+        <div className="flex items-center gap-2 text-xs text-muted">
+          <span className="shrink-0">Move timer</span>
+          <div className="flex-1">
+            <TimerBar endsAt={view.moveEndsAt} total={view.moveMs} serverNow={serverNow} color={seats[view.turn].color} />
+          </div>
+        </div>
+      )}
       {end && (
         <div className="animate-rise flex items-center gap-2 text-xs text-muted">
           <span className="shrink-0">Next round</span>

@@ -49,6 +49,14 @@ export function ResultPodium({
   const kind = result.winners.length === 0 || result.winners.length > 1 ? (result.winners.length > 1 && iWon ? "won" : "draw") : iWon ? "won" : played ? "lost" : "watch";
   const line = quip(room.gameSeq + result.headline.length, kind, firstName);
   const hasScores = Object.keys(scores).length > 0;
+  // Places with ties: winners share 1st; others share a place when their scores match.
+  const placeOf = (id: string) => {
+    if (result.winners.includes(id)) return 0;
+    const better = ranked.filter((o) => result.winners.includes(o) || (scores[o] ?? 0) > (scores[id] ?? 0)).length;
+    return Math.min(2, better > 0 && result.winners.length ? Math.max(1, better) : better);
+  };
+  // Everyone won (co-op games): one shared row instead of a podium.
+  const allWon = ranked.length > 1 && ranked.every((id) => result.winners.includes(id));
 
   return (
     <div
@@ -80,10 +88,31 @@ export function ResultPodium({
             {result.headline}
           </p>
           {/* The podium. */}
-          {order.length > 0 && (
+          {allWon && (
+            <div className="mt-4 flex flex-wrap items-end justify-center gap-3">
+              {ranked.map((id, i) => {
+                const p = byId[id];
+                return (
+                  <div key={id} className="slap flex flex-col items-center" style={{ "--tilt": `${i % 2 ? 4 : -4}deg`, animationDelay: `${200 + i * 90}ms` } as React.CSSProperties}>
+                    <span
+                      className="grid size-14 place-items-center rounded-2xl border-[3px] border-paper text-4xl shadow-[3px_4px_0_rgb(0_0_0/0.55)]"
+                      style={{ background: `linear-gradient(180deg, ${p.color}55, ${p.color}22)` }}
+                    >
+                      <Avatar id={p.avatar} size="1em" />
+                    </span>
+                    <span className="mt-1 text-sm font-bold" style={{ color: p.color }}>
+                      {id === me ? "You" : p.name}
+                    </span>
+                  </div>
+                );
+              })}
+              <span className="marker w-full text-center text-xl text-brand-2">team win! sab jeete 🎉</span>
+            </div>
+          )}
+          {!allWon && order.length > 0 && (
             <div className="mt-4 flex items-end justify-center gap-2 sm:gap-3">
               {order.map((id) => {
-                const place = top.indexOf(id);
+                const place = placeOf(id);
                 const p = byId[id];
                 const won = result.winners.includes(id);
                 const h = place === 0 ? "h-20 sm:h-24" : place === 1 ? "h-14 sm:h-16" : "h-10 sm:h-12";

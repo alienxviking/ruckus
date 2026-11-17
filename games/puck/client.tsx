@@ -179,14 +179,14 @@ function ScoreBar({ view, left, right, byId, me }: { view: PuckView; left: numbe
         <span key={view.score[t]} className="pk-bump font-display text-3xl font-black tabular-nums sm:text-4xl" style={{ color: TEAMS[t].color }}>
           {view.score[t]}
         </span>
-        <span className="text-[10px] font-bold tracking-wide text-muted uppercase">{myTeam === t ? "you" : TEAMS[t].name}</span>
+        <span className="text-xs font-bold text-muted">{myTeam === t ? "you" : TEAMS[t].name}</span>
       </div>
     </div>
   );
   return (
     <div className="flex items-stretch gap-2">
       {side(left)}
-      <div className="flex shrink-0 flex-col items-center justify-center text-[10px] font-bold text-muted uppercase">
+      <div className="flex shrink-0 flex-col items-center justify-center text-xs font-bold text-muted">
         <span>to</span>
         <span className="font-display text-base text-text">{view.target}</span>
       </div>

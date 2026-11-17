@@ -122,9 +122,11 @@ export function Scoreboard({
     <div className="card p-3">
       <div className="label mb-2">{title}</div>
       <ol className="space-y-1.5">
-        {ids.map((id, i) => {
+        {ids.map((id) => {
           const p = byId[id];
           if (!p) return null;
+          // Ties share a rank (1, 1, 3…).
+          const rank = 1 + ids.filter((o) => (scores[o] ?? 0) > (scores[id] ?? 0)).length;
           return (
             <li
               key={id}
@@ -133,7 +135,13 @@ export function Scoreboard({
               }`}
             >
               <span className="flex min-w-0 items-center gap-2">
-                <span className="w-5 text-right font-mono text-[11px] text-muted tabular-nums">{String(i + 1).padStart(2, "0")}</span>
+                <span
+                  className={`grid size-6 shrink-0 place-items-center rounded-full text-xs font-extrabold tabular-nums ${
+                    rank === 1 ? "bg-sun text-ink" : "bg-panel-2 text-muted"
+                  }`}
+                >
+                  {rank}
+                </span>
                 <PlayerChip player={p} size="sm" dim={!p.connected} />
               </span>
               <RollingNumber value={scores[id] ?? 0} className="font-mono font-bold tabular-nums" />

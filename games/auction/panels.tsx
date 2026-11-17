@@ -90,9 +90,9 @@ export function LotsStrip({ view, who, live }: { view: AuView; who: Who; live: b
               }}
               aria-current={now ? "true" : undefined}
             >
-              <span className="absolute top-0.5 left-1.5 text-[10px] font-bold text-muted tabular-nums">#{i + 1}</span>
+              <span className="absolute top-0.5 left-1.5 text-[11px] font-bold text-muted tabular-nums">#{i + 1}</span>
               {face.secret && (
-                <span className="absolute top-0.5 right-1 text-[10px]" title="You peeked">
+                <span className="absolute top-0.5 right-1 text-xs" title="You peeked">
                   👁
                 </span>
               )}
@@ -102,7 +102,7 @@ export function LotsStrip({ view, who, live }: { view: AuView; who: Who; live: b
               <span className="mt-0.5 font-mono text-xs font-bold tabular-nums" style={{ color: face.color }}>
                 {face.text}
               </span>
-              <span className="block h-4 max-w-full truncate text-[10px] leading-4 text-muted">
+              <span className="block h-4 max-w-full truncate text-[11px] leading-4 text-muted">
                 {buyer ? (
                   <>
                     <span aria-hidden><Avatar id={buyer.avatar} /></span> ${c.price}
@@ -228,8 +228,8 @@ export function PeekGrid({ view }: { view: AuView }) {
               background: peeked ? `color-mix(in oklab, ${color} 12%, var(--color-panel))` : "var(--color-panel)",
             }}
           >
-            <span className="block truncate text-[10px] font-semibold tracking-wide text-muted uppercase">
-              #{i + 1} · {c.gift ? "gift" : STAMPS[c.stamp]}
+            <span className="block truncate text-[11px] font-bold text-muted">
+              #{i + 1} · {c.gift ? "GIFT" : STAMPS[c.stamp]}
             </span>
             <span className="flex items-center justify-between gap-1">
               <span className="text-2xl leading-tight" aria-hidden>
@@ -352,7 +352,7 @@ export function Recap({ view, who }: { view: AuView; who: Who }) {
                 )}
               </span>
               {c.peekers && (
-                <span className="w-full pl-12 text-[11px] text-muted @md:w-auto @md:pl-0" title="Peeked by">
+                <span className="w-full pl-12 text-xs text-muted @md:w-auto @md:pl-0" title="Peeked by">
                   👁 {c.peekers.map((s) => <Avatar key={s} id={who(s).avatar} />)}
                   <span className="sr-only"> peeked by {c.peekers.map((s) => who(s).name).join(" and ")}</span>
                 </span>

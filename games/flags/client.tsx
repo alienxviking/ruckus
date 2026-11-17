@@ -220,7 +220,7 @@ function Game({ view, me, players, byId, isPlayer, act, serverNow, onEvent, acce
             {view.overtime ? "OT " : ""}
             {mmss(clockMs)}
           </span>
-          <span className="text-[10px] tracking-wide text-muted uppercase">first to {view.capsNeeded}</span>
+          <span className="text-xs text-muted">first to {view.capsNeeded}</span>
         </div>
         <TeamScore team={1} score={view.score[1]} color={teamColors[1]} name={teamNames[1]} mine={myTeam === 1} leading={lead === 1} />
       </div>
@@ -260,7 +260,7 @@ function Game({ view, me, players, byId, isPlayer, act, serverNow, onEvent, acce
 }
 
 function Kbd({ children }: { children: ReactNode }) {
-  return <kbd className="rounded border border-line bg-panel-2 px-1 py-px font-mono text-[11px] text-text">{children}</kbd>;
+  return <kbd className="rounded border border-line bg-panel-2 px-1 py-px font-mono text-xs text-text">{children}</kbd>;
 }
 
 function TeamScore({ team, score, color, name, mine, leading }: { team: number; score: number; color: string; name: string; mine: boolean; leading: boolean }) {
@@ -276,7 +276,7 @@ function TeamScore({ team, score, color, name, mine, leading }: { team: number; 
         <span className="block truncate font-display text-sm font-bold" style={{ color }}>
           {TEAM_EMOJI[team]} {name}
         </span>
-        {mine && <span className="block text-[10px] font-semibold tracking-wide text-muted uppercase">your team</span>}
+        {mine && <span className="block text-xs font-semibold text-muted">your team</span>}
       </span>
     </div>
   );
@@ -373,7 +373,7 @@ function Roster({
           {winner ? "🏆 " : ""}
           {teamName}
         </span>
-        <span className="shrink-0 text-[10px] text-muted">🚩 caps · ✋ tags</span>
+        <span className="shrink-0 text-xs text-muted" title="captures · tags">🚩 · ✋</span>
       </div>
       <ul className="space-y-1">
         {slots.map((slot) => {
@@ -489,7 +489,7 @@ function Mvp({ view, byId, teamColors, players }: { view: FlagView; byId: Record
           <div key={x.label} className="flex items-center gap-2 rounded-lg bg-panel-2 px-2 py-1.5">
             <span className="text-xl">{x.icon}</span>
             <span className="min-w-0 leading-tight">
-              <span className="block text-[10px] tracking-wide text-muted uppercase">{x.label}</span>
+              <span className="block text-xs text-muted">{x.label}</span>
               <span className="block truncate text-sm font-bold" style={{ color: teamColors[view.team[x.a!.slot] ?? 0] }}>
                 <Avatar id={p?.avatar ?? "🙂"} /> {p?.name ?? "Someone"} · {x.a!.v} {x.unit}
               </span>

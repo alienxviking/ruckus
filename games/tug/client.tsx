@@ -421,7 +421,7 @@ function Rosters({ view, byId, me }: { view: TugView; byId: Record<string, Playe
           </ul>
         </div>
       ))}
-      <p className="col-span-2 text-center text-[11px] text-muted">Rope pulled this match (updates after each round). Bigger teams pull a share each, so size doesn&apos;t decide it.</p>
+      <p className="col-span-2 text-center text-xs text-muted">Rope pulled this match (updates after each round). Bigger teams pull a share each, so size doesn&apos;t decide it.</p>
     </div>
   );
 }

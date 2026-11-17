@@ -120,7 +120,7 @@ export function Header({ view, byId, serverNow, accent }: { view: CharadesView; 
       <div className="flex items-center justify-between gap-2 font-sans text-xs font-semibold text-muted">
         <span>
           Turn {view.turn + 1} of {view.turns}
-          {view.laps > 1 ? ` · lap ${lap}/${view.laps}` : ""}
+          {view.laps > 1 ? ` · round ${lap} of ${view.laps}` : ""}
         </span>
         <Countdown endsAt={view.endsAt} serverNow={serverNow} urgentAt={view.phase === "clue" ? 10 : -1} />
       </div>
@@ -148,8 +148,8 @@ function PhraseRow({ view }: { view: CharadesView }) {
       <div className="mt-2 flex flex-col items-center gap-1">
         <Phrase phrase={view.phrase} mask={view.role === "giver" ? view.mask : null} />
         {view.role === "giver" && view.mask && (
-          <span className="font-sans text-[11px] font-semibold tracking-wide text-muted uppercase">
-            secret phrase{hintedCount(view.phrase, view.mask)}
+          <span className="font-sans text-xs font-semibold text-muted">
+            Your secret phrase{hintedCount(view.phrase, view.mask)}
           </span>
         )}
       </div>
@@ -360,10 +360,10 @@ function ChoosePhrase({ options, act, endsAt, serverNow }: { options: Offer[]; a
               {CATS[o.cat].emoji}
             </span>
             <span className="flex min-w-0 flex-col @md:items-center">
-              <span className="text-[10px] font-semibold tracking-wide text-muted uppercase">{CATS[o.cat].label}</span>
+              <span className="text-xs font-semibold text-muted">{CATS[o.cat].label}</span>
               <span className="text-base leading-tight font-bold break-words">{o.text}</span>
             </span>
-            <kbd className="ml-auto hidden text-[10px] text-muted @md:ml-0 @md:block" aria-hidden>
+            <kbd className="ml-auto hidden text-xs text-muted @md:ml-0 @md:block" aria-hidden>
               {i + 1}
             </kbd>
           </button>
@@ -526,9 +526,9 @@ function FeedLine({ item, byId, me }: { item: FeedItem; byId: ById; me: string }
         </li>
       );
     case "left":
-      return <li className="text-xs text-amber-300">🚪 {who} left during their turn</li>;
+      return <li className="text-xs text-amber-300">🚪 {who} left during {item.by === me ? "your" : "their"} turn</li>;
     case "skip":
-      return <li className="text-xs text-muted">⏭️ {who} is away, turn skipped</li>;
+      return <li className="text-xs text-muted">⏭️ {who} {item.by === me ? "were" : "was"} away, turn skipped</li>;
   }
 }
 
@@ -673,7 +673,7 @@ export function Final({ view, byId, me }: { view: CharadesView; byId: ById; me: 
   return (
     <div className="flex flex-col gap-3">
       <section className="card p-4" aria-label="Final standings">
-        <div className="label mb-3">Final standings{view.endedEarly ? " · ended early" : ""}</div>
+        <div className="label mb-3">Final standings{view.endedEarly ? " · game ended early" : ""}</div>
         <ol className="flex flex-col gap-2">
           {ids.map((id, i) => {
             const rank = rankOf(id);
@@ -726,7 +726,7 @@ export function Final({ view, byId, me }: { view: CharadesView; byId: ById; me: 
                     {h.phrase.charAt(0).toUpperCase() + h.phrase.slice(1)}
                   </span>
                   <span className="shrink-0 text-xs text-muted" title="Players who guessed it">
-                    {h.guessers.length}/{guessers} ✓
+                    {h.guessers.length}/{guessers} got it
                   </span>
                 </div>
                 <span className="flex min-w-0 items-center gap-1.5">

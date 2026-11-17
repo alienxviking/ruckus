@@ -342,7 +342,9 @@ export function PartCanvas({
   }, [canDraw]);
 
   return (
-    <div className="mx-auto flex w-full flex-col gap-2" style={{ maxWidth: "calc(52vh * 3 / 2)" }}>
+    // Small enough that the tool bar stays on screen under the room and game headers (the guide
+    // strip above body and legs adds 10%), but never tiny.
+    <div className="mx-auto flex w-full flex-col gap-2" style={{ maxWidth: "max(20rem, min(52vh * 3 / 2, (100svh - 490px) * 1.35))" }}>
       <div
         className="overflow-hidden rounded-xl bg-white shadow-lg shadow-black/40 ring-2"
         style={{ "--tw-ring-color": `${frameColor}88` } as React.CSSProperties}
@@ -416,7 +418,7 @@ function Toolbar({
   onClear: () => void;
 }) {
   const ink = eraser ? BG : color;
-  const tool = "btn h-10 min-w-10 px-0 @md:px-3";
+  const tool = "btn h-10 min-w-10 px-0 @lg:px-3";
   return (
     <div className="@container card flex flex-col gap-2 p-2" role="toolbar" aria-label="Drawing tools">
       <div className="grid grid-cols-6 gap-1.5 @xl:grid-cols-12" role="radiogroup" aria-label="Colour">
@@ -483,14 +485,14 @@ function Toolbar({
           className={`${tool} ${eraser ? "border-text bg-text/15" : ""}`}
         >
           <span aria-hidden>🧽</span>
-          <span className="sr-only @md:not-sr-only">Eraser</span>
+          <span className="sr-only @lg:not-sr-only">Eraser</span>
         </button>
         <div className="ml-auto flex gap-1">
           <button type="button" title="Undo (Z)" onClick={onUndo} disabled={!canUndo} className={tool}>
             <span aria-hidden className="text-lg leading-none">
               ↶
             </span>
-            <span className="sr-only @md:not-sr-only">Undo</span>
+            <span className="sr-only @lg:not-sr-only">Undo</span>
           </button>
           <button
             type="button"
@@ -501,7 +503,7 @@ function Toolbar({
             className={`${tool} ${armed ? "border-red-400 bg-red-500/20 text-red-200" : ""}`}
           >
             <span aria-hidden>{armed ? "⚠️" : "🗑️"}</span>
-            <span aria-hidden className="hidden @md:inline">
+            <span aria-hidden className="hidden @lg:inline">
               {armed ? "Sure?" : "Clear"}
             </span>
           </button>

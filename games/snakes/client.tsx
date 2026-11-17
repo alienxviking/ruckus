@@ -533,7 +533,7 @@ function Roster({
             <span className="max-w-[7.5rem] truncate font-semibold" style={{ color }}>
               {p.name}
             </span>
-            {p.id === me && <span className="text-[10px] font-bold tracking-wide text-text/80 uppercase">you</span>}
+            {p.id === me && <span className="text-xs font-semibold text-text/80">you</span>}
             <Pips wins={wins} need={winsNeededOf(view)} color={color} />
             <span className="font-mono text-xs text-muted tabular-nums" aria-hidden>
               {sn?.alive ? `${longest === p.id ? "👑" : "🐍"}${sn.len}` : !p.connected ? "🔌" : sn ? "💀" : "⏳"}
@@ -656,7 +656,7 @@ function FinalStandings({
                     <span className="truncate font-semibold" style={{ color }}>
                       {p?.name ?? "Someone"}
                     </span>
-                    {id === me && <span className="shrink-0 text-[10px] font-bold tracking-wide text-muted uppercase">you</span>}
+                    {id === me && <span className="shrink-0 text-xs font-semibold text-muted">you</span>}
                   </span>
                   <span className="block text-xs text-muted tabular-nums">longest {best(id)}</span>
                 </span>

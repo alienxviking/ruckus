@@ -74,7 +74,7 @@ function actText(a: WireAct): ReactNode {
 
 function Torn({ label }: { label: ReactNode }) {
   return (
-    <li className="relative my-0.5 flex items-center gap-1.5 text-[11px] italic opacity-70">
+    <li className="relative my-0.5 flex items-center gap-1.5 text-xs italic opacity-70">
       <span className="shrink-0 font-mono not-italic">{label}</span>
       <span
         className="h-3.5 flex-1 rounded-sm"
@@ -95,7 +95,7 @@ function Section({ t, children, how }: { t: ModType; children: ReactNode; how: R
         <span aria-hidden>{MODULE_ICON[t]} </span>
         {MODULE_NAME[t]}
       </h3>
-      <p className="mt-0.5 mb-1.5 text-[11px] leading-snug opacity-75">{how}</p>
+      <p className="mt-0.5 mb-1.5 text-xs leading-snug opacity-75">{how}</p>
       {children}
     </section>
   );
@@ -103,7 +103,7 @@ function Section({ t, children, how }: { t: ModType; children: ReactNode; how: R
 
 const Rule = ({ label, children }: { label: ReactNode; children: ReactNode }) => (
   <li className="my-0.5 flex gap-1.5 text-[12.5px] leading-snug">
-    <span className="shrink-0 font-mono text-[11px] font-bold opacity-70">{label}</span>
+    <span className="shrink-0 font-mono text-xs font-bold opacity-70">{label}</span>
     <span>{children}</span>
   </li>
 );
@@ -136,9 +136,9 @@ export function Manual({ page, types, experts, title }: { page: Fact[]; types: M
       <span aria-hidden className="absolute -top-2 right-8 h-5 w-12 rotate-[5deg] bg-amber-100/70 shadow-sm" />
       <header className="mb-1 flex items-baseline justify-between gap-2">
         <h2 className="text-base font-black tracking-tight uppercase sm:text-lg">{title}</h2>
-        <span className="shrink-0 text-[10px] opacity-60">{experts > 1 ? `1 of ${experts} torn copies` : "full copy"}</span>
+        <span className="shrink-0 text-xs opacity-60">{experts > 1 ? `1 of ${experts} torn copies` : "full copy"}</span>
       </header>
-      <p className="mb-2 text-[11px] leading-snug opacity-75">
+      <p className="mb-2 text-xs leading-snug opacity-75">
         Ask the defuser for the <b>serial number</b>, the <b>batteries</b> and which <b>lamps</b> are lit. Vowels are A, E and U.
         {experts > 1 && <> Striped lines are on someone else&apos;s page: ask for them!</>}
       </p>
@@ -149,7 +149,7 @@ export function Manual({ page, types, experts, title }: { page: Fact[]; types: M
             <div className="grid gap-x-4 gap-y-2 sm:grid-cols-2">
               {WIRE_COUNTS.map((n) => (
                 <div key={n}>
-                  <div className="text-[11px] font-black uppercase underline decoration-dotted underline-offset-2">{n} wires</div>
+                  <div className="text-xs font-black uppercase underline decoration-dotted underline-offset-2">{n} wires</div>
                   <ol>
                     {Array.from({ length: WIRE_RULES }, (_, i) => {
                       const f = wire(n, i);
@@ -224,12 +224,12 @@ export function Manual({ page, types, experts, title }: { page: Fact[]; types: M
               {glyphs.map((f) => (
                 <li key={f.g} className="flex items-center gap-1 rounded border border-[#2b262030] bg-white/30 px-1 py-0.5">
                   <Glyph g={f.g} className="size-6 shrink-0" />
-                  <span className="min-w-0 flex-1 truncate text-[10px] leading-tight opacity-70">{GLYPHS[f.g].name}</span>
+                  <span className="min-w-0 flex-1 truncate text-xs leading-tight opacity-70">{GLYPHS[f.g].name}</span>
                   <b className="text-[14px] tabular-nums">{f.v}</b>
                 </li>
               ))}
             </ul>
-            {glyphs.length < GLYPHS.length && <p className="mt-1 text-[10.5px] italic opacity-60">{GLYPHS.length - glyphs.length} glyph values are on other pages.</p>}
+            {glyphs.length < GLYPHS.length && <p className="mt-1 text-xs italic opacity-60">{GLYPHS.length - glyphs.length} glyph values are on other pages.</p>}
           </Section>
         )}
 
@@ -238,7 +238,7 @@ export function Manual({ page, types, experts, title }: { page: Fact[]; types: M
             <div className="grid grid-cols-2 gap-2">
               {([0, 1] as const).map((p) => (
                 <table key={p} className="w-full border-collapse text-[12px]">
-                  <caption className="text-left text-[11px] font-black uppercase">{p === 0 ? "Odd flashes" : "Even flashes"}</caption>
+                  <caption className="text-left text-xs font-black uppercase">{p === 0 ? "Odd flashes" : "Even flashes"}</caption>
                   <tbody>
                     {PAD_COLORS.map((c) => {
                       const f = sig(p, c);
@@ -278,7 +278,7 @@ export function Manual({ page, types, experts, title }: { page: Fact[]; types: M
                 </li>
               ))}
             </ul>
-            {codes.length < CODEBOOK && <p className="mt-1 text-[10.5px] italic opacity-60">{CODEBOOK - codes.length} codes are on other pages.</p>}
+            {codes.length < CODEBOOK && <p className="mt-1 text-xs italic opacity-60">{CODEBOOK - codes.length} codes are on other pages.</p>}
           </Section>
         )}
       </div>

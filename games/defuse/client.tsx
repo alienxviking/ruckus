@@ -215,7 +215,7 @@ function Hud({ view, who, serverNow, showClock }: { view: DefuseView; who: (id: 
           {view.checklist.map((c, i) => (
             <li
               key={i}
-              className={`flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-semibold transition-colors ${c.done ? "border-emerald-500/60 bg-emerald-500/15 text-emerald-300" : "border-line text-muted"}`}
+              className={`flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-semibold transition-colors ${c.done ? "border-emerald-500/60 bg-emerald-500/15 text-emerald-300" : "border-line text-muted"}`}
             >
               <span aria-hidden>{c.done ? "✓" : MODULE_ICON[c.t]}</span>
               {MODULE_NAME[c.t]}

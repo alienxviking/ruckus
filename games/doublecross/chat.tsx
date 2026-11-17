@@ -134,7 +134,7 @@ export function ChatPanel({
           <span aria-hidden>{heist ? "💰" : "🔒"}</span>
           {heist ? "Crew chat" : "Private chat"}
         </span>
-        <span className="truncate text-[11px] text-muted">
+        <span className="truncate text-xs text-muted">
           {heist ? "everyone playing can read this" : `only you & ${partnerNames.join(" & ")} can read this`}
         </span>
       </div>
@@ -213,7 +213,7 @@ export function ChatPanel({
           </form>
         </>
       ) : (
-        <p className="px-0.5 text-center text-[11px] text-muted">🔇 The talking is over.</p>
+        <p className="px-0.5 text-center text-xs text-muted">🔇 The talking is over.</p>
       )}
     </section>
   );
@@ -244,7 +244,7 @@ function Bubble({
       )}
       <div className={`flex min-w-0 max-w-[80%] flex-col ${mine ? "items-end" : "items-start"}`}>
         {first && !mine && (
-          <span className="px-1 text-[11px] font-semibold" style={{ color: p.color }}>
+          <span className="px-1 text-xs font-semibold" style={{ color: p.color }}>
             {p.name}
           </span>
         )}
@@ -261,7 +261,7 @@ function Bubble({
           {text}
         </p>
         {state && (
-          <span className={`px-1 text-[10px] ${state === "failed" ? "text-red-300" : "text-muted"}`}>
+          <span className={`px-1 text-[11px] ${state === "failed" ? "text-red-300" : "text-muted"}`}>
             {state === "failed" ? "⚠ not sent" : "sending…"}
           </span>
         )}

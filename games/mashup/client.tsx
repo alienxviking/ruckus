@@ -270,7 +270,7 @@ function InkGauge({ level, accent }: { level: number; accent: string }) {
       >
         <div className="h-full rounded-full transition-[width] duration-300" style={{ width: `${left}%`, background: color }} />
       </div>
-      <span className="text-[11px] text-muted tabular-nums">{left}%</span>
+      <span className="text-xs text-muted tabular-nums">{left}%</span>
     </div>
   );
 }
@@ -285,7 +285,7 @@ function CanvasOverlay({ part, done, low, empty }: { part: number; done: boolean
           className="pointer-events-none absolute inset-x-0 bottom-0 border-t-2 border-dashed"
           style={{ height: `${(GUIDE / H) * 100}%`, borderColor: "var(--mm-accent)", background: "color-mix(in oklab, var(--mm-accent) 9%, transparent)" }}
         >
-          <span className="absolute right-1.5 bottom-full mb-0.5 rounded bg-white/85 px-1 text-[10px] font-bold text-slate-500">
+          <span className="absolute right-1.5 bottom-full mb-0.5 rounded bg-white/85 px-1 text-xs font-bold text-slate-500">
             next artist sees this strip ↓
           </span>
         </div>

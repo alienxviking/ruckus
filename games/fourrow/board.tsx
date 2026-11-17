@@ -312,7 +312,7 @@ export function Board({
   return (
     <div className="relative mx-auto w-full select-none" style={{ maxWidth: "min(100%, 540px, 55vh)" }}>
       <div className="relative w-full" style={{ aspectRatio: `${VB_W} / ${vbH}` }}>
-        {/* Turn glow behind the frame */}
+        {/* Turn-coloured rim and flat sticker shadow behind the frame */}
         <div
           aria-hidden
           className="fr-glow absolute rounded-[3.5%]"
@@ -321,7 +321,9 @@ export function Board({
             right: 0,
             top: pct(fy(TOP - PAD)),
             bottom: 0,
-            boxShadow: glow ? `0 0 0 2px ${glow}66, 0 14px 44px -12px ${glow}` : "0 14px 40px -18px #000",
+            boxShadow: glow
+              ? `0 0 0 3px ${glow}, 6px 7px 0 color-mix(in oklab, ${glow} 40%, #000)`
+              : "0 0 0 3px var(--color-line), 6px 7px 0 rgb(0 0 0 / 0.55)",
           }}
         />
         <svg

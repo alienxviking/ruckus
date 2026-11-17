@@ -59,9 +59,9 @@ const CSS = `
 .nb-key:active:not(:disabled) { transform: translateY(2px); box-shadow: 0 1px 0 rgb(0 0 0 / .45); background: color-mix(in oklab, var(--acc) 30%, var(--color-panel-2)); }
 .nb-key:disabled { opacity: .25; }
 .nb-key[data-notes="true"] { font-size: 1.05rem; color: var(--acc); border-style: dashed; }
-.nb-key small { display: block; font-family: var(--font-mono); font-size: .58rem; line-height: 1; font-weight: 600; color: var(--color-muted); }
+.nb-key small { display: block; font-family: var(--font-mono); font-size: .75rem; line-height: 1; font-weight: 600; color: var(--color-muted); }
 .nb-tool { display: flex; flex-direction: column; align-items: center; gap: 2px; flex: 1 1 0; min-width: 0; padding: .45rem .25rem; border-radius: .75rem;
-  font-size: .72rem; font-weight: 700; color: var(--color-muted); border: 2px solid transparent; transition: color .15s, background .15s, border-color .15s; }
+  font-size: .78rem; font-weight: 700; color: var(--color-muted); border: 2px solid transparent; transition: color .15s, background .15s, border-color .15s; }
 .nb-tool:hover:not(:disabled) { color: var(--color-text); background: var(--color-panel-2); }
 .nb-tool:disabled { opacity: .35; }
 .nb-tool[aria-pressed="true"] { color: #0a0d02; background: var(--acc); border-color: ${INK}; }
@@ -379,7 +379,7 @@ function TopBar({ view, run, serverNow, who }: { view: NineboxView; run: MyBoard
           {fmtTime(ms)}
         </div>
         {run.status === "play" && left < 120_000 && (
-          <div className="font-mono text-[11px] font-bold" style={{ color: BAD }}>
+          <div className="font-mono text-xs font-bold" style={{ color: BAD }}>
             {fmtTime(left)} left!
           </div>
         )}
@@ -586,7 +586,7 @@ function Race({ view, byId, me }: { view: NineboxView; byId: Record<string, Play
           <li key={r.id} className={`flex flex-col gap-1 rounded-md px-2 py-1.5 ${r.id === me ? "bg-panel-2 shadow-[inset_2px_0_0_var(--acc)]" : ""}`}>
             <div className="flex items-center justify-between gap-2">
               <span className="flex min-w-0 items-center gap-1.5">
-                <span className="w-4 font-mono text-[11px] text-muted">{i + 1}</span>
+                <span className="w-4 font-mono text-xs text-muted">{i + 1}</span>
                 <PlayerChip player={byId[r.id]} size="sm" dim={!byId[r.id]?.connected} />
               </span>
               <span className="whitespace-nowrap font-mono text-xs font-bold">
@@ -606,7 +606,7 @@ function Race({ view, byId, me }: { view: NineboxView; byId: Record<string, Play
                   style={{ width: `${r.pct}%`, background: r.status === "solved" ? "var(--color-volt)" : "var(--acc)" }}
                 />
               </div>
-              <span className="w-12 text-right font-mono text-[10px] text-muted">
+              <span className="w-16 text-right font-mono text-xs text-muted">
                 {r.mistakes} ✗{view.maxMistakes ? `/${view.maxMistakes}` : ""}
               </span>
             </div>

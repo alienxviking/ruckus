@@ -438,15 +438,15 @@ function SeatCard({
       className={`card relative flex min-w-0 items-center gap-2 px-2.5 py-2 transition-[border-color,box-shadow,opacity] duration-300 sm:gap-3 sm:px-3 ${
         mirror ? "flex-row-reverse text-right" : ""
       } ${away ? "opacity-60" : ""} ${isYou ? "bg-panel-2" : ""}`}
-      style={lit ? { borderColor: color, boxShadow: `0 0 0 1px ${color}66, 0 8px 26px -14px ${color}` } : undefined}
+      style={lit ? { borderColor: color, boxShadow: `3px 4px 0 color-mix(in oklab, ${color} 45%, #000)` } : undefined}
     >
       {isYou && (
         <span
-          className={`absolute -top-2 rounded-full border border-line bg-ink px-1.5 text-[9px] leading-[14px] font-bold tracking-wider text-muted uppercase ${
+          className={`absolute -top-2 rounded-full border border-line bg-ink px-1.5 text-[11px] leading-4 font-bold text-muted ${
             mirror ? "right-3" : "left-3"
           }`}
         >
-          you
+          You
         </span>
       )}
       <div key={lit ? "lit" : "idle"} className={lit ? "fr-swap" : undefined}>
@@ -459,7 +459,7 @@ function SeatCard({
             {player.name}
           </span>
         </div>
-        <div className="truncate text-[11px] leading-4 text-muted">
+        <div className="truncate text-xs leading-4 text-muted">
           {away ? (
             <>
               <span aria-hidden>📴 </span>away
@@ -515,7 +515,7 @@ function GameHistory({
         return (
           <li
             key={i}
-            className={`flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] ${
+            className={`flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs ${
               done ? "border-line bg-panel" : "border-dashed border-line"
             }`}
           >

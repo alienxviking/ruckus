@@ -619,7 +619,7 @@ export const CATALOG: GameMeta[] = [
     original: true,
     how: [
       "Draw a head, a body and legs for three different monsters, seeing only a sliver of the part above yours.",
-      "Name two monsters you didn't draw, then watch every creature snap together in the big reveal.",
+      "Name two monsters, then watch every creature snap together in the big reveal.",
       "Vote ⭐ for the best monster and 🏷️ the best name: artists and namers score. Two rounds, most points wins.",
     ],
   },

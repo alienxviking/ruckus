@@ -459,7 +459,7 @@ function ReadyPill({ view, me, holder, serverNow }: { view: PotatoView; me: stri
       <span className="block truncate font-display text-xl font-black">
         🥔 → {mine ? <span style={{ color: HOT }}>YOU!</span> : holder ? <span style={{ color: holder.color }}>{holder.name}</span> : "…"}
       </span>
-      {view.round === 1 && <span className="mt-1 block text-[11px] leading-snug text-muted">Solve it, throw it, don&apos;t get caught holding it 💥</span>}
+      {view.round === 1 && <span className="mt-1 block text-xs leading-snug text-muted">Solve it, throw it, don&apos;t get caught holding it 💥</span>}
       <span key={secs} aria-hidden className="pot-in mt-1 block font-display text-2xl font-black tabular-nums" style={{ color: HOT }}>
         {secs > 0 ? secs : "Go!"}
       </span>
@@ -519,8 +519,8 @@ function BoomPill({ view, me, byId }: { view: PotatoView; me: string; byId: Reco
         {b.midair && <>In mid-air! </>}
         <span style={{ color: v.color }}>{you ? "You" : v.name}</span> {b.out ? (you ? "are OUT ☠️" : "is OUT ☠️") : `lose${you ? "" : "s"} a life`}
       </span>
-      {b.midair && b.to && <span className="block truncate text-[11px] text-muted">The thrower pays, {(byId[b.to] ?? ghost(b.to)).name} escapes!</span>}
-      <span className="mt-0.5 block text-[11px] text-muted tabular-nums">
+      {b.midair && b.to && <span className="block truncate text-xs text-muted">The thrower pays, {(byId[b.to] ?? ghost(b.to)).name} escapes!</span>}
+      <span className="mt-0.5 block text-xs text-muted tabular-nums">
         Fuse was {(b.fuseMs / 1000).toFixed(1)}s · {b.passes} {b.passes === 1 ? "pass" : "passes"}
       </span>
     </Pill>
@@ -588,7 +588,10 @@ function Standings({ view, byId, me }: { view: PotatoView; byId: Record<string, 
 
   return (
     <section className="card animate-rise flex flex-col gap-3 p-3" aria-label="Final standings">
-      <div className="label">Final standings</div>
+      <div className="flex items-baseline justify-between gap-2">
+        <span className="label">Final standings</span>
+        <span className="text-xs text-muted">🥔 throws · ❌ wrong · ⚡ fastest solve</span>
+      </div>
       <ol className="flex flex-col gap-1.5">
         {order.map((id, i) => {
           const s = st.get(id);
@@ -607,7 +610,7 @@ function Standings({ view, byId, me }: { view: PotatoView; byId: Record<string, 
                 <span className="min-w-0 shrink overflow-hidden">
                   <PlayerChip player={p} size="sm" dim={!p.connected} />
                 </span>
-                <span className="shrink-0 text-[11px] whitespace-nowrap text-muted">
+                <span className="shrink-0 text-xs whitespace-nowrap text-muted">
                   {s.lives > 0 ? (
                     <span aria-label={`${s.lives} ${s.lives === 1 ? "life" : "lives"} left`}>{"❤️".repeat(s.lives)}</span>
                   ) : (
@@ -617,7 +620,7 @@ function Standings({ view, byId, me }: { view: PotatoView; byId: Record<string, 
                   )}
                 </span>
               </span>
-              <span className="flex shrink-0 gap-2 text-[11px] text-muted tabular-nums">
+              <span className="flex shrink-0 gap-2 text-xs text-muted tabular-nums">
                 <span title="Throws">🥔 {s.throws}</span>
                 <span title="Wrong answers">❌ {s.wrong}</span>
                 <span title="Fastest solve">⚡ {s.best === null ? "–" : `${(s.best / 1000).toFixed(1)}s`}</span>

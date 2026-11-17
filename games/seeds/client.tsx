@@ -408,7 +408,7 @@ function Match({ view, byId, isPlayer, act, serverNow, accent }: Props & { view:
         {view.target > 1 && (
           <ol className="flex flex-wrap justify-center gap-1.5" aria-label="Games so far">
             {view.results.map((r, i) => (
-              <li key={i} className="flex items-center gap-1 rounded-full border border-line bg-panel px-2 py-0.5 text-[11px]">
+              <li key={i} className="flex items-center gap-1 rounded-full border border-line bg-panel px-2 py-0.5 text-xs">
                 <span className="font-semibold text-text/80">G{i + 1}</span>
                 {r.winner === null ? "draw" : <SideSwatch seat={r.winner} size={10} />}
                 <span className="font-mono">
@@ -487,14 +487,14 @@ function SeatCard({
           <span className="truncate text-sm font-semibold" style={{ color: player.color }}>
             {player.name}
           </span>
-          {isYou && (
-            <span className="rounded-full border border-line bg-ink px-1.5 text-[9px] leading-[14px] font-bold tracking-wider text-muted uppercase">
+          {isYou && player.name !== "You" && (
+            <span className="rounded-full border border-line bg-ink px-1.5 text-xs leading-4 font-bold text-muted">
               you
             </span>
           )}
           {champ && <span aria-label="Winner">🏆</span>}
         </div>
-        <div className="truncate text-[11px] leading-4 text-muted">
+        <div className="truncate text-xs leading-4 text-muted">
           {away ? (
             <>
               <span aria-hidden>📴 </span>away
@@ -527,7 +527,7 @@ function SeatCard({
         <span key={store} className="animate-pop font-mono text-2xl font-bold tabular-nums" style={{ color }}>
           {store}
         </span>
-        <span className="text-[10px] tracking-wider text-muted uppercase">store</span>
+        <span className="text-xs text-muted">store</span>
       </div>
     </div>
   );

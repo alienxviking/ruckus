@@ -337,7 +337,7 @@ export function AnswerButton({
       {revealing && mine && (
         <span aria-hidden className="pointer-events-none absolute inset-x-0 -bottom-2.5 z-[2] flex justify-center">
           <span
-            className="trv-pop rounded-full px-2 text-[10px] leading-4 font-black tracking-wider text-ink uppercase shadow-md ring-2 ring-ink"
+            className="trv-pop rounded-full px-2 text-xs leading-4 font-black text-ink shadow-md ring-2 ring-ink"
             style={{ background: look === "correct" ? GREEN : ROSE, ...cssVars({ "--d": "120ms" }) }}
           >
             Your pick

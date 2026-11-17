@@ -174,7 +174,7 @@ export function GuideStrip({ strokes, blank }: { strokes: DrawStroke[] | null; b
       {/* Faded and hatched so it reads as "not yours, just a guide". */}
       <div aria-hidden className="mm-hatch pointer-events-none absolute inset-0" />
       {blank && (
-        <span className="absolute inset-0 grid place-items-center text-[11px] font-semibold text-slate-500">
+        <span className="absolute inset-0 grid place-items-center text-xs font-semibold text-slate-500">
           The part above was left blank: start fresh!
         </span>
       )}

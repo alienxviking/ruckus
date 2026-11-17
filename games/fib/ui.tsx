@@ -269,7 +269,7 @@ export function Tracker({
                     <span className="sr-only"> still deciding</span>
                   </span>
                 ) : (
-                  <span className="text-[10px] text-muted">away</span>
+                  <span className="text-xs text-muted">away</span>
                 )}
                 {p.id === me && <span className="sr-only">(you)</span>}
               </PlayerChip>
@@ -427,7 +427,7 @@ function StepCard({
           {stamped ? (
             <KindTag kind={o.kind} accent={accent} />
           ) : (
-            <span className="fib-blank rounded-full border border-line px-2.5 py-0.5 text-xs font-bold tracking-widest text-muted uppercase">
+            <span className="fib-blank rounded-full border border-line px-2.5 py-0.5 text-xs font-bold text-muted">
               Truth or fib?
             </span>
           )}
@@ -515,7 +515,7 @@ function OptionRow({
   accent: string;
 }) {
   const truth = revealed && o.kind === "truth";
-  const tag = !revealed ? null : o.kind === "truth" ? "truth" : o.kind === "house" ? "house fib" : "fib";
+  const tag = !revealed ? null : o.kind === "truth" ? "Truth" : o.kind === "house" ? "House fib" : "Fib";
   return (
     <li
       className={`flex min-w-0 flex-col gap-1 rounded-xl border px-2.5 py-2 transition-[border-color,background-color] duration-300 ${
@@ -535,7 +535,7 @@ function OptionRow({
           {o.text}
         </span>
         <span
-          className={`shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-bold tracking-wider uppercase ${
+          className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-bold ${
             revealed ? "animate-pop" : "text-muted"
           }`}
           style={
@@ -791,7 +791,7 @@ export function ScoreStrip({
               <span className="font-mono font-bold text-text tabular-nums">
                 <CountUp value={scores[id] ?? 0} />
               </span>
-              {gain > 0 && <span className="animate-pop font-mono text-[10px] font-bold text-green-300">+{formatPoints(gain)}</span>}
+              {gain > 0 && <span className="animate-pop font-mono text-xs font-bold text-green-300">+{formatPoints(gain)}</span>}
               {id === me && <span className="sr-only">(you)</span>}
             </PlayerChip>
           </span>
@@ -867,7 +867,7 @@ function Standings({ view, byId, me, accent }: { view: FibView; byId: ById; me: 
               </span>
               <span className="flex min-w-0 flex-1 flex-col items-start gap-0.5">
                 <FitChip player={p} size="sm" dim={!p.connected} />
-                <span className="pl-1 text-[11px] text-muted">
+                <span className="pl-1 text-xs text-muted">
                   🔍 {found[id] ?? 0}/{rounds} truths · 🤥 fooled {fooled[id] ?? 0}
                   {id === me && <span className="sr-only"> (you)</span>}
                 </span>
@@ -997,8 +997,8 @@ export function FinalScreen({ view, byId, me, accent }: { view: FibView; byId: B
                         {i > 0 && " & "}
                         <Who player={byId[a]} you={a === me} />
                       </Fragment>
-                    ))}{" "}
-                    fooled {fib.pickers.length}
+                    ))}
+                    {" · "}fooled {fib.pickers.length}
                   </span>
                 )}
               </li>

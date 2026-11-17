@@ -333,7 +333,7 @@ function finish(s: PollState, ctx: GameCtx, abandoned: boolean) {
   const best = winners.length ? s.score[s.ids.indexOf(winners[0])] : 0;
   let headline: string;
   if (winners.length === 0) headline = "Nobody read the room. The polls win this time!";
-  else if (winners.length === 1) headline = `${name(winners[0])} takes Poll Position with ${best} points`;
+  else if (winners.length === 1) headline = `${name(winners[0])} ${name(winners[0]) === "You" ? "take" : "takes"} Poll Position with ${best} points`;
   else if (winners.length <= 3) headline = `${joinNames(winners.map(name))} share Poll Position with ${best} points`;
   else headline = `${winners.length}-way tie for Poll Position at ${best} points`;
   if (abandoned) headline = `Not enough players left. ${headline}`;

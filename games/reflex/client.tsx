@@ -727,7 +727,7 @@ function RoundList({ last, byId, me }: { last: RoundSummary; byId: Record<string
             <span className="min-w-0 shrink">
               <PlayerChip player={p} size="sm" dim={!p.connected} />
             </span>
-            {e.id === me && <span className="shrink-0 text-[10px] font-bold text-muted uppercase">you</span>}
+            {e.id === me && <span className="shrink-0 text-xs font-semibold text-muted">you</span>}
             <span
               className={`ml-auto shrink-0 text-right text-sm ${
                 e.rt !== null ? "font-mono font-bold tabular-nums" : e.foul ? "text-rose-300" : "text-muted"
@@ -781,7 +781,7 @@ function PausedPanel({
         <div className="flex flex-wrap justify-center gap-1.5">
           {away.map((id) => (
             <PlayerChip key={id} player={playerOf(byId, id)} size="sm" dim>
-              <span className="text-[10px] text-muted uppercase">away</span>
+              <span className="text-xs text-muted">away</span>
             </PlayerChip>
           ))}
         </div>
@@ -867,7 +867,7 @@ function FinalPanel({
                 <span className="min-w-0 shrink">
                   <PlayerChip player={p} size="sm" dim={!p.connected} />
                 </span>
-                {id === me && <span className="shrink-0 text-[10px] font-bold text-muted uppercase">you</span>}
+                {id === me && <span className="shrink-0 text-xs font-semibold text-muted">you</span>}
               </span>
               <span className="text-right leading-tight">
                 <span className="font-mono text-base font-bold tabular-nums">{score(id)}</span>
@@ -968,7 +968,7 @@ function DecidingRound({ last, byId }: { last: RoundSummary; byId: Record<string
   const rest = last.entries.length - shown.length;
   return (
     <div className="rounded-xl bg-panel-2 px-3 py-2">
-      <div className="label text-[10px]">Deciding round · round {last.round}</div>
+      <div className="label">Deciding round · round {last.round}</div>
       <ol className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-sm">
         {shown.map((e) => {
           const place = 1 + times.filter((x) => x < e.rt!).length;
@@ -1010,7 +1010,7 @@ function StatTile({
         {icon}
       </span>
       <div className="min-w-0">
-        <div className="label text-[10px]">{label}</div>
+        <div className="label">{label}</div>
         <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-sm">
           {ids.slice(0, 3).map((id) => (
             <PlayerChip key={id} player={playerOf(byId, id)} size="sm" />
@@ -1052,7 +1052,7 @@ function Posse({ view, byId, me }: { view: ReflexView; byId: Record<string, Play
                 <span className="truncate text-sm leading-tight font-semibold" style={{ color: p.color }}>
                   {p.name}
                 </span>
-                {id === me && <span className="shrink-0 text-[10px] font-bold text-muted uppercase">you</span>}
+                {id === me && <span className="shrink-0 text-xs font-semibold text-muted">you</span>}
               </span>
               <Pips score={score} target={view.target} color={p.color} fresh={won} />
             </span>
@@ -1068,7 +1068,7 @@ function Posse({ view, byId, me }: { view: ReflexView; byId: Record<string, Play
                 drew
               </span>
             ) : !p.connected ? (
-              <span className="shrink-0 text-[10px] text-muted uppercase">away</span>
+              <span className="shrink-0 text-xs text-muted">away</span>
             ) : null}
           </li>
         );

@@ -412,8 +412,8 @@ function Path({ words }: { words: string[] }) {
           </span>
         ))}
       </div>
-      <span className="font-mono text-[10px] tracking-widest text-muted uppercase">
-        {steps === 0 ? "start word" : `${steps} step${steps === 1 ? "" : "s"} on this ladder`}
+      <span className="text-xs font-semibold text-muted">
+        {steps === 0 ? "Start word" : `${steps} step${steps === 1 ? "" : "s"} on this ladder`}
       </span>
     </div>
   );
@@ -495,7 +495,7 @@ function Summary({ run, over, who }: { run: MyRun; over: boolean; who?: Player }
           <div className="font-mono text-3xl font-bold" style={{ color: "var(--acc)" }}>
             {run.total}
           </div>
-          <div className="font-mono text-[11px] text-muted">shortest possible {run.bestTotal}</div>
+          <div className="font-mono text-xs text-muted">shortest possible {run.bestTotal}</div>
         </div>
       </div>
       <ol className="mt-4 flex flex-col gap-2">
@@ -534,12 +534,12 @@ function Board({ view, byId, me }: { view: LadderView; byId: Record<string, Play
           >
             <div className="flex items-center justify-between gap-2">
               <span className="flex min-w-0 items-center gap-1.5">
-                <span className="w-4 font-mono text-[11px] text-muted">{i + 1}</span>
+                <span className="w-4 font-mono text-xs text-muted">{i + 1}</span>
                 <PlayerChip player={byId[r.id]} size="sm" dim={!byId[r.id]?.connected} />
               </span>
               <span className="font-mono font-bold">
                 <RollingNumber value={r.total} />
-                <span className="ml-0.5 text-[10px] font-normal text-muted">steps</span>
+                <span className="ml-0.5 text-xs font-normal text-muted">steps</span>
               </span>
             </div>
             <div className="flex items-center gap-2 pl-6">
@@ -549,7 +549,7 @@ function Board({ view, byId, me }: { view: LadderView; byId: Record<string, Play
                   style={{ width: `${(Math.min(r.idx, view.n) / view.n) * 100}%`, background: "var(--acc)" }}
                 />
               </div>
-              <span className="w-20 text-right font-mono text-[10px] text-muted">
+              <span className="w-24 text-right font-mono text-xs text-muted">
                 {r.done ? `done · ${r.secs}s` : `ladder ${r.idx + 1} · +${r.steps}`}
               </span>
             </div>

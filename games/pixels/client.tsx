@@ -319,7 +319,7 @@ function ScoreStrip({ view, players, ready }: { view: PixelsView; players: Playe
             <b key={view.totals[i]} className={`font-mono tabular-nums ${view.totals[i] ? "pix-bump" : ""}`} style={{ display: "inline-block" }}>
               {view.totals[i]}
             </b>
-            {i === view.you && <span className="text-[10px] font-semibold text-muted">you</span>}
+            {i === view.you && <span className="text-xs font-semibold text-muted">you</span>}
             {ready.includes(i) && <span aria-label="ready">✓</span>}
             {!p.connected && <span aria-label="offline">⚠</span>}
           </PlayerChip>
@@ -575,14 +575,14 @@ function Results({ view, players }: { view: PixelsView; players: (Player | undef
                 ) : (
                   <HiddenArt size={46} />
                 )}
-                <span className="text-[10px] text-muted">emblem</span>
+                <span className="text-xs text-muted">emblem</span>
               </span>
               <span aria-hidden className="pb-3 text-muted">
                 →
               </span>
               <span className="flex flex-col items-center gap-0.5">
                 <PixelArt art={crop} size={46} marks={marks} label="Best copy on the canvas" />
-                <span className="text-[10px] text-muted">best copy</span>
+                <span className="text-xs text-muted">best copy</span>
               </span>
             </div>
             <div className="flex items-baseline justify-between gap-1 text-xs">
@@ -638,7 +638,7 @@ function Standings({ view, players }: { view: PixelsView; players: Player[] }) {
                 {history.map((r, k) => (
                   <span key={k} className="flex flex-col items-center gap-0.5" title={`Round ${k + 1}: ${r.emblems[i]?.name}, ${r.n[i]}/25`}>
                     <PixelArt art={r.emblems[i]?.art ?? ""} size={22} label={`Round ${k + 1}: ${r.emblems[i]?.name}, ${r.n[i]} of 25`} />
-                    <span className="font-mono text-[10px] leading-none text-muted tabular-nums">{r.pts[i]}</span>
+                    <span className="font-mono text-[11px] leading-none text-muted tabular-nums">{r.pts[i]}</span>
                   </span>
                 ))}
               </span>
@@ -743,7 +743,7 @@ function TeamStrip({ view, players, ready }: { view: PixelsView; players: Player
                 return (
                   <li key={id}>
                     <PlayerChip player={p} size="sm" dim={!p.connected}>
-                      {i === view.you && <span className="text-[10px] font-semibold text-muted">you</span>}
+                      {i === view.you && <span className="text-xs font-semibold text-muted">you</span>}
                       {ready.includes(i) && <span aria-label="ready">✓</span>}
                       {!p.connected && <span aria-label="offline">⚠</span>}
                     </PlayerChip>
@@ -793,7 +793,7 @@ function TeamStandings({ view, players }: { view: PixelsView; players: Player[] 
                     {history.map((r, j) => (
                       <span key={j} className="flex flex-col items-center gap-0.5" title={`Round ${j + 1}: ${r.emblems[seat]?.name}, ${r.n[seat]}/25`}>
                         <PixelArt art={r.emblems[seat]?.art ?? ""} size={22} label={`Round ${j + 1}: ${r.emblems[seat]?.name}, ${r.n[seat]} of 25`} />
-                        <span className="font-mono text-[10px] leading-none text-muted tabular-nums">{r.pts[seat]}</span>
+                        <span className="font-mono text-[11px] leading-none text-muted tabular-nums">{r.pts[seat]}</span>
                       </span>
                     ))}
                   </span>

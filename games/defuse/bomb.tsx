@@ -95,15 +95,15 @@ function Edgework({ edge, strikes, live, explodeAt, rate, left, serverNow }: Bom
       </div>
       <div className="flex flex-wrap items-center gap-1.5">
         <span
-          className="rounded-[4px] border border-zinc-400 bg-[#f4f1e6] px-1.5 py-0.5 font-mono text-[11px] leading-tight font-bold text-zinc-900 shadow-sm"
+          className="rounded-[4px] border border-zinc-400 bg-[#f4f1e6] px-1.5 py-0.5 font-mono text-sm leading-tight font-bold text-zinc-900 shadow-sm"
           aria-label={`Serial number ${edge.serial.split("").join(" ")}`}
         >
-          <span className="block text-[7px] tracking-widest text-zinc-500">SERIAL</span>
+          <span className="block text-[8px] tracking-widest text-zinc-500">SERIAL</span>
           {edge.serial}
         </span>
         <span className="flex items-center gap-0.5 rounded-md bg-black/30 px-1.5 py-1" aria-label={`${edge.batteries} batteries`} role="img">
           {edge.batteries === 0 ? (
-            <span className="text-[10px] font-semibold text-white/50">no batt.</span>
+            <span className="text-xs font-semibold text-white/50">no batt.</span>
           ) : (
             Array.from({ length: edge.batteries }, (_, i) => (
               <span key={i} className="relative h-4 w-2 rounded-[2px] bg-gradient-to-b from-amber-300 to-amber-600">
@@ -113,7 +113,7 @@ function Edgework({ edge, strikes, live, explodeAt, rate, left, serverNow }: Bom
           )}
         </span>
         {edge.lamps.map((l) => (
-          <span key={l.l} className="flex items-center gap-1 rounded-md bg-black/30 px-1.5 py-1 text-[10px] font-bold tracking-wide text-white/80">
+          <span key={l.l} className="flex items-center gap-1 rounded-md bg-black/30 px-1.5 py-1 text-xs font-bold tracking-wide text-white/80">
             <span
               aria-hidden
               className="size-2.5 rounded-full border border-black/50"
@@ -122,7 +122,7 @@ function Edgework({ edge, strikes, live, explodeAt, rate, left, serverNow }: Bom
             {l.l}
             <span className="sr-only">{l.lit ? " lit" : " unlit"}</span>
             {!l.lit && (
-              <span aria-hidden className="text-[8px] font-medium text-white/40">
+              <span aria-hidden className="text-[10px] font-medium text-white/40">
                 off
               </span>
             )}
@@ -192,7 +192,7 @@ function Module({ mod, index, act, serverNow, remoteHeld }: { mod: ModView; inde
       }}
     >
       <header className="mb-1.5 flex items-center justify-between gap-1">
-        <span className="truncate text-[10px] font-bold tracking-[0.14em] text-white/55 uppercase">
+        <span className="truncate text-xs font-bold text-white/60">
           <span aria-hidden>{MODULE_ICON[mod.t]} </span>
           {MODULE_NAME[mod.t]}
         </span>
@@ -364,7 +364,7 @@ function BigButton({
           className="h-20 w-4 rounded-full border border-black/70 transition-[background,box-shadow] duration-150"
           style={lit ? { background: SWATCH[mod.strip], boxShadow: `0 0 14px ${SWATCH[mod.strip]}` } : { background: "#18181b" }}
         />
-        {lit && <span className="text-[9px] font-bold text-white/70 uppercase">{mod.strip}</span>}
+        {lit && <span className="text-xs font-bold text-white/70 uppercase">{mod.strip}</span>}
         {holding && heldAt !== null ? <Counter heldAt={heldAt} serverNow={serverNow} /> : <span className="h-7 w-7 rounded-md border border-black/60 bg-[#120708]" aria-hidden />}
       </div>
     </div>
@@ -489,7 +489,7 @@ function Signal({ mod, m, act }: { mod: Extract<ModView, { t: "signal" }>; m: nu
                 add(i);
                 act?.({ type: "pad", m, c: i });
               }}
-              className="h-10 rounded-lg border border-black/70 text-[10px] font-black tracking-wider uppercase outline-none focus-visible:ring-2 focus-visible:ring-amber-300 enabled:active:scale-95"
+              className="h-10 rounded-lg border border-black/70 text-xs font-black uppercase outline-none focus-visible:ring-2 focus-visible:ring-amber-300 enabled:active:scale-95"
               style={{
                 background: `linear-gradient(180deg, color-mix(in oklab, ${SWATCH[c]} ${flashing ? 100 : 70}%, ${flashing ? "white" : "black"}), color-mix(in oklab, ${SWATCH[c]} 55%, black))`,
                 color: c === "yellow" ? "#3f3a0b" : "rgb(255 255 255 / .85)",

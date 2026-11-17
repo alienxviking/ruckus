@@ -67,5 +67,7 @@ export interface PairsView {
   solo: boolean;
   /** Final solo score once over. */
   final: number | null;
+  /** Solo: seconds the run took, once over. */
+  secs: number | null;
   you: number;
 }

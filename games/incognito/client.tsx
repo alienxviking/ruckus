@@ -31,7 +31,7 @@ type Props = GameClientProps<IncView, IncAction>;
 // Game-local styles and animations, prefixed so they can't clash with other games.
 const CSS = `
 .inc-stage { aspect-ratio: 10 / 7; max-width: min(100%, 88vh); }
-@container (max-width: 559px) { .inc-stage { aspect-ratio: 7 / 10; max-width: min(100%, 43vh); } }
+@container (max-width: 559px) { .inc-stage { aspect-ratio: 7 / 10; max-width: min(100%, 40vh); } }
 .inc-card { animation: inc-card 4.2s ease .2s both; }
 @keyframes inc-card { 0% { opacity: 0; transform: scale(.7); } 9% { opacity: 1; transform: scale(1.04); } 14% { transform: scale(1); } 82% { opacity: 1; } 100% { opacity: 0; } }
 .inc-count { animation: inc-count .9s ease both; }
@@ -543,7 +543,7 @@ function Overlay({
           className="inc-card card flex max-w-[92%] flex-col items-center gap-1 px-3 py-2 text-center shadow-xl shadow-black/40 @xl:px-5 @xl:py-3"
           style={{ borderColor: color, background: "color-mix(in oklab, var(--color-panel) 88%, transparent)" }}
         >
-          <span className="text-xs font-bold tracking-wide text-muted uppercase">Round {r.round} · unmasked!</span>
+          <span className="text-sm font-bold text-muted">Round {r.round} · Unmasked!</span>
           {gained.length ? (
             <ul className="flex flex-wrap justify-center gap-x-3 gap-y-0.5 text-sm">
               {gained.map(({ p, slot }) => (
@@ -595,7 +595,7 @@ function ScoreRow({ view, players, me, colors, outSet }: { view: IncView; player
             <span className="max-w-[7rem] truncate font-semibold" style={{ color }}>
               {p?.name ?? "Someone"}
             </span>
-            {id === me && <span className="text-[10px] font-bold tracking-wide text-text/80 uppercase">you</span>}
+            {id === me && <span className="text-xs font-semibold text-text/80">you</span>}
             <span className="font-mono font-bold tabular-nums">{view.scores[slot] ?? 0}</span>
             {showRound && gained > 0 && <span className="animate-pop font-mono text-xs font-bold text-emerald-300">+{gained}</span>}
             <span className="text-xs text-muted tabular-nums" aria-hidden>
@@ -705,7 +705,7 @@ function FinalStandings({ view, byId, me, colors }: { view: IncView; byId: Recor
                     <span className="truncate font-semibold" style={{ color }}>
                       {p?.name ?? "Someone"}
                     </span>
-                    {id === me && <span className="shrink-0 text-[10px] font-bold tracking-wide text-muted uppercase">you</span>}
+                    {id === me && <span className="shrink-0 text-xs font-semibold text-muted">you</span>}
                   </span>
                   <span className="flex flex-wrap gap-x-2 text-xs text-muted tabular-nums">
                     {view.history.map((r) => (

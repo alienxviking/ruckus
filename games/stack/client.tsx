@@ -417,12 +417,12 @@ export default function TowerStack({ view, me, byId, isPlayer, act, serverNow, o
                       {L.lv - 1} blocks · {L.score} pts
                     </div>
                     {L.restartAt !== null ? (
-                      <div className="mt-2 font-mono text-xs uppercase tracking-widest text-[#dfe3f0]">
-                        next tower in {Math.max(0, Math.ceil((L.restartAt - now) / 1000))}…
+                      <div className="mt-2 text-sm font-semibold text-[#dfe3f0]">
+                        Next tower in {Math.max(0, Math.ceil((L.restartAt - now) / 1000))}…
                       </div>
                     ) : mine ? (
-                      <div className="mt-2 font-mono text-xs uppercase tracking-widest text-[#dfe3f0]">
-                        {solo ? "" : "waiting for the others…"}
+                      <div className="mt-2 text-sm font-semibold text-[#dfe3f0]">
+                        {solo ? "" : "Waiting for the others…"}
                       </div>
                     ) : null}
                   </div>
@@ -434,7 +434,7 @@ export default function TowerStack({ view, me, byId, isPlayer, act, serverNow, o
                 </div>
               )}
               {mine && view.phase === "play" && L?.alive && L.lv <= 3 && (
-                <div className="ts-tap font-mono text-xs uppercase tracking-widest text-[#dfe3f0]">tap or press space to drop</div>
+                <div className="ts-tap text-sm font-semibold text-[#dfe3f0]">Tap or press Space to drop</div>
               )}
               {view.phase === "over" && myRow && (
                 <div className="ts-chip mb-1">
@@ -475,7 +475,7 @@ function Skyline({ rows, byId, me }: { rows: Row[]; byId: Record<string, Player>
             <li key={r.id} className={`rounded-md px-2 py-1.5 ${r.id === me ? "bg-panel-2 shadow-[inset_2px_0_0_var(--acc)]" : ""}`}>
               <div className="flex items-center justify-between gap-2">
                 <span className="flex min-w-0 items-center gap-1.5">
-                  <span className="w-4 font-mono text-[11px] text-muted">{i + 1}</span>
+                  <span className="w-4 font-mono text-xs text-muted">{i + 1}</span>
                   <PlayerChip player={p} size="sm" dim={!p?.connected} />
                 </span>
                 <span className="font-mono text-sm font-bold">{Math.max(r.best, r.score)}</span>
@@ -491,7 +491,7 @@ function Skyline({ rows, byId, me }: { rows: Row[]; byId: Record<string, Player>
                     }}
                   />
                 </div>
-                <span className="w-16 text-right font-mono text-[10px] text-muted">
+                <span className="w-20 text-right font-mono text-xs text-muted">
                   {r.alive ? `${r.h} high` : r.done ? "done" : "toppled"}
                 </span>
               </div>

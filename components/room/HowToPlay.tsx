@@ -81,7 +81,7 @@ export function HowToPlay({
     <>
       <button
         type="button"
-        className={`btn px-3 py-1.5 text-sm ${seen ? "" : "rules-glow"} ${className}`}
+        className={`btn min-h-10 min-w-10 px-3 py-1.5 text-sm ${seen ? "" : "rules-glow"} ${className}`}
         aria-haspopup="dialog"
         aria-label={compact ? "How to play" : undefined}
         title="How to play"

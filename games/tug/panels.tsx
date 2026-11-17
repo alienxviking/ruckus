@@ -266,7 +266,7 @@ export function ChoicePanel({ act, prompt, streak, lock, serverNow, team, kickRe
   return (
     <div className={`relative flex flex-col items-center gap-3 ${flash ? "tw-shake" : ""}`}>
       <div className="flex w-full items-center justify-between text-sm">
-        <span className="label">{prompt?.k === "colour" ? "Tap the INK colour" : "Quick! What's"}</span>
+        <span className="label">{prompt?.k === "colour" ? "Tap the INK colour" : "Quick! Tap the answer"}</span>
         <Streak n={streak} />
       </div>
       <div key={q} className="animate-pop grid min-h-20 place-items-center" aria-live="polite">
@@ -303,7 +303,7 @@ export function ChoicePanel({ act, prompt, streak, lock, serverNow, team, kickRe
               aria-label={ink ? ink.name : String(c)}
             >
               {ink ? <span className="text-lg tracking-wide opacity-80">{ink.name.toLowerCase()}</span> : <span className="tabular-nums">{c}</span>}
-              <span className="absolute top-1 left-2 font-mono text-[10px] opacity-50">{i + 1}</span>
+              <span className="absolute top-1 left-2 font-mono text-xs opacity-60">{i + 1}</span>
             </button>
           );
         })}

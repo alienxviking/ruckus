@@ -646,9 +646,9 @@ function RangeBar({ lo, hi, at, accent }: { lo: number; hi: number; at: number; 
           style={{ left: `${pct}%`, background: accent, transition: `left .4s ${EASE}` }}
         />
       </div>
-      <div className="mt-0.5 flex justify-between font-mono text-[10px] text-muted tabular-nums" aria-hidden>
+      <div className="mt-0.5 flex justify-between gap-2 text-xs text-muted tabular-nums" aria-hidden>
         <span>{lo} min</span>
-        <span>can end anywhere in here</span>
+        <span className="text-center">final total lands in here</span>
         <span>max {hi}</span>
       </div>
     </div>
@@ -684,6 +684,7 @@ function TradePanel({
         <BigButton
           kind="buy"
           qty={buyQty}
+          size={size}
           price={bestAsk?.[1] ?? null}
           blocked={d.roomBuy <= 0 ? `Long limit (${POS_LIMIT})` : !bestAsk ? "No sellers yet" : null}
           onClick={buy}
@@ -691,6 +692,7 @@ function TradePanel({
         <BigButton
           kind="sell"
           qty={sellQty}
+          size={size}
           price={bestBid?.[1] ?? null}
           blocked={d.roomSell <= 0 ? `Short limit (${POS_LIMIT})` : !bestBid ? "No buyers yet" : null}
           onClick={sell}
@@ -730,12 +732,15 @@ function TradePanel({
 function BigButton({
   kind,
   qty,
+  size,
   price,
   blocked,
   onClick,
 }: {
   kind: "buy" | "sell";
   qty: number;
+  /** The size you picked: when fewer are on offer at the best price, say so. */
+  size: number;
   price: number | null;
   blocked: string | null;
   onClick: () => void;
@@ -756,8 +761,14 @@ function BigButton({
       <span className="font-display text-lg leading-tight font-extrabold whitespace-nowrap" style={{ color }}>
         {disabled ? verb : `${verb} ${qty} @ ${price}`}
       </span>
-      <span className="text-[11px] leading-tight text-muted">
-        {disabled ? blocked : kind === "buy" ? `wins if total > ${price}` : `wins if total < ${price}`}
+      <span className="text-xs leading-tight text-muted">
+        {disabled
+          ? blocked
+          : qty < size
+            ? `only ${qty} available now`
+            : kind === "buy"
+              ? `wins if total > ${price}`
+              : `wins if total < ${price}`}
       </span>
     </button>
   );
@@ -973,10 +984,10 @@ function PriceRow({
   );
   return (
     <div className="flex items-center gap-1.5">
-      <label htmlFor={`mk-${side}`} className="w-9 shrink-0 text-[11px] leading-tight font-bold uppercase" style={{ color }}>
-        {side}
+      <label htmlFor={`mk-${side}`} className="w-11 shrink-0 text-xs leading-tight font-bold" style={{ color }}>
+        {side === "bid" ? "Bid" : "Ask"}
         <span className="sr-only"> price</span>
-        <span aria-hidden className="block text-[9px] font-medium text-muted normal-case">
+        <span aria-hidden className="block text-[11px] font-medium text-muted">
           {side === "bid" ? "I buy at" : "I sell at"}
         </span>
       </label>
@@ -1051,10 +1062,10 @@ function Traders({ view, who }: { view: MkView; who: WhoFn }) {
             >
               <span className="min-w-0 flex-1 truncate text-sm">
                 <Name p={p} />
-                {slot === view.me && <span className="ml-1 text-[11px] text-muted">(you)</span>}
-                {!p.connected && <span className="ml-1 text-[11px] text-muted">offline</span>}
+                {slot === view.me && <span className="ml-1 text-xs text-muted">(you)</span>}
+                {!p.connected && <span className="ml-1 text-xs text-muted">offline</span>}
               </span>
-              <span className="flex shrink-0 gap-1 text-[10px] font-bold">
+              <span className="flex shrink-0 gap-1 text-xs font-bold">
                 {bid && (
                   <span className="rounded px-1" style={{ color: BID, background: `${BID}1a` }} title="has a bid">
                     B {bid[1]}
@@ -1221,11 +1232,11 @@ function Final({ view, who, accent }: { view: MkView; who: WhoFn; accent: string
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-sm">
                   <Name p={p} />
-                  {slot === view.me && <span className="ml-1 text-[11px] text-muted">(you)</span>}
+                  {slot === view.me && <span className="ml-1 text-xs text-muted">(you)</span>}
                 </span>
                 <span className="flex flex-wrap gap-1 pt-0.5">
                   {rounds.map((r, i) => (
-                    <span key={i} className="rounded bg-panel-2 px-1 font-mono text-[10px] tabular-nums" style={{ color: pnlColor(r.pnl[slot]) }}>
+                    <span key={i} className="rounded bg-panel-2 px-1 font-mono text-xs tabular-nums" style={{ color: pnlColor(r.pnl[slot]) }}>
                       R{i + 1} {signed(r.pnl[slot])}
                     </span>
                   ))}

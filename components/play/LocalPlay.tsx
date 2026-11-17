@@ -183,7 +183,7 @@ export function LocalPlay({ gameId }: { gameId: string }) {
                 </button>
                 <output aria-live="polite" className="w-20 text-center">
                   <span className="block font-display text-2xl leading-none font-bold">{prefs.bots}</span>
-                  <span className="label text-[10px]">{prefs.bots === 1 ? "bot" : "bots"}</span>
+                  <span className="text-xs font-semibold text-muted">{prefs.bots === 1 ? "bot" : "bots"}</span>
                 </output>
                 <button
                   type="button"
@@ -305,7 +305,10 @@ function LocalResult({
   const iWon = result.winners.includes(ME);
   const scores = result.scores;
   const standings = scores
-    ? engine.players.filter((p) => scores[p.id] !== undefined).sort((x, y) => scores[y.id] - scores[x.id])
+    ? engine.players
+        .filter((p) => scores[p.id] !== undefined)
+        // Winners first (some games rank by more than score), then by score.
+        .sort((x, y) => Number(result.winners.includes(y.id)) - Number(result.winners.includes(x.id)) || scores[y.id] - scores[x.id])
     : [];
   const solo = engine.players.length === 1;
 
@@ -325,10 +328,11 @@ function LocalResult({
         </span>
         <div className="min-w-0 flex-1">
           <div className="marker text-2xl leading-none" style={{ color: a }}>
-            {solo ? "shabaash! done ✅" : iWon ? "tu toh chha gaya! 🔥" : "agli baar pakka 🤞"}
+            {solo ? (scores?.[ME] ? "shabaash! done ✅" : "arre, next time! 🤞") : iWon ? "tu toh chha gaya! 🔥" : "agli baar pakka 🤞"}
           </div>
           <div className="mt-1 font-hero text-xl leading-tight font-extrabold tracking-[-0.02em] sm:text-2xl">{result.headline}</div>
-          {solo && scores?.[ME] !== undefined && (
+          {/* Word Ladder's score only ranks steps; its headline already says how you did. */}
+          {solo && gameId !== "ladder" && scores?.[ME] !== undefined && (
             <div className="mt-1 text-sm font-semibold text-muted">
               Your score <span className="font-hero text-lg text-brand-2">{scores[ME].toLocaleString("en-US")}</span>
             </div>
@@ -340,7 +344,7 @@ function LocalResult({
           {standings.map((p, i) => (
             <li key={p.id}>
               <PlayerChip player={p} size="sm" dim={!result.winners.includes(p.id) && i > 0}>
-                <span className="font-mono text-[11px] text-text/80">{scores![p.id].toLocaleString("en-US")}</span>
+                <span className="text-xs font-bold text-text/80">{scores![p.id].toLocaleString("en-US")}</span>
               </PlayerChip>
             </li>
           ))}

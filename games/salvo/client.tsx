@@ -799,7 +799,7 @@ function PlacePhase({
             </span>
             <span
               key={String(view.ready[seat])}
-              className={`sv-pop shrink-0 rounded-full px-2 py-0.5 text-[11px] font-bold ${view.ready[seat] ? "text-ink" : "text-muted"}`}
+              className={`sv-pop shrink-0 rounded-full px-2 py-0.5 text-xs font-bold ${view.ready[seat] ? "text-ink" : "text-muted"}`}
               style={{
                 background: view.ready[seat] ? accent : "var(--color-panel-2)",
               }}
@@ -880,7 +880,7 @@ function PlacePhase({
                               style={{ width: "100%", height: "100%" }}
                             />
                           </span>
-                          <span className="text-[10px] leading-none text-muted">
+                          <span className="text-xs leading-none text-muted">
                             {names[i].name} · {len}
                           </span>
                         </button>
@@ -1023,8 +1023,8 @@ function SeatCard({
           : undefined
       }
     >
-      {isYou && (
-        <span className="absolute -top-2 left-3 rounded-full border border-line bg-ink px-1.5 text-[9px] leading-[14px] font-bold tracking-wider text-muted uppercase">
+      {isYou && player.name !== "You" && (
+        <span className="absolute -top-2 left-3 rounded-full border border-line bg-ink px-1.5 text-xs leading-4 font-bold text-muted">
           you
         </span>
       )}
@@ -1044,7 +1044,7 @@ function SeatCard({
           <span className="text-xs text-muted">⚓</span>
         </span>
       </div>
-      <div className="mt-0.5 truncate text-[11px] leading-4 text-muted">
+      <div className="mt-0.5 truncate text-xs leading-4 text-muted">
         {away ? (
           <>📴 away</>
         ) : active ? (
@@ -1093,9 +1093,9 @@ function Standings({ view, people, you }: { view: SalvoView; people: [Player, Pl
               </span>
               <span className="min-w-0 flex-1 truncate font-semibold" style={{ color: people[seat].color }}>
                 {people[seat].name}
-                {seat === you && <span className="ml-1 text-xs font-normal text-muted">(you)</span>}
+                {seat === you && people[seat].name !== "You" && <span className="ml-1 text-xs font-normal text-muted">(you)</span>}
               </span>
-              <span className="shrink-0 text-right text-[11px] leading-tight text-muted">
+              <span className="shrink-0 text-right text-xs leading-tight text-muted">
                 {view.salvos[seat]} salvos · {acc}%
                 <br />
                 {view.hitCount[seat]}/{view.fired[seat]} hits
@@ -1108,7 +1108,7 @@ function Standings({ view, people, you }: { view: SalvoView; people: [Player, Pl
           );
         })}
       </ol>
-      <p className="mt-2 text-center text-[11px] text-muted">Both fleets revealed below: faded ships survived.</p>
+      <p className="mt-2 text-center text-xs text-muted">Both fleets revealed below: faded ships survived.</p>
     </section>
   );
 }

@@ -70,7 +70,7 @@ export function RevealPhase({ view, me, players, byId, isPlayer, act, serverNow,
                   “{n.text}”
                 </span>
                 {(n.mine || n.auto) && (
-                  <span className="mm-name text-[11px] text-muted" style={{ animationDelay: `${1100 + i * 450}ms` }}>
+                  <span className="mm-name text-xs text-muted" style={{ animationDelay: `${1100 + i * 450}ms` }}>
                     {n.mine ? "your name" : "🎲 named by the game"}
                   </span>
                 )}
@@ -265,8 +265,10 @@ function VoteCard({
                 <span aria-hidden className="shrink-0">
                   {on ? "🏷️" : n.auto ? "🎲" : n.mine ? "✍️" : "🏷️"}
                 </span>
-                <span className="min-w-0 flex-1">{n.text}</span>
-                {n.mine && <span className="shrink-0 text-[10px] font-normal text-muted">yours</span>}
+                <span className="flex min-w-0 flex-1 flex-col">
+                  {n.text}
+                  {n.mine && <span className="text-xs font-normal text-muted">your name</span>}
+                </span>
               </button>
             </li>
           );
@@ -414,7 +416,7 @@ function ResultRow({ round, m, mo, cache, byId }: { round: number; m: number; mo
           {mo.names.map((n, i) => (
             <li key={i} className="flex min-w-0 items-baseline gap-1.5 text-sm">
               <span className={`min-w-0 break-words ${i === mo.best ? "font-bold" : "text-muted"}`}>“{n.text}”</span>
-              <span className="shrink-0 text-[11px] text-muted">
+              <span className="shrink-0 text-xs text-muted">
                 {n.by ? (
                   <>
                     by <span style={{ color: who(byId, n.by).color }}>{who(byId, n.by).name}</span>
@@ -427,7 +429,7 @@ function ResultRow({ round, m, mo, cache, byId }: { round: number; m: number; mo
             </li>
           ))}
         </ul>
-        <span className="truncate text-[11px] text-muted">
+        <span className="truncate text-xs text-muted">
           {mo.creators.map((id) => who(byId, id).name).join(" + ")}
         </span>
       </div>
@@ -585,7 +587,7 @@ function GalleryItem({ round, m, mo, cache, byId }: { round: number; m: number; 
     <li className="flex min-w-0 flex-col gap-1">
       <MonsterArt parts={parts} blank={mo.blank} label={`${name}, drawn by ${mo.creators.map((id) => who(byId, id).name).join(", ")}`} />
       <span className="text-center text-xs leading-tight font-bold break-words">{name}</span>
-      <span className="text-center text-[10px] text-muted">⭐ {mo.stars}</span>
+      <span className="text-center text-xs text-muted">⭐ {mo.stars}</span>
     </li>
   );
 }

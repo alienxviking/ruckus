@@ -27,7 +27,7 @@ type CardSize = "lg" | "md" | "sm" | "mini";
 const SIZES: Record<CardSize, { r: string; q: string; emoji: string; label: string | null; avatar: string | null }> = {
   lg: { r: "rounded-2xl", q: "text-4xl @lg:text-5xl", emoji: "text-4xl @lg:text-5xl", label: "text-base @lg:text-lg", avatar: "text-sm @lg:text-base" },
   md: { r: "rounded-xl", q: "text-3xl", emoji: "text-3xl", label: "text-sm", avatar: "text-xs" },
-  sm: { r: "rounded-xl", q: "text-2xl", emoji: "text-2xl", label: "text-[10px]", avatar: null },
+  sm: { r: "rounded-xl", q: "text-2xl", emoji: "text-2xl", label: "text-[11px]", avatar: null },
   mini: { r: "rounded-lg", q: "text-base", emoji: "text-lg", label: null, avatar: null },
 };
 
@@ -201,14 +201,14 @@ function BigTable({
                 {rec ? (
                   <Gain v={rec.gain[i]} delay={verdict + 200} victim={fx(rec, i).victim} big />
                 ) : s === mySeat && view.me?.choice ? (
-                  <span className="text-[11px] text-muted">
+                  <span className="text-xs text-muted">
                     your pick: {CHOICE_META[view.me.choice].emoji} {CHOICE_META[view.me.choice].label}
                   </span>
                 ) : (
-                  <span className="text-[11px] text-muted">{p.connected ? "face down" : "offline"}</span>
+                  <span className="text-xs text-muted">{p.connected ? "face down" : "offline"}</span>
                 )}
                 {words && rec && (
-                  <q className="dc-fade line-clamp-2 max-w-full text-[11px] text-muted italic" style={vars({ "--d": `${verdict + 500}ms` })}>
+                  <q className="dc-fade line-clamp-2 max-w-full text-xs text-muted italic" style={vars({ "--d": `${verdict + 500}ms` })}>
                     {words}
                   </q>
                 )}
@@ -264,12 +264,12 @@ function OtherTables({
                       <div className={big ? "w-11" : "w-9"}>
                         <FlipCard p={p} choice={rec ? rec.c[i] : null} flipped={!!rec} delay={delay} drum={!rec} size="mini" />
                       </div>
-                      <span className="max-w-full truncate text-[11px] font-semibold" style={{ color: p.color }}>
+                      <span className="max-w-full truncate text-xs font-semibold" style={{ color: p.color }}>
                         {s === mySeat ? "You" : p.name}
                       </span>
                       {rec && (
                         <span
-                          className="dc-float text-[11px] font-bold tabular-nums"
+                          className="dc-float text-xs font-bold tabular-nums"
                           style={{ color: rec.gain[i] > 0 ? GOLD : "var(--color-muted)", ...vars({ "--d": `${delay + 900}ms` }) }}
                         >
                           +{rec.gain[i]}
@@ -280,10 +280,10 @@ function OtherTables({
                 })}
               </div>
               <div className="flex shrink-0 flex-col items-end gap-1">
-                <Coin v={t.pot} className="text-[11px]" />
+                <Coin v={t.pot} className="text-xs" />
                 {rec && (
                   <span
-                    className="dc-pop rounded-full px-2 py-0.5 text-[11px] font-extrabold uppercase"
+                    className="dc-pop rounded-full px-2 py-0.5 text-xs font-extrabold uppercase"
                     style={{ color: OUTCOME_META[rec.out].color, background: `${OUTCOME_META[rec.out].color}22`, ...vars({ "--d": `${delay + 800}ms` }) }}
                   >
                     {OUTCOME_META[rec.out].emoji} {rec.out === "steal" ? "stolen" : OUTCOME_META[rec.out].label}

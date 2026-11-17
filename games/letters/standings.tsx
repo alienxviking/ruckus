@@ -64,7 +64,7 @@ export function RoundResults({
               <span className="font-mono text-sm text-muted tabular-nums">{r.rank}</span>
               {moved !== 0 && (
                 <span
-                  className={`animate-pop mt-0.5 text-[10px] font-bold tabular-nums ${moved > 0 ? "text-green-300" : "text-rose-300/80"}`}
+                  className={`animate-pop mt-0.5 text-xs font-bold tabular-nums ${moved > 0 ? "text-green-300" : "text-rose-300/80"}`}
                   style={{ animationDelay: `${700 + i * 90}ms` }}
                 >
                   <span aria-hidden>{moved > 0 ? "▲" : "▼"}</span>

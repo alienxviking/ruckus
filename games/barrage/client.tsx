@@ -460,7 +460,7 @@ function Controls({
                   <span aria-hidden className="text-lg leading-none">
                     {spec.emoji}
                   </span>
-                  <span className="text-[11px] leading-tight font-semibold">
+                  <span className="text-xs leading-tight font-semibold">
                     {spec.name} <span className="text-muted">{ammo}</span>
                   </span>
                 </button>
@@ -475,7 +475,7 @@ function Controls({
           >
             <span aria-hidden>🔥</span> Fire!
           </button>
-          <p className="text-center text-[11px] text-muted">
+          <p className="text-center text-xs text-muted">
             {w.emoji} {w.name}: {w.blurb}
           </p>
         </div>
@@ -523,7 +523,7 @@ function Controls({
             display={
               <>
                 {aim.move === 0 ? "stay" : `${aim.move > 0 ? "→" : "←"} ${Math.abs(aim.move)}`}
-                <span className="ml-1.5 text-[11px] font-normal text-muted">⛽{tank.fuel - Math.abs(aim.move)}</span>
+                <span className="ml-1.5 text-xs font-normal text-muted">⛽{tank.fuel - Math.abs(aim.move)}</span>
               </>
             }
             onChange={(v) => onChange({ move: v })}
@@ -713,9 +713,9 @@ function Roster({
                 <div className="flex items-center justify-between gap-1 text-xs">
                   <span className="truncate font-bold" style={{ color }}>
                     {p?.name ?? "Someone"}
-                    {t.id === me && <span className="font-normal text-muted"> (you)</span>}
+                    {t.id === me && (p?.name ?? "").trim().toLowerCase() !== "you" && <span className="font-normal text-muted"> (you)</span>}
                   </span>
-                  <span className="shrink-0 text-[11px] text-muted">{status}</span>
+                  <span className="shrink-0 text-xs text-muted">{status}</span>
                 </div>
                 <div className="mt-1 flex items-center gap-1.5">
                   <div
@@ -731,7 +731,7 @@ function Roster({
                       style={{ width: `${hp}%`, background: hpColor(hp) }}
                     />
                   </div>
-                  <span className="w-6 text-right font-mono text-[11px] font-bold tabular-nums">{hp}</span>
+                  <span className="w-7 text-right font-mono text-xs font-bold tabular-nums">{hp}</span>
                 </div>
               </div>
             </li>
@@ -797,7 +797,7 @@ function Final({
               </span>
               <span className="min-w-0 flex-1 truncate font-semibold" style={{ color }}>
                 {p?.name ?? "Someone"}
-                {t.id === me && <span className="font-normal text-muted"> (you)</span>}
+                {t.id === me && (p?.name ?? "").trim().toLowerCase() !== "you" && <span className="font-normal text-muted"> (you)</span>}
               </span>
               <span className="shrink-0 text-right font-mono text-xs text-muted tabular-nums">
                 {t.alive ? (

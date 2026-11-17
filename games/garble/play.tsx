@@ -136,7 +136,7 @@ function PromptCard({ page, byId, label }: { page: PageView; byId: Record<string
   const by = who(byId, page.by);
   return (
     <div className="gb-paper gb-slide rounded-2xl px-4 py-3">
-      <p className="text-[11px] font-bold tracking-widest text-[#7a6e93] uppercase">{label}</p>
+      <p className="text-sm font-bold text-[#7a6e93]">{label}</p>
       {page.blank ? (
         <p className="mt-1 text-lg font-semibold text-[#7a6e93]">🤐 The last page was left blank. Make something up!</p>
       ) : (
@@ -145,6 +145,10 @@ function PromptCard({ page, byId, label }: { page: PageView; byId: Record<string
       <p className="mt-1 text-xs text-[#7a6e93]">
         {page.auto ? (
           <>🎲 picked by the game</>
+        ) : page.blank ? (
+          <>
+            <b style={{ color: shade(by.color) }}>{by.name}</b> ran out of time
+          </>
         ) : (
           <>
             ✍️ written by <b style={{ color: shade(by.color) }}>{by.name}</b>
@@ -248,7 +252,7 @@ function TextStep({
 
       <form onSubmit={submit} className="gb-paper gb-slide flex flex-col gap-2 rounded-2xl p-3 @md:p-4" style={{ animationDelay: "80ms" }}>
         <div className="flex items-baseline justify-between gap-2">
-          <label htmlFor={id} className="text-[11px] font-bold tracking-widest text-[#7a6e93] uppercase">
+          <label htmlFor={id} className="text-sm font-bold text-[#7a6e93]">
             {label}
           </label>
           {write && <BookTag hold={hold} me={me} byId={byId} step={view.step} />}
@@ -404,6 +408,8 @@ function DrawStep({
         canDraw={!done}
         act={sketchAct}
         label="Your page: draw with a mouse, finger or pen"
+        // Room header, step track, banner, clock, prompt card and tool bar all need to stay on screen.
+        reserve={560}
         overlay={<CanvasOverlay done={done} low={low} empty={empty} />}
       />
     </div>
@@ -428,7 +434,7 @@ function InkGauge({ level, accent }: { level: number; accent: string }) {
       >
         <div className="h-full rounded-full transition-[width] duration-300" style={{ width: `${left}%`, background: color }} />
       </div>
-      <span className="text-[11px] text-muted tabular-nums">{left}%</span>
+      <span className="text-xs text-muted tabular-nums">{left}%</span>
     </div>
   );
 }

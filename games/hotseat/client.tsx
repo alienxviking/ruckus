@@ -259,7 +259,7 @@ function SeatStrip({ view, who, me }: { view: HotView; who: Who; me: string }) {
         <PlayerChip key={s.id} player={who(s.id)} size="sm" dim={s.away}>
           {s.id === view.hot ? <span title="hot seat">🔥</span> : null}
           <span className={s.done ? "text-[#34d399]" : "text-muted"}>{s.done ? "✓" : "…"}</span>
-          {s.id === me ? <span className="text-[10px] text-muted">you</span> : null}
+          {s.id === me ? <span className="text-xs text-muted">you</span> : null}
         </PlayerChip>
       ))}
     </div>
@@ -386,7 +386,7 @@ function Final({ view, me, who, byId }: { view: HotView; me: string; who: Who; b
       <div className="card hs-in px-4 py-6 text-center">
         <div className="text-5xl">🔥</div>
         <h2 className="mt-1 font-display text-3xl font-black @md:text-5xl">
-          {winners.length === 0 ? "Total strangers!" : winners.length === 1 ? `${who(winners[0]).name} knows you best` : "A tie at the top!"}
+          {winners.length === 0 ? "Total strangers!" : winners.length === 1 ? `${who(winners[0]).name} knows this crew best` : "A tie at the top!"}
         </h2>
         {winners.length ? (
           <div className="mt-3 flex flex-wrap justify-center gap-2">

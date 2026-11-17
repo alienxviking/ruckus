@@ -41,6 +41,8 @@ export interface PairsState {
   last: LastMove | null;
   moves: number;
   final: number | null;
+  /** Solo: seconds the run took, once over. */
+  secs: number | null;
   /** Every card turned over, in order (public knowledge: everyone saw it). Bots learn from this. */
   seen: [number, number][];
   emptySince: number | null;
@@ -76,6 +78,7 @@ function finish(s: PairsState, ctx: GameCtx, why: "cleared" | "time" | "empty") 
   if (s.solo) {
     const id = s.seats[0];
     const secs = Math.round((ctx.now() - s.startedAt) / 1000);
+    s.secs = secs;
     s.final = soloScore(s.scores[0], s.misses[0], secs);
     scores[id] = s.final;
     const total = s.faces.length / 2;
@@ -224,6 +227,7 @@ export const pairs: GameDef<PairsState, unknown> = {
       last: null,
       moves: 0,
       final: null,
+      secs: null,
       seen: [],
       emptySince: null,
     };
@@ -317,6 +321,7 @@ export const pairs: GameDef<PairsState, unknown> = {
       last: s.last,
       solo: s.solo,
       final: s.final,
+      secs: s.secs,
       you: s.seats.indexOf(viewerId),
     };
   },

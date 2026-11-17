@@ -155,12 +155,12 @@ export function DailyChallenge() {
           return (
             <li
               key={id}
-              className="card lit-edge animate-rise flex flex-wrap items-center gap-4 p-4"
+              className="card animate-rise flex items-center gap-3 p-3 sm:gap-4 sm:p-4"
               style={{ "--accent": meta.accent, animationDelay: `${80 + i * 60}ms` } as React.CSSProperties}
             >
               <span className="hidden font-mono text-xs text-muted sm:inline">0{i + 1}</span>
               <GameBadge id={id} accent={meta.accent} size="lg" sheen={!e} />
-              <div className="min-w-0 flex-1">
+              <div className="w-0 min-w-0 flex-1">
                 <div className="font-display text-lg leading-tight font-bold">{meta.name}</div>
                 <p className="truncate text-sm text-muted">{meta.tagline}</p>
                 <p className="mt-1 font-mono text-[11px] text-muted">

@@ -454,12 +454,18 @@ export function SketchCanvas({
   act,
   label,
   overlay,
+  reserve = 395,
 }: {
   store: StrokeStore;
   canDraw: boolean;
   act: (a: SketchAction) => void;
   label: string;
   overlay?: ReactNode;
+  /**
+   * While drawing: screen height (px) taken by everything except the canvas (room header, game
+   * header, tool bar), so the canvas shrinks just enough to keep the tools on screen.
+   */
+  reserve?: number;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const cursorRef = useRef<HTMLDivElement>(null);
@@ -703,7 +709,11 @@ export function SketchCanvas({
   }, [canDraw]);
 
   return (
-    <div className="mx-auto flex w-full flex-col gap-2" style={{ maxWidth: "calc(60vh * 4 / 3)" }}>
+    // The artist also needs the tool bar on screen, so their canvas is a little shorter.
+    <div
+      className="mx-auto flex w-full flex-col gap-2"
+      style={{ maxWidth: canDraw ? `max(22rem, calc((100svh - ${reserve}px) * 4 / 3))` : "calc(60vh * 4 / 3)" }}
+    >
       <div className="@container relative w-full">
         <canvas
           ref={canvasRef}
@@ -899,10 +909,10 @@ export function Thumb({ store, turn, label }: { store: StrokeStore; turn: number
       const strokes = store.strokesFor(turn);
       if (!strokes || !strokes.length) {
         g.fillStyle = "#94a3b8";
-        g.font = `600 ${Math.round(w / 14)}px system-ui, sans-serif`;
+        g.font = `600 ${Math.round(w / 10)}px system-ui, sans-serif`;
         g.textAlign = "center";
         g.textBaseline = "middle";
-        g.fillText(strokes ? "blank canvas" : "not seen here", w / 2, h / 2);
+        g.fillText(strokes ? "Blank canvas" : "Not seen here", w / 2, h / 2);
         return;
       }
       g.setTransform(w / W, 0, 0, w / W, 0, 0);

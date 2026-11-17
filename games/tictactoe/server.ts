@@ -16,8 +16,13 @@ const LINES = [
   [0, 4, 8], [2, 4, 6],
 ];
 
+/** Time for one move; when it runs out a random free cell is played for you. */
+export const MOVE_MS = 20_000;
+
 export interface TttState {
   seats: [string, string];
+  /** When the current move runs out (0 while no move is due). */
+  moveEndsAt: number;
   board: (Mark | null)[];
   turn: Mark;
   starter: Mark;
@@ -45,12 +50,15 @@ export interface TttView extends Omit<TttState, "seats" | "awaySince"> {
   you: Mark | null;
   /** Pause between rounds, for the "next round" progress bar. */
   pauseMs: number;
+  /** Length of the move timer. */
+  moveMs: number;
   forfeitMs: number;
   /** A player is disconnected: the match is awarded to the other one at this time. */
   forfeitAt: number | null;
 }
 
-function newRound(s: TttState) {
+function newRound(s: TttState, now: number) {
+  s.moveEndsAt = now + MOVE_MS;
   s.board = Array(9).fill(null);
   s.turn = s.starter;
   s.roundEnd = null;
@@ -73,6 +81,8 @@ function updateAway(s: TttState, ctx: GameCtx): boolean {
   }
   if (!missing && s.awaySince !== null) {
     s.awaySince = null;
+    // Everyone's back: the mover gets a fresh clock.
+    if (!s.roundEnd && !s.over) s.moveEndsAt = ctx.now() + MOVE_MS;
     return true;
   }
   return false;
@@ -93,6 +103,36 @@ function forfeit(s: TttState, ctx: GameCtx) {
   } else {
     ctx.end({ winners: [], headline: "Tic-Tac-Toe ended — both players left", scores: scoreRecord(s) });
   }
+}
+
+/** Plays the current mover's mark at `cell` (already validated). */
+function place(s: TttState, cell: number, ctx: GameCtx) {
+  s.board[cell] = s.turn;
+  s.last = cell;
+  const line = LINES.find((l) => l.every((i) => s.board[i] === s.turn)) ?? null;
+  if (line) {
+    s.score[s.turn] += 1;
+    s.history.push(s.turn);
+    s.roundEnd = { winner: s.turn, line, nextAt: ctx.now() + ROUND_PAUSE_MS };
+    if (s.score[s.turn] >= s.target) {
+      s.winner = s.turn;
+      s.over = true;
+      s.awaySince = null;
+      const p = ctx.player(s.seats[s.turn]);
+      ctx.end({
+        winners: [s.seats[s.turn]],
+        headline: `${p?.name ?? "Someone"} wins Tic-Tac-Toe ${s.score[s.turn]}–${s.score[1 - s.turn]}`,
+        scores: scoreRecord(s),
+      });
+    }
+  } else if (s.board.every((c) => c !== null)) {
+    s.history.push(null);
+    s.roundEnd = { winner: null, line: null, nextAt: ctx.now() + ROUND_PAUSE_MS };
+  } else {
+    s.turn = (1 - s.turn) as Mark;
+  }
+  if (!s.roundEnd && !s.over) s.moveEndsAt = ctx.now() + MOVE_MS;
+  else s.moveEndsAt = 0;
 }
 
 // ---------- practice bot ----------
@@ -152,6 +192,7 @@ export const tictactoe: GameDef<TttState, TttAction> = {
       seats: [a.id, b.id],
       board: Array(9).fill(null),
       turn: first,
+      moveEndsAt: ctx.now() + MOVE_MS,
       starter: first,
       score: [0, 0],
       target,
@@ -173,31 +214,7 @@ export const tictactoe: GameDef<TttState, TttAction> = {
     if (seat !== s.turn) return false;
     const cell = action.cell;
     if (!Number.isInteger(cell) || cell < 0 || cell > 8 || s.board[cell] !== null) return false;
-
-    s.board[cell] = s.turn;
-    s.last = cell;
-    const line = LINES.find((l) => l.every((i) => s.board[i] === s.turn)) ?? null;
-    if (line) {
-      s.score[s.turn] += 1;
-      s.history.push(s.turn);
-      s.roundEnd = { winner: s.turn, line, nextAt: ctx.now() + ROUND_PAUSE_MS };
-      if (s.score[s.turn] >= s.target) {
-        s.winner = s.turn;
-        s.over = true;
-        s.awaySince = null;
-        const p = ctx.player(s.seats[s.turn]);
-        ctx.end({
-          winners: [s.seats[s.turn]],
-          headline: `${p?.name ?? "Someone"} wins Tic-Tac-Toe ${s.score[s.turn]}–${s.score[1 - s.turn]}`,
-          scores: scoreRecord(s),
-        });
-      }
-    } else if (s.board.every((c) => c !== null)) {
-      s.history.push(null);
-      s.roundEnd = { winner: null, line: null, nextAt: ctx.now() + ROUND_PAUSE_MS };
-    } else {
-      s.turn = (1 - s.turn) as Mark;
-    }
+    place(s, cell, ctx);
   },
 
   tick(s, ctx) {
@@ -209,12 +226,21 @@ export const tictactoe: GameDef<TttState, TttAction> = {
     }
     if (s.roundEnd && ctx.now() >= s.roundEnd.nextAt) {
       s.starter = (1 - s.starter) as Mark;
-      newRound(s);
+      newRound(s, ctx.now());
       changed = true;
+    }
+    // Out of time (and everyone's here): a random free cell is played for the mover.
+    if (!s.roundEnd && s.awaySince === null && s.moveEndsAt && ctx.now() >= s.moveEndsAt) {
+      const free = s.board.flatMap((c, i) => (c === null ? [i] : []));
+      if (free.length) {
+        place(s, free[Math.floor(ctx.random() * free.length)], ctx);
+        changed = true;
+      }
     }
     return changed;
   },
   tickMs: 200,
+
 
   playerLeft(s, _id, ctx) {
     if (!s.over) updateAway(s, ctx);
@@ -235,6 +261,7 @@ export const tictactoe: GameDef<TttState, TttAction> = {
       ...rest,
       you: seat === -1 ? null : (seat as Mark),
       pauseMs: ROUND_PAUSE_MS,
+      moveMs: MOVE_MS,
       forfeitMs: FORFEIT_MS,
       forfeitAt: awaySince === null ? null : awaySince + FORFEIT_MS,
     };

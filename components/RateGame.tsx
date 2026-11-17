@@ -26,7 +26,7 @@ export function RateGame({ gameId, gameKey }: { gameId: string; gameKey: string 
           aria-pressed={mine === v}
           disabled={mine !== null}
           onClick={() => vote(v)}
-          className={`grid size-8 place-items-center rounded-full text-lg transition-transform duration-150 enabled:hover:scale-110 enabled:active:scale-90 ${
+          className={`grid size-10 place-items-center rounded-full text-xl transition-transform duration-150 enabled:hover:scale-110 enabled:active:scale-90 ${
             mine === v ? "bg-brand-2 scale-110" : mine ? "opacity-30" : "bg-panel-2"
           }`}
         >

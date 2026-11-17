@@ -394,7 +394,7 @@ function LotStage({
               <SoldInfo view={view} who={who} />
             ) : lead ? (
               <>
-                <div className="text-[11px] font-semibold tracking-wider text-muted uppercase">Top bid</div>
+                <div className="label">Top bid</div>
                 <div key={lead.n} className="au-pop font-display text-4xl leading-none font-black tabular-nums" style={{ color: who(lead.p).color }}>
                   ${lead.a}
                 </div>
@@ -590,7 +590,7 @@ function Meter({ at, serverNow }: { at: number; serverNow: () => number }) {
               />
             </div>
             <div
-              className="mt-0.5 text-center text-[10px] font-bold tracking-widest"
+              className="mt-0.5 text-center text-[11px] font-bold tracking-wide"
               style={{ color: stage >= i ? STAGE_COLORS[i] : "var(--color-muted)" }}
             >
               {s}
@@ -712,7 +712,7 @@ function BidPad({ view, who, bidding, open, accent }: { view: AuView; who: Who; 
                 <span className="font-display text-lg font-extrabold" style={{ color: disabled && !sending ? undefined : accent }}>
                   +${step}
                 </span>
-                <span className="text-[11px] text-muted tabular-nums">{sending ? "sending…" : `bid $${amount}`}</span>
+                <span className="text-xs text-muted tabular-nums">{sending ? "sending…" : `bid $${amount}`}</span>
               </button>
               {tap && tap.i === i && (
                 <span

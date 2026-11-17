@@ -264,8 +264,8 @@ export function MiniShip({ len, sunk, color }: { len: number; sunk?: boolean; co
 
 export const SALVO_CSS = `
 .sv-frame{display:grid;grid-template-columns:14px 1fr;grid-template-rows:14px auto;gap:2px;width:100%;}
-.sv-cols{grid-column:2;display:grid;font:600 9px/14px var(--font-mono),monospace;color:var(--color-muted);text-align:center;}
-.sv-rows{grid-row:2;display:grid;font:600 9px var(--font-mono),monospace;color:var(--color-muted);text-align:right;align-items:center;padding-right:2px;}
+.sv-cols{grid-column:2;display:grid;font:600 10px/14px var(--font-mono),monospace;color:var(--color-muted);text-align:center;}
+.sv-rows{grid-row:2;display:grid;font:600 10px var(--font-mono),monospace;color:var(--color-muted);text-align:right;align-items:center;padding-right:2px;}
 .sv-sea{grid-column:2;grid-row:2;position:relative;display:grid;aspect-ratio:1;border-radius:10px;overflow:hidden;
   background:radial-gradient(120% 90% at 50% 0%,#12305a 0%,#0a1a33 55%,#071022 100%);
   box-shadow:inset 0 0 0 1px #2a4b7a,0 0 0 1px var(--glow),0 14px 40px -18px var(--glow);transition:box-shadow .3s;touch-action:manipulation;}

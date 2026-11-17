@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { Fragment, useEffect } from "react";
 import type { Player } from "@/shared/types";
 import type { Choice, DcView, TableView } from "./shared";
 import { CHOICE_META, Card, Coin, Dots, GOLD, RepRow, STEAL, SPLIT, trustLine, vars, type Who } from "./ui";
@@ -54,7 +54,7 @@ function SeatCard({ p, you, view, seat, state }: { p: Player; you: boolean; view
           <RepRow history={view.history} seat={seat} rounds={view.history.length} size="sm" />
         </span>
       ) : null}
-      <span className="text-[11px] leading-tight text-muted">
+      <span className="text-xs leading-tight text-muted">
         {state === "thinking" ? (
           <>
             deciding
@@ -106,11 +106,13 @@ export function TableHeader({
     <Card label="Your table" className="dc-in flex flex-col gap-2.5">
       <div className="flex items-stretch gap-1.5 @lg:gap-2">
         <SeatCard p={who(mySeat)} you view={view} seat={mySeat} state={state(mySeat)} />
-        <span aria-hidden className="grid shrink-0 place-items-center px-0.5 font-display text-lg font-extrabold text-muted @lg:px-1.5 @lg:text-xl">
-          {others.length === 1 ? "vs" : "&"}
-        </span>
         {others.map((s) => (
-          <SeatCard key={s} p={who(s)} you={false} view={view} seat={s} state={state(s)} />
+          <Fragment key={s}>
+            <span aria-hidden className="grid shrink-0 place-items-center px-0.5 font-display text-lg font-extrabold text-muted @lg:px-1.5 @lg:text-xl">
+              {others.length === 1 ? "vs" : "&"}
+            </span>
+            <SeatCard p={who(s)} you={false} view={view} seat={s} state={state(s)} />
+          </Fragment>
         ))}
       </div>
       <PotLine pot={table.pot} size={table.seats.length} heist={false} />
@@ -150,7 +152,7 @@ export function HeistHeader({ who, mySeat, table, state }: { who: Who; mySeat: n
               <span className="max-w-[6.5rem] truncate" style={{ color: p.color }}>
                 {s === mySeat ? "You" : p.name}
               </span>
-              <StateBadge state={st} className="-mr-1.5 ml-0.5 size-4 text-[9px]" />
+              <StateBadge state={st} className="-mr-1.5 ml-0.5 size-4 text-[10px]" />
             </li>
           );
         })}
@@ -194,7 +196,7 @@ export function TablesOverview({
                 return (
                   <span key={s} className="flex min-w-0 items-center gap-1">
                     {i > 0 && (
-                      <span aria-hidden className="text-[10px] text-muted">
+                      <span aria-hidden className="text-xs text-muted">
                         ×
                       </span>
                     )}
@@ -213,7 +215,7 @@ export function TablesOverview({
               <span title="messages sent">
                 💬 <b className="font-mono text-text tabular-nums">{counts[g] ?? 0}</b>
               </span>
-              <Coin v={t.pot} className="text-[11px]" />
+              <Coin v={t.pot} className="text-xs" />
             </span>
           </li>
         ))}
@@ -294,7 +296,7 @@ export function ChoicePad({ choice, onPick, partnerLast, disabled }: { choice: C
             >
               {on && (
                 <span className="pointer-events-none absolute inset-x-0 -top-2.5 flex justify-center">
-                  <span className="dc-pop rounded-full px-2 py-0.5 text-[10px] font-extrabold tracking-wider whitespace-nowrap text-ink" style={{ background: m.color }}>
+                  <span className="dc-pop rounded-full px-2 py-0.5 text-[11px] font-extrabold tracking-wide whitespace-nowrap text-ink" style={{ background: m.color }}>
                     🔒 LOCKED
                   </span>
                 </span>

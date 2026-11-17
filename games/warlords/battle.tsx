@@ -90,7 +90,7 @@ function CastleStrip({ view, who, current, accent }: { view: WlView; who: Who; c
                 {c.winners.slice(0, 2).map((w) => (
                   <span key={w}><Avatar id={who(w).avatar} /></span>
                 ))}
-                {c.winners.length > 2 && <span className="pl-2 text-[10px] font-bold text-muted">+{c.winners.length - 2}</span>}
+                {c.winners.length > 2 && <span className="pl-2 text-xs font-bold text-muted">+{c.winners.length - 2}</span>}
               </span>
             );
             label = `taken by ${joinNames(c.winners.map((w) => who(w).name))}`;
@@ -120,9 +120,9 @@ function CastleStrip({ view, who, current, accent }: { view: WlView; who: Who; c
             <span key={done ? "d" : isCur ? "c" : "u"} className={`text-xl leading-tight ${done ? "wl-pop" : ""}`} aria-hidden>
               {face}
             </span>
-            <span className="hidden w-full truncate text-[10px] text-muted @md:block">{view.names[i]}</span>
+            <span className="hidden w-full truncate text-xs text-muted @md:block">{view.names[i]}</span>
             {mine && (
-              <span className="text-[10px] leading-none font-semibold text-muted tabular-nums">
+              <span className="text-[11px] leading-none font-semibold text-muted tabular-nums">
                 you {mine[i]}
               </span>
             )}
@@ -413,7 +413,7 @@ function LiveScores({
           const pill = g > 0 && (
             <span
               key={stepKey}
-              className={`wl-pop rounded-full font-bold ${compact ? "absolute -top-2 right-0 px-1 text-[10px] leading-tight" : "px-1.5 text-xs"}`}
+              className={`wl-pop rounded-full font-bold ${compact ? "absolute -top-2 right-0 px-1 text-[11px] leading-tight" : "px-1.5 text-xs"}`}
               style={{ background: compact ? `color-mix(in oklab, ${accent} 30%, var(--color-panel))` : `${accent}2e`, color: accent }}
             >
               +{g}

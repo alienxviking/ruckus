@@ -96,7 +96,7 @@ export function Ledger({
                   {seat === mySeat ? "You" : p.name}
                 </span>
                 {partner && (
-                  <span className="hidden shrink-0 rounded-full bg-panel-2 px-1.5 text-[10px] text-muted @sm:inline">your table</span>
+                  <span className="hidden shrink-0 rounded-full bg-panel-2 px-1.5 text-xs text-muted @sm:inline">your table</span>
                 )}
               </span>
               <RepRow history={history} seat={seat} rounds={view.rounds} size="sm" freshRound={fresh} />
@@ -163,7 +163,7 @@ export function Final({ view, who, mySeat }: { view: DcView; who: Who; mySeat: n
                       {seat === mySeat ? "You" : p.name}
                     </span>
                   </span>
-                  <span className="text-[11px] text-muted">{trustLine(view.history, seat)}</span>
+                  <span className="text-xs text-muted">{trustLine(view.history, seat)}</span>
                 </span>
                 <RepRow history={view.history} seat={seat} rounds={view.rounds} size="sm" />
                 <span className="w-9 shrink-0 text-right font-display text-xl font-extrabold tabular-nums" style={win ? { color: GOLD } : undefined}>

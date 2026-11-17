@@ -229,6 +229,7 @@ function Match({ view, byId, isPlayer, act, serverNow, accent }: Props & { view:
             active={playing && view.turn === seat}
             passed={playing && pass === seat}
             away={away(seat)}
+            over={view.phase === "over"}
             champ={view.phase === "over" && (view.champions ?? []).length === 1 && view.champions![0] === seat}
           />
         ))}
@@ -346,6 +347,7 @@ function SeatCard({
   active,
   passed,
   away,
+  over,
   champ,
 }: {
   seat: Seat;
@@ -358,6 +360,7 @@ function SeatCard({
   active: boolean;
   passed: boolean;
   away: boolean;
+  over: boolean;
   champ: boolean;
 }) {
   const mirror = seat === 1;
@@ -369,9 +372,9 @@ function SeatCard({
       } ${away ? "opacity-60" : ""} ${isYou ? "bg-panel-2" : ""}`}
       style={lit ? { borderColor: color, boxShadow: `0 0 0 1px ${color}66, 0 8px 26px -14px ${color}` } : undefined}
     >
-      {isYou && (
+      {isYou && player.name !== "You" && (
         <span
-          className={`absolute -top-2 rounded-full border border-line bg-ink px-1.5 text-[9px] leading-[14px] font-bold tracking-wider text-muted uppercase ${
+          className={`absolute -top-2 rounded-full border border-line bg-ink px-1.5 text-xs leading-4 font-bold text-muted ${
             mirror ? "right-3" : "left-3"
           }`}
         >
@@ -388,7 +391,7 @@ function SeatCard({
             {player.name}
           </span>
         </div>
-        <div className="truncate text-[11px] leading-4 text-muted">
+        <div className="truncate text-xs leading-4 text-muted">
           {away ? (
             <>
               <span aria-hidden>📴 </span>away
@@ -403,6 +406,8 @@ function SeatCard({
             </span>
           ) : passed ? (
             "no move · pass"
+          ) : over ? (
+            "final"
           ) : (
             "waiting"
           )}
@@ -419,7 +424,7 @@ function SeatCard({
             ))}
           </span>
         ) : (
-          <span className="text-[9px] leading-3 tracking-wider text-muted uppercase">discs</span>
+          <span className="text-xs leading-3 text-muted">discs</span>
         )}
       </div>
     </div>
@@ -447,7 +452,7 @@ function GameHistory({
         return (
           <li
             key={i}
-            className={`flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] ${
+            className={`flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs ${
               done ? "border-line bg-panel" : "border-dashed border-line"
             }`}
           >
