@@ -240,6 +240,21 @@ body::after {
   animation: pop-in 0.26s var(--ease-spring) both;
 }
 
+/* Reconnect banner: waits a beat so a momentary blip never flashes it, then drops in. */
+@keyframes banner-drop {
+  from {
+    transform: translateY(-140%);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+.reconnect-banner {
+  animation: banner-drop 0.35s var(--ease-out-expo) 0.9s both;
+}
+
 /* The selected-game frame: snaps onto the card it belongs to, no travelling. */
 @keyframes ring-in {
   from {

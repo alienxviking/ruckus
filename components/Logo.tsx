@@ -32,7 +32,7 @@ export function Logo({ small }: { small?: boolean }) {
       <span className="transition-transform duration-500 ease-[cubic-bezier(0.34,1.4,0.5,1)] group-hover:-rotate-[8deg] group-hover:scale-105">
         <LogoMark className={small ? "size-8" : "size-9"} />
       </span>
-      <span className={`font-hero font-extrabold tracking-[-0.02em] lowercase ${small ? "text-base" : "text-xl"}`}>
+      <span className={`font-hero font-extrabold tracking-[-0.02em] lowercase ${small ? "hidden text-base min-[420px]:inline" : "text-xl"}`}>
         ruckus
       </span>
     </Link>

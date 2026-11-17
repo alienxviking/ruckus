@@ -15,6 +15,7 @@ import { Lobby } from "./Lobby";
 import { PlayerList } from "./PlayerList";
 import type { ProfileValues } from "./ProfileForm";
 import { InviteButton } from "./InviteButton";
+import { SoundToggle, useRoomFeedback } from "./RoomFeedback";
 import { Avatar } from "@/components/Avatar";
 
 // The animated profile dialog is fetched on first hover/focus of the profile button.
@@ -63,6 +64,8 @@ export function Room({
   };
   const playing = room?.phase === "playing";
 
+  useRoomFeedback(room, r.me, r.serverNow);
+
   // Fetch the picked game's code while everyone is still in the lobby, so Start is instant.
   useEffect(() => {
     if (gameId) preloadGame(gameId);
@@ -75,6 +78,7 @@ export function Room({
         <div className="flex items-center gap-2">
           <ConnDot status={r.status} ping={r.ping} />
           <InviteButton code={code} />
+          <SoundToggle />
           <button
             className="btn px-2.5 py-1.5"
             onPointerEnter={loadProfileDialog}
@@ -99,6 +103,8 @@ export function Room({
           {r.error}
         </div>
       )}
+
+      {room && !r.rejected && r.status !== "open" && <ReconnectBanner playing={playing} />}
 
       {r.rejected ? (
         <div className="grid flex-1 place-items-center px-4">
@@ -215,6 +221,43 @@ export function Room({
 }
 
 const noPing = () => null;
+
+const subscribeOnline = (cb: () => void) => {
+  window.addEventListener("online", cb);
+  window.addEventListener("offline", cb);
+  return () => {
+    window.removeEventListener("online", cb);
+    window.removeEventListener("offline", cb);
+  };
+};
+
+/**
+ * Shown while the socket is down (after a short grace, so blips don't flash it): your seat
+ * is kept, so nobody panics and reloads.
+ */
+function ReconnectBanner({ playing }: { playing: boolean }) {
+  const online = useSyncExternalStore(subscribeOnline, () => navigator.onLine, () => true);
+  return (
+    <div
+      role="status"
+      className="reconnect-banner pointer-events-none fixed inset-x-0 top-16 z-50 flex justify-center px-3"
+    >
+      <div className="flex items-center gap-3 rounded-full border border-yellow-400/40 bg-panel/95 backdrop-blur-md py-2 pr-4 pl-3 text-sm shadow-lg shadow-black/50">
+        <span
+          aria-hidden
+          className="size-4 shrink-0 rounded-full border-2 border-yellow-400/30 border-t-yellow-400 motion-safe:animate-[spin_0.8s_linear_infinite]"
+        />
+        <span>
+          <b>{online ? "Reconnecting…" : "You're offline"}</b>{" "}
+          <span className="text-muted">
+            {playing ? "You're still in the game." : "You're still in the room."}
+            {online ? "" : " Waiting for your connection."}
+          </span>
+        </span>
+      </div>
+    </div>
+  );
+}
 
 function ConnDot({ status, ping }: { status: string; ping: PingStore }) {
   const rtt = useSyncExternalStore(ping.subscribe, ping.get, noPing);
