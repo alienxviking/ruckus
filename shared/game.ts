@@ -25,6 +25,12 @@ export interface GameCtx {
    * readSettings(config.settings, ctx.settings) so defaults are filled in.
    */
   settings: Settings;
+  /**
+   * This game's memory in this room, kept between games (and between solo games in this
+   * browser). Mutate it freely; keep it small and JSON-safe, e.g. the ids of recently used
+   * questions (capped) so the next game doesn't repeat them. Starts as {}.
+   */
+  memory: Record<string, unknown>;
 }
 
 /**

@@ -34,6 +34,18 @@ import defuse from "./defuse/server";
 import poll from "./poll/server";
 import emojicharades from "./emojicharades/server";
 import mashup from "./mashup/server";
+import smuggle from "./smuggle/server";
+import hotseat from "./hotseat/server";
+import truths from "./truths/server";
+import tug from "./tug/server";
+import flags from "./flags/server";
+import puck from "./puck/server";
+import salvo from "./salvo/server";
+import seeds from "./seeds/server";
+import flip from "./flip/server";
+import ladder from "./ladder/server";
+import stack from "./stack/server";
+import pairs from "./pairs/server";
 
 export const GAME_DEFS: Record<string, GameDef> = {
   sketch,
@@ -70,4 +82,16 @@ export const GAME_DEFS: Record<string, GameDef> = {
   poll,
   emojicharades,
   mashup,
+  smuggle,
+  hotseat,
+  truths,
+  tug,
+  flags,
+  puck,
+  salvo,
+  seeds,
+  flip,
+  ladder,
+  stack,
+  pairs,
 };

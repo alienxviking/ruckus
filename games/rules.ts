@@ -39,6 +39,18 @@ export const RULES: Record<string, Loader> = {
   poll: () => import("./poll/rules"),
   emojicharades: () => import("./emojicharades/rules"),
   mashup: () => import("./mashup/rules"),
+  smuggle: () => import("./smuggle/rules"),
+  hotseat: () => import("./hotseat/rules"),
+  truths: () => import("./truths/rules"),
+  tug: () => import("./tug/rules"),
+  flags: () => import("./flags/rules"),
+  puck: () => import("./puck/rules"),
+  salvo: () => import("./salvo/rules"),
+  seeds: () => import("./seeds/rules"),
+  flip: () => import("./flip/rules"),
+  ladder: () => import("./ladder/rules"),
+  stack: () => import("./stack/rules"),
+  pairs: () => import("./pairs/rules"),
 };
 
 export type { GameRules };

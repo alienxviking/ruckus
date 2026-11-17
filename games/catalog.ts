@@ -1,5 +1,18 @@
 // Game metadata shared by the server (player limits) and the client (lobby cards).
 
+import { meta as smuggleMeta } from "./smuggle/meta";
+import { meta as hotseatMeta } from "./hotseat/meta";
+import { meta as truthsMeta } from "./truths/meta";
+import { meta as tugMeta } from "./tug/meta";
+import { meta as flagsMeta } from "./flags/meta";
+import { meta as puckMeta } from "./puck/meta";
+import { meta as salvoMeta } from "./salvo/meta";
+import { meta as seedsMeta } from "./seeds/meta";
+import { meta as flipMeta } from "./flip/meta";
+import { meta as ladderMeta } from "./ladder/meta";
+import { meta as stackMeta } from "./stack/meta";
+import { meta as pairsMeta } from "./pairs/meta";
+
 export type GameCategory = "party" | "board" | "arena" | "brain";
 
 export interface GameMeta {
@@ -20,6 +33,10 @@ export interface GameMeta {
   original?: boolean;
   /** Recently added: shows a NEW badge. */
   isNew?: boolean;
+  /** Played in two teams (always, or as a host setting). */
+  teams?: boolean;
+  /** Made for friends on a video call: talking out loud is part of the game. */
+  call?: boolean;
 }
 
 export const CATALOG: GameMeta[] = [
@@ -598,6 +615,19 @@ export const CATALOG: GameMeta[] = [
       "Vote ⭐ for the best monster and 🏷️ the best name: artists and namers score. Two rounds, most points wins.",
     ],
   },
+  // Newer games keep their catalog entry in their own folder (games/<id>/meta.ts).
+  smuggleMeta,
+  hotseatMeta,
+  truthsMeta,
+  tugMeta,
+  flagsMeta,
+  puckMeta,
+  salvoMeta,
+  seedsMeta,
+  flipMeta,
+  ladderMeta,
+  stackMeta,
+  pairsMeta,
 ];
 
 export const CATALOG_BY_ID: Record<string, GameMeta> = Object.fromEntries(

@@ -13,7 +13,7 @@ import type { GameCtx } from "./game";
 import type { Settings } from "./settings";
 import type { GameResult, Player } from "./types";
 
-export function makeTestCtx(playerCount: number, seed = 42, settings: Settings = {}, bots = 0) {
+export function makeTestCtx(playerCount: number, seed = 42, settings: Settings = {}, bots = 0, memory: Record<string, unknown> = {}) {
   let time = 1_700_000_000_000;
   let s = seed >>> 0;
   const random = () => {
@@ -53,6 +53,7 @@ export function makeTestCtx(playerCount: number, seed = 42, settings: Settings =
     },
     random,
     settings,
+    memory,
   };
   return harness;
 }

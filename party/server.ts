@@ -151,6 +151,8 @@ export class RuckusRoom extends Server<Env> {
   roomReacts: number[] = [];
   history: HistoryEntry[] = [];
   botSeq = 0;
+  /** Per-game memory kept between games in this room (see GameCtx.memory). */
+  memory: Record<string, Record<string, unknown>> = {};
 
 
   // ---------- connection lifecycle ----------
@@ -529,6 +531,7 @@ export class RuckusRoom extends Server<Env> {
       // The game clock stands still while paused, and skips the time spent paused.
       now: () => (this.pauseAt ?? Date.now()) - this.pausedMs,
       settings: { ...(this.settings[this.gameId] ?? {}) },
+      memory: this.gameMemory(),
       players: this.participants.map((id) => ({ ...this.players.get(id)! })),
       player: (id) => this.players.get(id),
       random: Math.random,
@@ -639,6 +642,17 @@ export class RuckusRoom extends Server<Env> {
       pauseUses: this.pauseUses,
       history: this.history,
     };
+  }
+
+  /** This game's memory; dropped if a game lets it grow past ~64 KB. */
+  gameMemory(): Record<string, unknown> {
+    const mem = (this.memory[this.gameId] ??= {});
+    try {
+      if (JSON.stringify(mem).length > 64_000) return (this.memory[this.gameId] = {});
+    } catch {
+      return (this.memory[this.gameId] = {});
+    }
+    return mem;
   }
 
   // ---------- pause (someone reading the rules) ----------

@@ -57,6 +57,18 @@ const LOADERS: Record<string, () => Promise<{ default: AnyGameClient }>> = {
   poll: () => import("./poll/client"),
   emojicharades: () => import("./emojicharades/client"),
   mashup: () => import("./mashup/client"),
+  smuggle: () => import("./smuggle/client"),
+  hotseat: () => import("./hotseat/client"),
+  truths: () => import("./truths/client"),
+  tug: () => import("./tug/client"),
+  flags: () => import("./flags/client"),
+  puck: () => import("./puck/client"),
+  salvo: () => import("./salvo/client"),
+  seeds: () => import("./seeds/client"),
+  flip: () => import("./flip/client"),
+  ladder: () => import("./ladder/client"),
+  stack: () => import("./stack/client"),
+  pairs: () => import("./pairs/client"),
 };
 
 export const GAME_CLIENTS: Record<string, AnyGameClient> = Object.fromEntries(

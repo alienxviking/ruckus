@@ -28,6 +28,18 @@ import {
   Snowflake,
   Sparkles,
   Vote,
+  MessageSquareOff,
+  Armchair,
+  BadgeCheck,
+  Cable,
+  Flag,
+  Disc3,
+  Anchor,
+  Sprout,
+  CircleDot,
+  ListTree,
+  Layers,
+  Copy,
   Zap,
 } from "lucide-react";
 import type { ComponentType, SVGProps } from "react";
@@ -169,6 +181,18 @@ const GLYPHS: Record<string, Glyph> = {
   poll: Vote,
   emojicharades: Clapperboard,
   mashup: Ghost,
+  smuggle: MessageSquareOff,
+  hotseat: Armchair,
+  truths: BadgeCheck,
+  tug: Cable,
+  flags: Flag,
+  puck: Disc3,
+  salvo: Anchor,
+  seeds: Sprout,
+  flip: CircleDot,
+  ladder: ListTree,
+  stack: Layers,
+  pairs: Copy,
 };
 
 export function GameGlyph({ id, className }: { id: string; className?: string }) {

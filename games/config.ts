@@ -35,6 +35,18 @@ import { config as defuse } from "./defuse/config";
 import { config as poll } from "./poll/config";
 import { config as emojicharades } from "./emojicharades/config";
 import { config as mashup } from "./mashup/config";
+import { config as smuggle } from "./smuggle/config";
+import { config as hotseat } from "./hotseat/config";
+import { config as truths } from "./truths/config";
+import { config as tug } from "./tug/config";
+import { config as flags } from "./flags/config";
+import { config as puck } from "./puck/config";
+import { config as salvo } from "./salvo/config";
+import { config as seeds } from "./seeds/config";
+import { config as flip } from "./flip/config";
+import { config as ladder } from "./ladder/config";
+import { config as stack } from "./stack/config";
+import { config as pairs } from "./pairs/config";
 
 export const GAME_CONFIG: Record<string, GameConfig> = {
   sketch,
@@ -71,4 +83,16 @@ export const GAME_CONFIG: Record<string, GameConfig> = {
   poll,
   emojicharades,
   mashup,
+  smuggle,
+  hotseat,
+  truths,
+  tug,
+  flags,
+  puck,
+  salvo,
+  seeds,
+  flip,
+  ladder,
+  stack,
+  pairs,
 };
