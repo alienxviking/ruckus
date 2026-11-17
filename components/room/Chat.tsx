@@ -31,7 +31,7 @@ export function Chat({
     <div className="card flex flex-col p-3">
       <div className="mb-2 flex items-center gap-2 px-1">
         <span className="font-hero text-base font-extrabold">Chat</span>
-        <span className="marker text-base text-muted">bolo bolo</span>
+        <span className="marker text-base text-muted">say hi 👋</span>
       </div>
       <ol
         ref={listRef}
@@ -108,7 +108,7 @@ export function Chat({
         <input
           id={compact ? "chat-m" : "chat"}
           className="input rounded-full py-1.5 text-sm"
-          placeholder="kuch toh bolo…"
+          placeholder="Say something…"
           maxLength={200}
           autoComplete="off"
           value={text}

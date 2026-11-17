@@ -126,7 +126,7 @@ export function DailyChallenge() {
         <h1 className="font-hero text-5xl leading-[0.9] font-extrabold tracking-[-0.04em] sm:text-7xl">
           Daily <span className="text-pink">challenge</span>
         </h1>
-        <p className="marker mt-2 text-2xl text-brand-2">aaj ka scene: 3 games, sabke liye same</p>
+        <p className="marker mt-2 text-2xl text-brand-2">today: 3 games, same puzzles for everyone</p>
         <p className="mt-3 max-w-xl text-muted">
           Three games, the same puzzles for everyone today. Your first try is your score; replays are just for fun.
         </p>

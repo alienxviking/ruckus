@@ -96,7 +96,7 @@ function Picker({ onPick }: { onPick: (g: GameMeta) => void }) {
     <section aria-labelledby="picker-heading" className="stk p-4 sm:p-6" style={{ "--stk-bg": "var(--color-panel)" } as React.CSSProperties}>
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <p className="marker -rotate-2 text-xl text-brand-2">kya khelein?</p>
+          <p className="marker -rotate-2 text-xl text-brand-2">can&apos;t decide?</p>
           <h2 id="picker-heading" className="font-hero text-3xl font-extrabold tracking-[-0.02em] sm:text-4xl">
             What are we playing?
           </h2>
@@ -144,7 +144,7 @@ function Picker({ onPick }: { onPick: (g: GameMeta) => void }) {
 
 const ROWS: { title: string; note: string; tilt: string; color: string; test: (g: GameMeta) => boolean }[] = [
   {
-    title: "Big group bawaal",
+    title: "Big group chaos",
     note: "8+ people, maximum noise",
     tilt: "-2deg",
     color: "var(--color-pink)",
@@ -153,7 +153,7 @@ const ROWS: { title: string; note: string; tilt: string; color: string; test: (g
   { title: "On a call", note: "talk it out on Meet / Zoom", tilt: "1.5deg", color: "var(--color-cyan)", test: (g) => !!g.call || CALL_FRIENDLY.has(g.id) },
   { title: "Just you two", note: "1v1, no excuses", tilt: "-1.5deg", color: "var(--color-sun)", test: (g) => g.minPlayers <= 2 && g.maxPlayers <= 4 },
   { title: "Real-time chaos", note: "reflexes on", tilt: "2deg", color: "var(--color-volt)", test: (g) => g.category === "arena" },
-  { title: "Brain burners", note: "dimaag lagao", tilt: "-1deg", color: "var(--color-blue)", test: (g) => g.category === "brain" },
+  { title: "Brain burners", note: "use that brain", tilt: "-1deg", color: "var(--color-blue)", test: (g) => g.category === "brain" },
 ];
 
 function Row({ title, note, tilt, color, games, onPick }: { title: string; note: string; tilt: string; color: string; games: GameMeta[]; onPick: (g: GameMeta) => void }) {
@@ -271,7 +271,7 @@ function PlaySheet({ game, local, onClose }: { game: GameMeta; local: boolean; o
         </div>
         <div className="p-5">
           <p className="marker text-xl leading-none" style={{ color: game.accent }}>
-            kaise khelna hai?
+            how do you want to play?
           </p>
           <h3 id="play-sheet-title" className="mt-1 font-hero text-3xl leading-tight font-extrabold tracking-[-0.03em]">
             {game.name}

@@ -54,7 +54,7 @@ export function GameSettings({
     <div className="card animate-rise p-4">
       <h2 className="mb-3 flex items-baseline gap-2">
         <span className="font-hero text-lg font-extrabold">Settings</span>
-        <span className="marker text-base text-muted">apne hisaab se set karo · ⭐ = default</span>
+        <span className="marker text-base text-muted">your room, your rules · ⭐ = default</span>
       </h2>
       <div className="grid gap-3 sm:grid-cols-2">
         {choices.map((d) => (

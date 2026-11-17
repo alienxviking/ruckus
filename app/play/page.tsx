@@ -25,7 +25,7 @@ export default function PlayIndex() {
           <Rux mood="wink" className="w-full" />
         </span>
         <p className="marker slap mb-2 inline-block text-2xl text-brand-2" style={{ "--tilt": "-3deg" } as React.CSSProperties}>
-          no room. no waiting. bas khelo.
+          no room. no waiting. just play.
         </p>
         <h1 className="animate-rise font-hero text-5xl leading-[0.9] font-extrabold tracking-[-0.04em] sm:text-7xl">
           Play <span className="text-brand-2">right now.</span>

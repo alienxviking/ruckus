@@ -77,19 +77,19 @@ export function PlayerList({
           const watching = room.phase === "playing" && !playing;
           const status = p.bot
             ? !p.connected
-              ? "ja raha hai…"
+              ? "leaving…"
               : playing
-                ? "khel raha 🎮"
+                ? "playing 🎮"
                 : watching
-                  ? "baitha hai"
+                  ? "sitting out"
                   : "practice bot 🤖"
             : !p.connected
-              ? "net gaya… 📡"
+              ? "reconnecting… 📡"
               : watching
-                ? "dekh raha 👀"
+                ? "watching 👀"
                 : playing
-                  ? "khel raha 🎮"
-                  : "ready hai ✌️";
+                  ? "playing 🎮"
+                  : "ready ✌️";
           const canManage = isHost && p.id !== me;
           const wins = room.wins[p.id] ?? 0;
           return (
