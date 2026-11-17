@@ -2,7 +2,6 @@ import { getServerByName, routePartykitRequest, Server, type Connection } from "
 import type { GameCtx, GameDef } from "../shared/game";
 import {
   AVATARS,
-  avatarText,
   toAvatarId,
   MAX_NAME,
   MAX_PLAYERS,
@@ -260,7 +259,7 @@ export class RuckusRoom extends Server<Env> {
       }
     } else {
       this.players.set(conn.id, { id: conn.id, name, color, avatar, connected: true });
-      this.system(`${avatarText(avatar)} ${name} joined`);
+      this.system(`${name} joined`, avatar);
     }
 
     if (!this.hostId || !this.players.get(this.hostId)) this.hostId = conn.id;
@@ -530,7 +529,7 @@ export class RuckusRoom extends Server<Env> {
       this.keys.delete(id);
       this.chatTimes.delete(id);
       delete this.wins[id];
-      if (p) this.system(`${avatarText(p.avatar)} ${p.name} left`);
+      if (p) this.system(`${p.name} left`, p.avatar);
       removed = true;
     }
     if (removed && this.hostId && !this.players.has(this.hostId)) this.hostId = null;
@@ -559,8 +558,8 @@ export class RuckusRoom extends Server<Env> {
     conn.close(4001, "rejected");
   }
 
-  system(text: string) {
-    this.pushChat({ id: `c${++this.chatSeq}`, from: null, text, at: Date.now() });
+  system(text: string, avatar?: string) {
+    this.pushChat({ id: `c${++this.chatSeq}`, from: null, text, at: Date.now(), ...(avatar ? { avatar } : {}) });
   }
 
   pushChat(msg: ChatMsg) {

@@ -13,6 +13,8 @@ export interface ChatMsg {
   from: string | null; // null = system message
   text: string;
   at: number;
+  /** System lines about a player ("X joined") carry their avatar, drawn before the text. */
+  avatar?: string;
 }
 
 export interface GameResult {

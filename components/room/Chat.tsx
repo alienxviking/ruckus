@@ -42,7 +42,14 @@ export function Chat({
             return (
               <li key={m.id} className="animate-chat flex gap-1.5 font-mono text-[11px] text-muted">
                 <span aria-hidden className="text-brand-2/70">›</span>
-                <span className="min-w-0 break-words">{m.text}</span>
+                <span className="min-w-0 break-words">
+                  {m.avatar && (
+                    <>
+                      <Avatar id={m.avatar} className="text-[13px]" />{" "}
+                    </>
+                  )}
+                  {m.text}
+                </span>
               </li>
             );
           }
