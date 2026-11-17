@@ -13,6 +13,7 @@ import { PauseOverlay } from "./PauseOverlay";
 import { ResultPodium } from "./ResultPodium";
 import { GameStart } from "./GameStart";
 import { reportError, setReportGame } from "@/lib/report-error";
+import { markPlayed } from "@/lib/my-games";
 import dynamic from "next/dynamic";
 
 // The animated confirm dialog is fetched on first hover/focus of "End game".
@@ -86,8 +87,9 @@ export function GameStage({
 
   useEffect(() => {
     setReportGame(room.gameId);
+    if (isPlayer) markPlayed(room.gameId);
     return () => setReportGame(null);
-  }, [room.gameId]);
+  }, [room.gameId, isPlayer]);
 
   // Finishing a game counts as having learnt it (no more glowing rules button).
   const finished = !!room.result;

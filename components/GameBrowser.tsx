@@ -2,13 +2,14 @@
 
 import { AnimatePresence } from "motion/react";
 import * as m from "motion/react-m";
-import { useId, useState } from "react";
+import { useId, useState, useSyncExternalStore } from "react";
+import { readMyGames, serverMyGames, subscribeMyGames } from "@/lib/my-games";
 import { matchesSearch, searchTerms } from "@/lib/search-games";
 import { SearchBox } from "./SearchBox";
 import { CATALOG, CATEGORY_LABEL, type GameCategory, type GameMeta } from "@/games/catalog";
 import { GameCard } from "./GameCard";
 
-type Filter = "all" | "fits" | GameCategory | "teams" | "call" | "duo" | "solo";
+type Filter = "all" | "fits" | "faves" | GameCategory | "teams" | "call" | "duo" | "solo";
 
 /** Handy groupings across categories. */
 const GROUPS: { id: Filter; label: string; test: (g: GameMeta) => boolean }[] = [
@@ -46,12 +47,22 @@ export function GameBrowser({
   const [pending, setPending] = useState<{ id: string; from?: string } | null>(null);
   const activeId = pending && pending.from === selectedId ? pending.id : selectedId;
   const fits = (g: GameMeta) => playerCount !== undefined && playerCount >= g.minPlayers && playerCount <= g.maxPlayers;
+  const favs = useSyncExternalStore(subscribeMyGames, readMyGames, serverMyGames).favs;
   const group = GROUPS.find((x) => x.id === filter);
   const [query, setQuery] = useState("");
   const terms = searchTerms(query);
   const matches = (g: GameMeta) => matchesSearch(g, terms);
   const shown = CATALOG.filter(
-    (g) => (filter === "all" ? true : filter === "fits" ? fits(g) : group ? group.test(g) : g.category === filter) && matches(g),
+    (g) =>
+      (filter === "all"
+        ? true
+        : filter === "fits"
+          ? fits(g)
+          : filter === "faves"
+            ? favs.includes(g.id)
+            : group
+              ? group.test(g)
+              : g.category === filter) && matches(g),
   );
 
   const chips: { id: Filter; label: string; count: number }[] = [
@@ -59,6 +70,7 @@ export function GameBrowser({
     ...(playerCount !== undefined && playerCount > 0
       ? [{ id: "fits" as const, label: `Fits ${playerCount} ${playerCount === 1 ? "player" : "players"}`, count: CATALOG.filter(fits).length }]
       : []),
+    ...(favs.length ? [{ id: "faves" as const, label: "♥ Faves", count: favs.length }] : []),
     ...CATEGORIES.map((c) => ({ id: c, label: CATEGORY_LABEL[c], count: CATALOG.filter((g) => g.category === c).length })),
     ...GROUPS.map((x) => ({ id: x.id, label: x.label, count: CATALOG.filter(x.test).length })).filter((c) => c.count > 0),
   ];

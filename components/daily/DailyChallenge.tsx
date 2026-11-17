@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
-import { Check, Copy, Flame, Play, RotateCcw, Trophy } from "lucide-react";
+import { Check, Copy, Flame, Image as ImageIcon, Play, RotateCcw, Trophy } from "lucide-react";
+import { renderDailyCard } from "@/lib/daily-card";
 import { CATALOG_BY_ID } from "@/games/catalog";
 import { GAME_CONFIG } from "@/games/config";
 import { readSettings } from "@/shared/settings";
@@ -249,16 +250,60 @@ function Share({ day, data, all }: { day: string; data: DailyData; all: boolean 
     feedback("pop");
     setTimeout(() => setCopied(false), 2000);
   };
+  // The picture version: share it on phones, download it elsewhere.
+  const ruxRef = useRef<HTMLSpanElement>(null);
+  const [making, setMaking] = useState(false);
+  const shareImage = async () => {
+    const svg = ruxRef.current?.querySelector("svg");
+    if (!svg) return;
+    setMaking(true);
+    try {
+      const css = getComputedStyle(document.documentElement);
+      const font = (v: string, fallback: string) => css.getPropertyValue(v).trim() || fallback;
+      const markup = new XMLSerializer().serializeToString(svg).replace("<svg", '<svg xmlns="http://www.w3.org/2000/svg"');
+      const blob = await renderDailyCard(day, data, markup, {
+        hero: font("--font-hero-face", "sans-serif"),
+        marker: font("--font-marker-face", "cursive"),
+        sans: font("--font-geist-sans", "sans-serif"),
+      });
+      if (!blob) return;
+      const file = new File([blob], `ruckus-daily-${day}.png`, { type: "image/png" });
+      const phone = matchMedia("(pointer: coarse)").matches;
+      if (phone && navigator.canShare?.({ files: [file] })) {
+        await navigator.share({ files: [file], text: text }).catch(() => {});
+      } else {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = file.name;
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(url), 5000);
+      }
+      feedback("pop");
+    } finally {
+      setMaking(false);
+    }
+  };
   return (
     <section aria-labelledby="share-heading" className="card animate-rise mt-4 p-4">
       <div className="mb-3 flex items-center justify-between gap-3">
         <h2 id="share-heading" className="label">
           {all ? "All done! Share your day" : "Share so far"}
         </h2>
-        <button className={`btn px-3 py-1.5 text-sm ${all ? "btn-primary" : ""}`} onClick={copy} aria-live="polite">
-          {copied ? <Check aria-hidden className="size-4" strokeWidth={2.25} /> : <Copy aria-hidden className="size-4" strokeWidth={2} />}
-          {copied ? "Copied" : "Copy"}
-        </button>
+        <span className="flex gap-2">
+          <button className={`btn px-3 py-1.5 text-sm ${all ? "btn-primary" : ""}`} onClick={shareImage} disabled={making}>
+            <ImageIcon aria-hidden className="size-4" strokeWidth={2.2} />
+            {making ? "Making…" : "Share image"}
+          </button>
+          <button className="btn px-3 py-1.5 text-sm" onClick={copy} aria-live="polite">
+            {copied ? <Check aria-hidden className="size-4" strokeWidth={2.25} /> : <Copy aria-hidden className="size-4" strokeWidth={2} />}
+            {copied ? "Copied" : "Copy text"}
+          </button>
+        </span>
+        {/* Source art for the picture (hidden). */}
+        <span ref={ruxRef} aria-hidden className="hidden">
+          <Rux mood="grin" />
+        </span>
       </div>
       <pre className="overflow-x-auto rounded-lg border border-line bg-ink/60 p-3 font-mono text-xs leading-relaxed whitespace-pre-wrap text-text/90">
         {text}

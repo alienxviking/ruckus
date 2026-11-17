@@ -10,6 +10,7 @@ import type { Identity } from "@/lib/identity";
 import { useRoom, type PingStore } from "@/lib/useRoom";
 import type { Player } from "@/shared/types";
 import { Logo } from "../Logo";
+import { RuxCheer } from "./RuxCheer";
 import { Chat } from "./Chat";
 import { GameStage } from "./GameStage";
 import { Lobby } from "./Lobby";
@@ -106,6 +107,7 @@ export function Room({
 
   return (
     <div className="mx-auto flex w-full max-w-7xl flex-1 flex-col px-3 sm:px-5">
+      {room && <RuxCheer room={room} me={r.me} />}
       <header className="flex items-center justify-between gap-3 py-3">
         <Logo small />
         <div className="flex items-center gap-2">

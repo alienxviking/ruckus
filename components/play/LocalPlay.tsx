@@ -15,6 +15,7 @@ import { Avatar } from "../Avatar";
 import { Confetti } from "../Confetti";
 import { CoverArt } from "../CoverArt";
 import { RateGame } from "../RateGame";
+import { markPlayed } from "@/lib/my-games";
 import { Rux } from "../Rux";
 import { Magnetic } from "../Magnetic";
 import { PlayerChip } from "../game-ui";
@@ -95,6 +96,7 @@ export function LocalPlay({ gameId }: { gameId: string }) {
         new LocalEngine({ def: g.def, me: localMe(), bots: prefs.bots, settings: prefs.settings, persistMemory: true }),
       );
       feedback("start");
+      markPlayed(gameId);
       window.scrollTo({ top: 0 });
     } catch {
       setLoadError(true);

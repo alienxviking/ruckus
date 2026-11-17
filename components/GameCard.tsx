@@ -1,6 +1,8 @@
 "use client";
 
+import { useSyncExternalStore } from "react";
 import { CATEGORY_LABEL, type GameMeta } from "@/games/catalog";
+import { readMyGames, serverMyGames, subscribeMyGames } from "@/lib/my-games";
 import { CoverArt } from "./CoverArt";
 
 /** A game as a sticker: its cover art up top, then name, a line, and who it's for. */
@@ -24,6 +26,7 @@ export function GameCard({
   const players =
     game.minPlayers === game.maxPlayers ? `${game.minPlayers}` : `${game.minPlayers}–${game.maxPlayers}`;
   const kind = game.call ? "On a call" : game.teams ? "Teams" : CATEGORY_LABEL[game.category];
+  const fav = useSyncExternalStore(subscribeMyGames, readMyGames, serverMyGames).favs.includes(game.id);
 
   const body = (
     <>
@@ -35,6 +38,11 @@ export function GameCard({
         <span className="sr-only">{game.name}: </span>
         {!compact && <span className="line-clamp-2 block text-sm leading-snug text-muted">{game.tagline}</span>}
         <span className={`flex flex-wrap items-center gap-1.5 text-xs ${compact ? "" : "mt-2"}`}>
+          {fav && (
+            <span aria-label="favourite" className="text-sm leading-none text-pink">
+              ♥
+            </span>
+          )}
           {game.isNew && <span className="gc-new marker">new!</span>}
           <span className="gc-chip">
             <b>{players}</b> players

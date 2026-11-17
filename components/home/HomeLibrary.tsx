@@ -1,9 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { readMyGames, serverMyGames, subscribeMyGames, toggleFav } from "@/lib/my-games";
 import { Bot, Dices, Users, X } from "lucide-react";
-import { CATALOG, CATEGORY_LABEL, type GameMeta } from "@/games/catalog";
+import { CATALOG, CATALOG_BY_ID, CATEGORY_LABEL, type GameMeta } from "@/games/catalog";
 import { useCreateRoom } from "@/lib/useCreateRoom";
 import { GameBrowser } from "../GameBrowser";
 import { CoverArt } from "../CoverArt";
@@ -156,7 +157,23 @@ const ROWS: { title: string; note: string; tilt: string; color: string; test: (g
   { title: "Brain burners", note: "use that brain", tilt: "-1deg", color: "var(--color-blue)", test: (g) => g.category === "brain" },
 ];
 
-function Row({ title, note, tilt, color, games, onPick }: { title: string; note: string; tilt: string; color: string; games: GameMeta[]; onPick: (g: GameMeta) => void }) {
+function Row({
+  title,
+  note,
+  tilt,
+  color,
+  games,
+  onPick,
+  max = 4,
+}: {
+  title: string;
+  note: string;
+  tilt: string;
+  color: string;
+  games: GameMeta[];
+  onPick: (g: GameMeta) => void;
+  max?: number;
+}) {
   return (
     <section aria-label={title}>
       <div className="mb-3 flex flex-wrap items-baseline gap-x-3 gap-y-1">
@@ -170,7 +187,7 @@ function Row({ title, note, tilt, color, games, onPick }: { title: string; note:
       </div>
       {/* Phones: swipe sideways. Laptops: a tidy row. */}
       <div className="-mx-4 flex snap-x snap-mandatory gap-3 overflow-x-auto px-4 pb-3 [scrollbar-width:none] sm:mx-0 sm:grid sm:grid-cols-2 sm:overflow-visible sm:px-0 lg:grid-cols-4">
-        {games.slice(0, 4).map((g, i) => (
+        {games.slice(0, max).map((g, i) => (
           <div key={g.id} className="w-[72%] shrink-0 snap-start sm:w-auto">
             <GameCard game={g} index={i} onSelect={() => onPick(g)} />
           </div>
@@ -192,8 +209,24 @@ export function HomeLibrary({ localIds }: { localIds: string[] }) {
   };
   const rows = useMemo(() => ROWS.map((r) => ({ ...r, games: CATALOG.filter(r.test) })), []);
 
+  const mine = useSyncExternalStore(subscribeMyGames, readMyGames, serverMyGames);
+  const yours = [...new Set([...mine.favs, ...mine.recent])].map((id) => CATALOG_BY_ID[id]).filter(Boolean).slice(0, 8);
+
   return (
     <>
+      {yours.length > 0 && (
+        <div className="mb-12">
+          <Row
+            title="Your games"
+            note={mine.favs.length ? "favourites first, then recently played" : "played recently"}
+            tilt="-1.5deg"
+            color="var(--color-pink)"
+            games={yours}
+            onPick={setPicked}
+            max={8}
+          />
+        </div>
+      )}
       <Picker onPick={setPicked} />
       <div className="mt-14 space-y-10">
         {rows.map((r) => (
@@ -234,6 +267,7 @@ function PlaySheet({ game, local, onClose }: { game: GameMeta; local: boolean; o
   }, [onClose]);
 
   const solo = game.minPlayers <= 1;
+  const fav = useSyncExternalStore(subscribeMyGames, readMyGames, serverMyGames).favs.includes(game.id);
   const players = game.minPlayers === game.maxPlayers ? `${game.minPlayers}` : `${game.minPlayers}–${game.maxPlayers}`;
   const kind = game.call ? "On a call" : game.teams ? "Teams" : CATEGORY_LABEL[game.category];
   return (
@@ -261,6 +295,17 @@ function PlaySheet({ game, local, onClose }: { game: GameMeta; local: boolean; o
       >
         <div className="relative">
           <CoverArt game={game} className="border-b-[3px] border-paper [aspect-ratio:16/7]" />
+          <button
+            className={`absolute top-3 right-14 grid size-9 place-items-center rounded-full border-2 border-ink text-lg shadow-[2px_3px_0_#000] transition-transform active:scale-90 ${
+              fav ? "bg-pink text-ink" : "bg-paper text-ink"
+            }`}
+            aria-label={fav ? "Remove from favourites" : "Add to favourites"}
+            aria-pressed={fav}
+            title={fav ? "Remove from favourites" : "Add to favourites"}
+            onClick={() => toggleFav(game.id)}
+          >
+            {fav ? "♥" : "♡"}
+          </button>
           <button
             className="absolute top-3 right-3 grid size-9 place-items-center rounded-full border-2 border-ink bg-paper text-ink shadow-[2px_3px_0_#000] transition-transform hover:rotate-90"
             aria-label="Close"
