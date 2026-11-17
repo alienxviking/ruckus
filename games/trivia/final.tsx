@@ -193,34 +193,53 @@ export function FinalScreen({
 
       {recap.length > 0 && (
         <details className="card group">
-          <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-2 rounded-[1.1rem] px-4 py-2.5 font-semibold [&::-webkit-details-marker]:hidden">
-            <span>
-              <span aria-hidden>📋</span> Answers recap
+          <summary className="flex min-h-12 cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 [&::-webkit-details-marker]:hidden">
+            <span className="flex items-baseline gap-2">
+              <span className="font-hero text-lg font-extrabold">Answers</span>
+              <span className="marker text-base text-muted">how did you do?</span>
             </span>
-            <span className="flex items-center gap-2 text-xs font-normal text-muted">
-              {mine && `you got ${mine.correct}/${view.asked}`}
-              <span aria-hidden className="transition-transform group-open:rotate-180">
+            <span className="flex items-center gap-2">
+              {mine && (
+                <span className="rounded-full border-2 border-ink bg-brand-2 px-2.5 py-0.5 text-xs font-extrabold text-ink">
+                  {mine.correct}/{view.asked} right
+                </span>
+              )}
+              <span aria-hidden className="text-muted transition-transform group-open:rotate-180">
                 ▾
               </span>
             </span>
           </summary>
-          <ol className="flex flex-col gap-2 px-3 pb-3">
+          <ol className="grid gap-2 px-3 pb-3 md:grid-cols-2">
             {recap.map((r, i) => {
               const got = r.correct.includes(me);
+              const edge = !mine ? "var(--color-line)" : got ? "var(--color-volt)" : "var(--color-pink)";
               return (
-                <li key={i} className="rounded-xl bg-panel-2 p-2.5 text-sm">
-                  <div className="flex gap-2">
-                    <span className="w-5 shrink-0 text-right font-mono text-xs leading-5 text-muted">{i + 1}</span>
-                    <span className="min-w-0">
+                <li
+                  key={i}
+                  className="flex flex-col gap-2 rounded-xl border-2 border-l-[5px] bg-panel-2/70 p-3 text-sm"
+                  style={{ borderColor: "var(--color-line)", borderLeftColor: edge }}
+                >
+                  <div className="flex items-start gap-2.5">
+                    <span className="grid size-6 shrink-0 place-items-center rounded-full bg-ink text-[11px] font-extrabold text-muted">
+                      {i + 1}
+                    </span>
+                    <span className="min-w-0 flex-1 leading-snug">
                       <span aria-hidden>{CATEGORY_EMOJI[r.cat]} </span>
                       {r.text}
                     </span>
+                    {mine && (
+                      <span
+                        aria-label={got ? "you got it" : "you missed it"}
+                        className={`grid size-6 shrink-0 place-items-center rounded-full border-2 border-ink text-xs font-extrabold text-ink ${got ? "bg-brand-2" : "bg-pink"}`}
+                      >
+                        {got ? "✓" : "✗"}
+                      </span>
+                    )}
                   </div>
-                  <div className="mt-1 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 pl-7">
-                    <span className="font-semibold text-green-300">✓ {r.answer}</span>
-                    <span className="text-xs text-muted">
+                  <div className="flex flex-wrap items-center justify-between gap-2 pl-8">
+                    <span className="rounded-lg bg-brand-2/15 px-2 py-0.5 font-bold text-brand-2">{r.answer}</span>
+                    <span className="text-xs font-semibold text-muted">
                       {r.correct.length}/{view.players.length} got it
-                      {mine && (got ? " · you ✓" : " · you ✗")}
                     </span>
                   </div>
                 </li>

@@ -4,7 +4,7 @@ import type { GameMeta } from "../catalog";
 export const meta: GameMeta = {
   "id": "groupup",
   "name": "Group Up",
-  "tagline": "Sixteen words. Four secret groups. Find them.",
+  "tagline": "Sixteen words. Four secret groups. Don't fall for the decoys.",
   "category": "brain",
   "minPlayers": 1,
   "maxPlayers": 12,
@@ -13,8 +13,8 @@ export const meta: GameMeta = {
   "accent": "#e879f9",
   "how": [
     "Sixteen words hide four groups of four that share something.",
-    "Pick four you think belong together and submit. Four wrong guesses and you're out.",
-    "Find all four groups with the fewest mistakes. Solo, or race friends."
+    "Pick four you think belong together and submit. Four wrong guesses and the puzzle's over.",
+    "Find every group with the fewest mistakes. Solo, or race friends on the same words."
   ],
   "original": true,
   "isNew": true

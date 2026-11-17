@@ -633,7 +633,7 @@ function ScoringCard({ view }: { view: NineboxView }) {
           Not solved: up to <b className="text-text">{PARTIAL_POINTS}</b> for cells filled.
         </li>
       </ul>
-      <p className="marker mt-2 text-base text-sun">notes lagao, tension mat lo</p>
+      <p className="marker mt-2 text-base text-sun">use notes, no stress</p>
     </aside>
   );
 }

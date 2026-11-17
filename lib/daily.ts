@@ -7,7 +7,7 @@ import { CATALOG_BY_ID } from "@/games/catalog";
  * Games the daily challenge picks from (3 a day). Edit freely: solo games only (they run
  * with no bots), and ids that aren't in the catalog are ignored.
  */
-export const DAILY_GAMES = ["trivia", "blitz", "minerush", "ladder", "stack", "pairs"];
+export const DAILY_GAMES = ["trivia", "blitz", "minerush", "ladder", "stack", "pairs", "codeword", "wordwheel", "ninebox", "groupup"];
 export const DAILY_COUNT = 3;
 
 /** Day #1 of the daily challenge (UTC). */
