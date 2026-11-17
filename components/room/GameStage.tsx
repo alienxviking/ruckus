@@ -2,16 +2,18 @@
 
 import { CATALOG_BY_ID } from "@/games/catalog";
 import { GAME_CLIENTS } from "@/games/client-registry";
-import type { Player, RoomView } from "@/shared/types";
+import { MAX_PAUSES, type Player, type RoomView } from "@/shared/types";
 import type { useRoom } from "@/lib/useRoom";
 import { Trophy } from "lucide-react";
 import { PlayerChip, useSecondsLeft } from "../game-ui";
 import { QuickPlaySwitch } from "./Lobby";
-import { HowToPlay } from "./HowToPlay";
+import { HowToPlay, markRulesSeen } from "./HowToPlay";
 import { GameBadge } from "../GameBadge";
 import { Magnetic } from "../Magnetic";
 import { Confetti } from "../Confetti";
-import { Component, useMemo, useState, type ReactNode } from "react";
+import { Component, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { ReactionBar, ReactionLayer } from "./Reactions";
+import { PauseOverlay } from "./PauseOverlay";
 import dynamic from "next/dynamic";
 
 // The animated confirm dialog is fetched on first hover/focus of "End game".
@@ -45,6 +47,50 @@ export function GameStage({
   const [confirming, setConfirming] = useState(false);
   const [confirmMounted, setConfirmMounted] = useState(false);
 
+  // The game clock: server time minus the time spent paused, standing still during a pause.
+  // Games get it as `serverNow`, so their countdowns freeze and pick up where they were.
+  const pauseRef = useRef({ pause: room.pause, pausedMs: room.pausedMs });
+  useLayoutEffect(() => {
+    pauseRef.current = { pause: room.pause, pausedMs: room.pausedMs };
+  }, [room.pause, room.pausedMs]);
+  const { serverNow, act, send } = r;
+  const gameNow = useCallback(() => {
+    const { pause, pausedMs } = pauseRef.current;
+    return (pause ? pause.at : serverNow()) - pausedMs;
+  }, [serverNow]);
+  // Moves made while frozen would be dropped by the server anyway.
+  const gameAct = useCallback((a: unknown) => {
+    if (!pauseRef.current.pause) act(a);
+  }, [act]);
+
+  // Reading the rules mid-game pauses it for everyone (a few times per game, each up to 45 s).
+  const live = isPlayer && !room.result;
+  const pausesLeft = MAX_PAUSES - (room.pauseUses[me] ?? 0);
+  const iPaused = !!room.pause?.by.includes(me);
+  const holding = useRef(false);
+  const onRulesOpen = (open: boolean) => {
+    if (open && live && pausesLeft > 0) {
+      holding.current = true;
+      send({ t: "pause", on: true });
+    } else if (!open && holding.current) {
+      holding.current = false;
+      send({ t: "pause", on: false });
+    }
+  };
+  const rulesNote = !live
+    ? undefined
+    : iPaused || (pausesLeft > 0 && !room.pause)
+      ? "The game is paused for everyone while you read."
+      : room.pause
+        ? "The game is paused."
+        : "You've used your pauses for this game, so it keeps going while you read.";
+
+  // Finishing a game counts as having learnt it (no more glowing rules button).
+  const finished = !!room.result;
+  useEffect(() => {
+    if (finished) markRulesSeen(room.gameId);
+  }, [finished, room.gameId]);
+
   return (
     <div className="flex flex-col gap-3">
       <div className="flex items-center justify-between gap-2">
@@ -56,7 +102,7 @@ export function GameStage({
           )}
         </h1>
         <div className="flex shrink-0 items-center gap-2">
-          <HowToPlay gameId={room.gameId} compact />
+          <HowToPlay gameId={room.gameId} compact onOpenChange={onRulesOpen} note={rulesNote} />
           {isHost && !room.result && (
             <button
               className="btn px-3 py-1.5 text-sm"
@@ -84,11 +130,16 @@ export function GameStage({
         </div>
       </div>
 
+      <ReactionBar send={send} />
       {room.result && <ResultBanner room={room} byId={byId} me={me} isHost={isHost} r={r} accent={meta?.accent} />}
       {room.result && (room.next || (isHost && room.autoNext)) && <UpNext room={room} isHost={isHost} r={r} />}
       {!isPlayer && !room.result && <SpectatorNote full={!!meta && room.participants.length >= meta.maxPlayers} max={meta?.maxPlayers} />}
 
-      <div className="min-h-[60vh]">
+      <ReactionLayer onReact={r.onReact} byId={byId} />
+      <div className="relative min-h-[60vh]">
+        {room.pause && !room.result && (
+          <PauseOverlay pause={room.pause} byId={byId} me={me} isHost={isHost} serverNow={serverNow} send={send} />
+        )}
         {GameClient ? (
           <GameErrorBoundary key={room.gameSeq}>
             <GameClient
@@ -98,8 +149,8 @@ export function GameStage({
               byId={byId}
               isPlayer={isPlayer}
               isHost={isHost}
-              act={r.act}
-              serverNow={r.serverNow}
+              act={gameAct}
+              serverNow={gameNow}
               rtt={r.ping.get}
               onEvent={r.onEvent}
               accent={meta?.accent ?? "#c6f432"}

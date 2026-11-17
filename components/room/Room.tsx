@@ -150,7 +150,7 @@ export function Room({
         <div className="grid flex-1 gap-4 pb-24 lg:pb-4 lg:grid-cols-[minmax(0,1fr)_300px]">
           <section className="min-w-0">
             {room.phase === "lobby" ? (
-              <Lobby room={room} isHost={isHost} send={r.send} />
+              <Lobby room={room} isHost={isHost} send={r.send} words={r.words} byId={byId} />
             ) : (
               <div className="animate-rise">
                 <GameStage
@@ -180,7 +180,7 @@ export function Room({
           </section>
 
           <aside className="flex min-w-0 flex-col gap-4">
-            <PlayerList room={room} me={r.me} />
+            <PlayerList room={room} me={r.me} isHost={isHost} send={r.send} />
             <div className="hidden lg:block">
               <Chat room={room} byId={byId} me={r.me} send={r.send} />
             </div>

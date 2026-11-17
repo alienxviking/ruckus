@@ -92,6 +92,9 @@ export function useRoom(code: string, identity: Identity) {
   // This tab's own socket id ("<playerId>.<random>"): sockets must never share an id on the server.
   const [socketId] = useState(() => `${identity.id}.${Math.random().toString(36).slice(2, 10)}`);
   const listeners = useRef(new Set<(e: unknown) => void>());
+  const reactListeners = useRef(new Set<(r: { from: string; e: number }) => void>());
+  /** Host only: the custom word lists of the picked game. */
+  const [words, setWords] = useState<{ gameId: string; words: Record<string, string[]> } | null>(null);
   const identityRef = useRef(identity);
   const pingTimers = useRef<number[]>([]);
 
@@ -158,6 +161,12 @@ export function useRoom(code: string, identity: Identity) {
         case "ev":
           for (const fn of listeners.current) fn(msg.e);
           break;
+        case "react":
+          for (const fn of reactListeners.current) fn({ from: msg.from, e: msg.e });
+          break;
+        case "words":
+          setWords({ gameId: msg.gameId, words: msg.words });
+          break;
         case "err":
           setError(msg.msg);
           setTimeout(() => setError((cur) => (cur === msg.msg ? null : cur)), 4000);
@@ -214,8 +223,15 @@ export function useRoom(code: string, identity: Identity) {
     };
   }, []);
 
+  const onReact = useCallback((fn: (r: { from: string; e: number }) => void) => {
+    reactListeners.current.add(fn);
+    return () => {
+      reactListeners.current.delete(fn);
+    };
+  }, []);
+
   return useMemo(
-    () => ({ room, view, status, error, rejected, send, act, serverNow, onEvent, me: identity.id, ping: ping as PingStore }),
-    [room, view, status, error, rejected, send, act, serverNow, onEvent, identity.id, ping],
+    () => ({ room, view, status, error, rejected, send, act, serverNow, onEvent, onReact, words, me: identity.id, ping: ping as PingStore }),
+    [room, view, status, error, rejected, send, act, serverNow, onEvent, onReact, words, identity.id, ping],
   );
 }

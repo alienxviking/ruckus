@@ -20,10 +20,12 @@ export default function RulesDialog({
   open,
   onOpenChange,
   gameId,
+  note,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   gameId: string;
+  note?: string;
 }) {
   const meta = CATALOG_BY_ID[gameId];
   const [loaded, setLoaded] = useState<{ id: string; rules: GameRules | null } | null>(null);
@@ -65,6 +67,11 @@ export default function RulesDialog({
           </div>
 
           <div className="overflow-y-auto overscroll-contain p-5 pt-4">
+            {note && (
+              <p className="mb-3 flex items-center gap-2 rounded-lg border border-line bg-ink/50 px-3 py-2 text-xs text-muted">
+                <span aria-hidden>⏸️</span> {note}
+              </p>
+            )}
             {meta && (
               <p className="font-mono text-[11px] text-muted">
                 {meta.minPlayers === meta.maxPlayers ? meta.minPlayers : `${meta.minPlayers}–${meta.maxPlayers}`} players ·

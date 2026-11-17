@@ -5,8 +5,12 @@ import {
   toAvatarId,
   MAX_NAME,
   MAX_PLAYERS,
+  MAX_PAUSES,
+  PAUSE_MAX_MS,
   PLAYER_COLORS,
+  REACTIONS,
   type ChatMsg,
+  type HistoryEntry,
   type ClientMsg,
   type GameResult,
   type Player,
@@ -15,6 +19,8 @@ import {
 } from "../shared/types";
 import { CATALOG, CATALOG_BY_ID } from "../games/catalog";
 import { GAME_DEFS } from "../games/server-registry";
+import { GAME_CONFIG } from "../games/config";
+import { validSetting, type Settings } from "../shared/settings";
 import { clientIp, isPublicRoomId, Limiter, LIMITS_ROOM, Stats, type LimitKind, type RoomReport } from "./limits";
 
 const HOST_HANDOFF_MS = 8_000; // host must be gone this long before someone else takes over
@@ -30,6 +36,12 @@ const MSG_BURST = 120;
 const MAX_SOCKETS = 30;
 /** A socket that keeps flooding past the rate limit is dropped. */
 const MAX_DROPPED = 200;
+const REACT_BURST = 3; // reactions per player in a burst...
+const REACT_REFILL_MS = 1_500; // ...then one more every 1.5 s
+const ROOM_REACTS_PER_SEC = 12; // and the whole room can't go past this
+const HISTORY_LIMIT = 40;
+const BOT_NAMES = ["Bolt", "Pixel", "Byte", "Chip", "Sprocket", "Widget", "Gizmo", "Servo", "Diode", "Turbo", "Nano"];
+const BOT_AVATARS = ["robot", "robot+cap", "robot+shades", "alien", "robot+headphones", "alien+beanie"];
 
 const CORS = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Methods": "GET, POST, OPTIONS" };
 const json = (body: unknown, status = 200) =>
@@ -124,6 +136,21 @@ export class RuckusRoom extends Server<Env> {
   recent: string[] = [];
   /** Who played the last game (a full game seats those who sat out first). */
   lastPlayed: string[] = [];
+  /** Host tools: nobody new can join a locked room; removed players can't come back. */
+  locked = false;
+  banned = new Set<string>();
+  /** Host settings per game id. */
+  settings: Record<string, Settings> = {};
+  /** Rule-reading pause: who holds it (until when), since when, and total paused time. */
+  pauseHolders = new Map<string, number>();
+  pauseAt: number | null = null;
+  pausedMs = 0;
+  pauseUses: Record<string, number> = {};
+  /** Reaction rate limits: per-player token buckets, and the room's last second. */
+  reactBuckets = new Map<string, { tokens: number; at: number }>();
+  roomReacts: number[] = [];
+  history: HistoryEntry[] = [];
+  botSeq = 0;
 
 
   // ---------- connection lifecycle ----------
@@ -181,9 +208,10 @@ export class RuckusRoom extends Server<Env> {
     this.buckets.delete(conn.id);
     if (this.sockets.size === 0) this.emptySince = Date.now();
     const p = this.players.get(pid(conn));
-    if (!p) return;
+    if (!p || this.banned.has(p.id)) return; // removed by the host: already handled
     p.connected = false;
-    this.disconnectedAt.set(p.id, Date.now());
+    if (!this.banned.has(p.id)) this.disconnectedAt.set(p.id, Date.now());
+    if (this.pauseHolders.delete(p.id) && !this.pauseHolders.size) this.resume(false);
     if (this.game && this.participants.includes(p.id)) {
       try {
         this.game.def.playerLeft?.(this.game.state, p.id, this.game.ctx);
@@ -236,6 +264,20 @@ export class RuckusRoom extends Server<Env> {
         return this.handleAuto(player, msg.on);
       case "act":
         return this.handleAct(player, msg.a);
+      case "pause":
+        return this.handlePause(player, msg.on, msg.all);
+      case "react":
+        return this.handleReact(player, msg.e);
+      case "kick":
+        return this.handleKick(player, msg.id);
+      case "host":
+        return this.handleHostChange(player, msg.id);
+      case "lock":
+        return this.handleLock(player, msg.on);
+      case "setting":
+        return this.handleSetting(player, msg.gameId, msg.key, msg.value);
+      case "bot":
+        return this.handleBot(player, msg.add);
     }
   }
 
@@ -259,7 +301,9 @@ export class RuckusRoom extends Server<Env> {
     if (!this.created && this.players.size === 0) {
       return this.reject(conn, `There's no room with the code ${this.name.toUpperCase()}. Check the code, or create a new room.`);
     }
+    if (this.banned.has(pid(conn))) return this.reject(conn, "The host removed you from this room.");
     const existing = this.players.get(pid(conn));
+    if (!existing && this.locked) return this.reject(conn, "This room is locked by the host.");
     if (!existing && this.players.size >= MAX_PLAYERS) {
       return this.reject(conn, `This room is full (${MAX_PLAYERS} players).`);
     }
@@ -291,6 +335,7 @@ export class RuckusRoom extends Server<Env> {
 
     if (!this.hostId || !this.players.get(this.hostId)) this.hostId = pid(conn);
     this.broadcastRoom();
+    if (this.hostId === pid(conn)) this.sendWords(conn);
     // The (re)joining socket gets a full sync: the chat history and the current game view.
     this.sendTo(conn, { t: "room", room: this.roomView(true), now: Date.now() });
     if (this.game) {
@@ -317,6 +362,7 @@ export class RuckusRoom extends Server<Env> {
     if (typeof gameId !== "string" || !CATALOG_BY_ID[gameId] || !GAME_DEFS[gameId]) return;
     this.gameId = gameId;
     this.broadcastRoom();
+    this.sendWords();
   }
 
   handleStart(player: Player, conn: Conn, gameId?: unknown) {
@@ -331,7 +377,8 @@ export class RuckusRoom extends Server<Env> {
     const def = GAME_DEFS[this.gameId];
     if (!meta || !def) return false;
 
-    const ready = [...this.players.values()].filter((p) => p.connected);
+    // Practice bots only take a seat in games that know how to play them.
+    const ready = [...this.players.values()].filter((p) => p.connected && (!p.bot || def.bot));
     if (ready.length < meta.minPlayers) {
       if (conn) this.sendTo(conn, { t: "err", msg: `${meta.name} needs at least ${meta.minPlayers} players.`, now: Date.now() });
       return false;
@@ -343,9 +390,15 @@ export class RuckusRoom extends Server<Env> {
     this.stopGame();
     this.clearNext();
 
+    // Humans before bots when seats are short.
+    ready.sort((a, b) => Number(!!a.bot) - Number(!!b.bot));
     this.participants = ready.slice(0, meta.maxPlayers).map((p) => p.id);
     this.lastPlayed = this.participants;
     this.result = null;
+    this.pauseAt = null;
+    this.pauseHolders.clear();
+    this.pausedMs = 0;
+    this.pauseUses = {};
 
     const ctx = this.makeCtx();
     let state: unknown;
@@ -368,11 +421,24 @@ export class RuckusRoom extends Server<Env> {
     if (def.tick) {
       active.timer = setInterval(() => {
         if (this.game !== active) return;
+        if (this.pauseAt !== null) return; // frozen while someone reads the rules
         let changed: boolean | void = false;
         try {
           changed = def.tick!(active.state, ctx);
         } catch (err) {
           console.error(`[${def.id}] tick failed`, err);
+        }
+        if (def.bot && !this.result) {
+          for (const id of this.participants) {
+            const p = this.players.get(id);
+            if (!p?.bot || !p.connected) continue;
+            try {
+              const a = def.bot(active.state, id, ctx);
+              if (a != null && def.action(active.state, id, a, ctx) !== false) changed = true;
+            } catch (err) {
+              console.error(`[${def.id}] bot failed`, err);
+            }
+          }
         }
         if (changed) this.broadcastGame();
       }, def.tickMs ?? 250);
@@ -443,6 +509,7 @@ export class RuckusRoom extends Server<Env> {
     if (!game) return;
     const playing = this.participants.includes(player.id);
     if (!playing && !game.def.spectatorAction) return;
+    if (playing && this.pauseAt !== null) return; // the game is frozen
     let changed: boolean | void;
     try {
       changed = playing
@@ -459,7 +526,9 @@ export class RuckusRoom extends Server<Env> {
 
   makeCtx(): GameCtx {
     const ctx: GameCtx = {
-      now: () => Date.now(),
+      // The game clock stands still while paused, and skips the time spent paused.
+      now: () => (this.pauseAt ?? Date.now()) - this.pausedMs,
+      settings: { ...(this.settings[this.gameId] ?? {}) },
       players: this.participants.map((id) => ({ ...this.players.get(id)! })),
       player: (id) => this.players.get(id),
       random: Math.random,
@@ -475,7 +544,12 @@ export class RuckusRoom extends Server<Env> {
       end: (result) => {
         if (this.result || !this.game || this.game.ctx !== ctx) return;
         this.result = result;
+        if (this.pauseAt !== null) this.resume(false);
         for (const id of result.winners) this.wins[id] = (this.wins[id] ?? 0) + 1;
+        this.history = [
+          ...this.history,
+          { gameId: this.gameId, winners: result.winners, headline: result.headline, players: [...this.participants], at: Date.now() },
+        ].slice(-HISTORY_LIMIT);
         this.system(`🏆 ${result.headline}`);
         if (this.autoNext) this.scheduleNext();
         // Keep ticking briefly so final animations settle, then stop.
@@ -555,7 +629,196 @@ export class RuckusRoom extends Server<Env> {
       gameSeq: this.gameSeq,
       autoNext: this.autoNext,
       next: this.next,
+      locked: this.locked,
+      ...this.settingsView(),
+      pause:
+        this.pauseAt === null
+          ? null
+          : { by: [...this.pauseHolders.keys()], at: this.pauseAt, until: Math.max(this.pauseAt, ...this.pauseHolders.values()) },
+      pausedMs: this.pausedMs,
+      pauseUses: this.pauseUses,
+      history: this.history,
     };
+  }
+
+  // ---------- pause (someone reading the rules) ----------
+
+  handlePause(player: Player, on: unknown, all?: unknown) {
+    if (!this.game || this.result || typeof on !== "boolean") return;
+    const now = Date.now();
+    if (on) {
+      if (!this.participants.includes(player.id) || this.pauseHolders.has(player.id)) return;
+      const used = this.pauseUses[player.id] ?? 0;
+      if (used >= MAX_PAUSES) return;
+      this.pauseUses[player.id] = used + 1;
+      this.pauseHolders.set(player.id, now + PAUSE_MAX_MS);
+      if (this.pauseAt === null) {
+        this.pauseAt = now;
+        this.system(`⏸️ ${player.name} paused the game to read the rules`);
+      }
+      this.broadcastRoom();
+      return;
+    }
+    if (all === true && player.id === this.hostId) this.pauseHolders.clear();
+    else if (!this.pauseHolders.delete(player.id)) return;
+    if (!this.pauseHolders.size) this.resume();
+    else this.broadcastRoom();
+  }
+
+  /** Unfreeze the game clock (the paused stretch is skipped, so timers carry on where they were). */
+  resume(announce = true) {
+    if (this.pauseAt === null) return;
+    this.pausedMs += Date.now() - this.pauseAt;
+    this.pauseAt = null;
+    this.pauseHolders.clear();
+    if (announce) this.system("▶️ Back to the game");
+    this.broadcastRoom();
+    this.broadcastGame();
+  }
+
+  // ---------- reactions ----------
+
+  handleReact(player: Player, e: unknown) {
+    if (typeof e !== "number" || !Number.isInteger(e) || e < 0 || e >= REACTIONS.length) return;
+    const now = Date.now();
+    const b = this.reactBuckets.get(player.id) ?? { tokens: REACT_BURST, at: now };
+    b.tokens = Math.min(REACT_BURST, b.tokens + (now - b.at) / REACT_REFILL_MS);
+    b.at = now;
+    this.reactBuckets.set(player.id, b);
+    if (b.tokens < 1) return;
+    this.roomReacts = this.roomReacts.filter((t) => now - t < 1000);
+    if (this.roomReacts.length >= ROOM_REACTS_PER_SEC) return;
+    b.tokens -= 1;
+    this.roomReacts.push(now);
+    const msg = JSON.stringify({ t: "react", from: player.id, e, now } satisfies ServerMsg);
+    for (const c of this.verifiedConnections()) c.send(msg);
+  }
+
+  // ---------- host tools ----------
+
+  handleKick(host: Player, id: unknown) {
+    if (host.id !== this.hostId || typeof id !== "string" || id === host.id) return;
+    const target = this.players.get(id);
+    if (!target) return;
+    if (target.bot) return this.removeBot(target);
+    this.banned.add(id);
+    this.keys.delete(id);
+    this.pauseHolders.delete(id);
+    this.system(`🚫 ${target.name} was removed by the host`, target.avatar);
+    for (const c of this.getConnections<ConnState>()) {
+      if (pid(c) !== id) continue;
+      this.sendTo(c, { t: "rejected", msg: "The host removed you from this room.", now: Date.now() });
+      c.close(4003, "removed");
+    }
+    if (target.connected) {
+      target.connected = false;
+      this.sockets.delete(id);
+      if (this.game && this.participants.includes(id)) {
+        try {
+          this.game.def.playerLeft?.(this.game.state, id, this.game.ctx);
+        } catch (err) {
+          console.error(`[${this.game.def.id}] playerLeft failed`, err);
+        }
+        this.broadcastGame();
+      }
+    }
+    // Gone for good: removed from the list as soon as they're not in a running game.
+    this.disconnectedAt.set(id, 0);
+    if (this.pauseAt !== null && !this.pauseHolders.size) this.resume(false);
+    this.pruneDeparted();
+    this.broadcastRoom();
+  }
+
+  handleHostChange(host: Player, id: unknown) {
+    if (host.id !== this.hostId || typeof id !== "string" || id === host.id) return;
+    const target = this.players.get(id);
+    if (!target || target.bot || !target.connected) return;
+    this.hostId = id;
+    this.system(`👑 ${host.name} made ${target.name} the host`);
+    this.broadcastRoom();
+    this.sendWords();
+  }
+
+  handleLock(host: Player, on: unknown) {
+    if (host.id !== this.hostId || typeof on !== "boolean" || on === this.locked) return;
+    this.locked = on;
+    this.system(on ? "🔒 The host locked the room: no new players" : "🔓 The room is open to new players again");
+    this.broadcastRoom();
+  }
+
+  handleSetting(host: Player, gameId: unknown, key: unknown, value: unknown) {
+    if (host.id !== this.hostId || typeof gameId !== "string" || typeof key !== "string") return;
+    const def = GAME_CONFIG[gameId]?.settings?.find((d) => d.key === key);
+    if (!def) return;
+    const v = validSetting(def, value);
+    if (v === undefined) return;
+    const cur = (this.settings[gameId] ??= {});
+    if ((def.kind === "choice" && v === def.default) || (Array.isArray(v) && v.length === 0)) delete cur[key];
+    else cur[key] = v;
+    this.broadcastRoom();
+    if (def.kind === "words") this.sendWords();
+  }
+
+  /** Choice settings of the picked game for everyone; word lists only as counts. */
+  settingsView(): { settings: Record<string, number | string>; wordCounts: Record<string, number> } {
+    const settings: Record<string, number | string> = {};
+    const wordCounts: Record<string, number> = {};
+    for (const [k, v] of Object.entries(this.settings[this.gameId] ?? {})) {
+      if (Array.isArray(v)) wordCounts[k] = v.length;
+      else settings[k] = v;
+    }
+    return { settings, wordCounts };
+  }
+
+  /** The host's own word lists for the picked game (secret from everyone else). */
+  sendWords(only?: Conn) {
+    const defs = GAME_CONFIG[this.gameId]?.settings?.filter((d) => d.kind === "words");
+    if (!defs?.length || !this.hostId) return;
+    const words: Record<string, string[]> = {};
+    for (const d of defs) words[d.key] = (this.settings[this.gameId]?.[d.key] as string[] | undefined) ?? [];
+    const msg: ServerMsg = { t: "words", gameId: this.gameId, words, now: Date.now() };
+    if (only) return this.sendTo(only, msg);
+    for (const c of this.verifiedConnections()) if (pid(c) === this.hostId) this.sendTo(c, msg);
+  }
+
+  handleBot(host: Player, add: unknown) {
+    if (host.id !== this.hostId || typeof add !== "boolean") return;
+    if (!add) {
+      const bots = [...this.players.values()].filter((p) => p.bot && p.connected);
+      const last = bots[bots.length - 1];
+      if (last) this.removeBot(last);
+      return;
+    }
+    if (this.players.size >= MAX_PLAYERS) return;
+    const taken = new Set([...this.players.values()].map((p) => p.name));
+    const n = this.botSeq++;
+    const name = BOT_NAMES.find((x) => !taken.has(x)) ?? `Bot ${n + 1}`;
+    const used = new Set([...this.players.values()].map((p) => p.color));
+    const color = PLAYER_COLORS.find((c) => !used.has(c)) ?? PLAYER_COLORS[n % PLAYER_COLORS.length];
+    const bot: Player = { id: `bot-${n}`, name, color, avatar: BOT_AVATARS[n % BOT_AVATARS.length], connected: true, bot: true };
+    this.players.set(bot.id, bot);
+    this.system(`${name} joined (practice bot)`, bot.avatar);
+    this.broadcastRoom();
+  }
+
+  removeBot(bot: Player) {
+    if (this.game && this.participants.includes(bot.id)) {
+      // Mid-game the bot stops (like a player leaving) and is removed when the game ends.
+      bot.connected = false;
+      try {
+        this.game.def.playerLeft?.(this.game.state, bot.id, this.game.ctx);
+      } catch (err) {
+        console.error(`[${this.game.def.id}] playerLeft failed`, err);
+      }
+      this.banned.add(bot.id);
+      this.disconnectedAt.set(bot.id, 0);
+      this.broadcastGame();
+    } else {
+      this.players.delete(bot.id);
+      delete this.wins[bot.id];
+    }
+    this.system(`${bot.name} left`, bot.avatar);
+    this.broadcastRoom();
   }
 
   // ---------- housekeeping ----------
@@ -574,16 +837,24 @@ export class RuckusRoom extends Server<Env> {
     const host = this.hostId ? this.players.get(this.hostId) : undefined;
     const hostAwayFor = host && !host.connected ? now - (this.disconnectedAt.get(host.id) ?? now) : 0;
     if (!host || hostAwayFor > HOST_HANDOFF_MS) {
-      const next = [...this.players.values()].find((p) => p.connected);
+      const next = [...this.players.values()].find((p) => p.connected && !p.bot);
       if (next && next.id !== this.hostId) {
         this.hostId = next.id;
         this.system(`👑 ${next.name} is now the host`);
+        this.sendWords();
         changed = true;
       }
     }
 
     if (this.pruneDeparted()) changed = true;
-    if (changed) this.broadcastRoom();
+    // Pauses run out on their own.
+    for (const [id, until] of this.pauseHolders) {
+      if (until > now) continue;
+      this.pauseHolders.delete(id);
+      changed = true;
+    }
+    if (this.pauseAt !== null && !this.pauseHolders.size) this.resume();
+    else if (changed) this.broadcastRoom();
 
     // Everyone has been gone a while: stop the game and timers so the room can idle
     // (a room that only ever saw unverified sockets counts as empty too).
@@ -655,14 +926,15 @@ export class RuckusRoom extends Server<Env> {
     const now = Date.now();
     for (const [id, since] of this.disconnectedAt) {
       const inGame = this.game && this.participants.includes(id);
-      if (inGame || now - since < REMOVE_AFTER_MS) continue;
+      const kicked = this.banned.has(id);
+      if (inGame || (!kicked && now - since < REMOVE_AFTER_MS)) continue;
       const p = this.players.get(id);
       this.players.delete(id);
       this.disconnectedAt.delete(id);
       this.keys.delete(id);
       this.chatTimes.delete(id);
       delete this.wins[id];
-      if (p) this.system(`${p.name} left`, p.avatar);
+      if (p && !kicked) this.system(`${p.name} left`, p.avatar);
       removed = true;
     }
     if (removed && this.hostId && !this.players.has(this.hostId)) this.hostId = null;

@@ -1,7 +1,10 @@
 "use client";
 
 import { CATALOG, CATALOG_BY_ID } from "@/games/catalog";
-import type { ClientMsg, RoomView } from "@/shared/types";
+import type { ClientMsg, Player, RoomView } from "@/shared/types";
+import { GAME_CONFIG } from "@/games/config";
+import { GameSettings } from "./GameSettings";
+import { RecapCard } from "./Recap";
 import { GameBadge } from "../GameBadge";
 import { GameBrowser } from "../GameBrowser";
 import { Magnetic } from "../Magnetic";
@@ -12,13 +15,19 @@ export function Lobby({
   room,
   isHost,
   send,
+  words,
 }: {
   room: RoomView;
   isHost: boolean;
   send: (m: ClientMsg) => void;
+  words: { gameId: string; words: Record<string, string[]> } | null;
+  byId?: Record<string, Player>;
 }) {
   const game = CATALOG_BY_ID[room.gameId] ?? CATALOG[0];
-  const online = room.players.filter((p) => p.connected).length;
+  // Practice bots only count for games they can play.
+  const botsPlay = !!GAME_CONFIG[game.id]?.bots;
+  const online = room.players.filter((p) => p.connected && (!p.bot || botsPlay)).length;
+  const humans = room.players.filter((p) => p.connected && !p.bot).length;
   const host = room.players.find((p) => p.id === room.hostId);
   const tooFew = online < game.minPlayers;
   const tooMany = online > game.maxPlayers;
@@ -86,7 +95,9 @@ export function Lobby({
               </Magnetic>
               <p className="text-center font-mono text-[11px] text-muted">
                 {tooFew
-                  ? `Needs ${game.minPlayers}+ players: invite friends!`
+                  ? botsPlay
+                    ? `Needs ${game.minPlayers}+ players: invite friends or add a bot`
+                    : `Needs ${game.minPlayers}+ players: invite friends!`
                   : tooMany
                     ? `First ${game.maxPlayers} play, the rest watch`
                     : `${online} ready · ${game.minPlayers}–${game.maxPlayers} players`}
@@ -106,7 +117,10 @@ export function Lobby({
         </div>
       </div>
 
-      {online < 2 && (
+      <GameSettings room={room} isHost={isHost} send={send} words={words} />
+      <RecapCard room={room} />
+
+      {humans < 2 && (
         <p className="card animate-rise flex items-center gap-3 px-4 py-3 text-sm text-muted">
           <span aria-hidden className="relative flex size-2 shrink-0">
             <span className="absolute inset-0 rounded-full bg-brand-2 motion-safe:animate-ping" />
@@ -114,7 +128,7 @@ export function Lobby({
           </span>
           <span>
           It&apos;s just you so far. Hit <b className="text-text">Invite</b> at the top to copy the room link and send
-          it to friends.
+          it to friends{isHost ? <>, or add a <b className="text-text">practice bot</b> in the players panel</> : null}.
           </span>
         </p>
       )}
