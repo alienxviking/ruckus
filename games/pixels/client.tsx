@@ -10,6 +10,7 @@ import { COLORS, EMBLEM, EMBLEM_CELLS, PERFECT_BONUS, digits, type PixelsEvent }
 import { Board, CanvasStore } from "./board";
 import { HiddenArt, PixelArt, cropBoard, inkOn, painterColors, playerOr } from "./parts";
 import { Avatar } from "@/components/Avatar";
+import { TEAMS, teamOf } from "@/shared/teams";
 
 type Props = GameClientProps<PixelsView, PixelsAction>;
 
@@ -137,7 +138,12 @@ export default function CanvasClash({ view, byId, act, serverNow, onEvent, accen
   }, [choosing]);
 
   const ids = view?.ids;
-  const colors = useMemo(() => (ids ? painterColors(ids, byId) : []), [ids, byId]);
+  const teams = view?.teams ?? null;
+  // Red vs Blue: everyone wears their team colour (chips, flashes, boxes).
+  const colors = useMemo(
+    () => (ids ? (teams ? ids.map((id) => TEAMS[Math.max(0, teamOf(teams, id))].color) : painterColors(ids, byId)) : []),
+    [ids, byId, teams],
+  );
   const players = useMemo(() => (ids ? ids.map((id, i) => ({ ...playerOr(byId, id, i), color: colors[i] })) : []), [ids, byId, colors]);
   const avatars = useMemo(() => players.map((p) => p.avatar), [players]);
   const mineBox = useMemo(() => (live && live.n > 0 ? { x: live.x, y: live.y } : null), [live]);
@@ -151,10 +157,10 @@ export default function CanvasClash({ view, byId, act, serverNow, onEvent, accen
   const here = players.filter((p) => p.connected).length;
 
   let overlay = null;
-  if (phase === "intro") overlay = <IntroCard view={view} serverNow={serverNow} />;
+  if (phase === "intro") overlay = <IntroCard view={view} players={players} serverNow={serverNow} />;
   else if (big && view.mine) overlay = <BigEmblem mine={view.mine} onClose={() => setBigFor(-1)} />;
   else if (view.spots && (phase === "spots" || phase === "reveal" || phase === "final")) {
-    overlay = <SpotBoxes view={view} players={players} />;
+    overlay = <SpotBoxes view={view} players={view.teams ? teamPlayers(view, players) : players} />;
   }
 
   return (
@@ -174,7 +180,7 @@ export default function CanvasClash({ view, byId, act, serverNow, onEvent, accen
         <TimerBar endsAt={view.endsAt} total={view.phaseMs} serverNow={serverNow} color={phase === "paint" ? accent : "var(--color-muted)"} />
       )}
 
-      <ScoreStrip view={view} players={players} ready={ready} />
+      {view.teams ? <TeamStrip view={view} players={players} ready={ready} /> : <ScoreStrip view={view} players={players} ready={ready} />}
 
       {view.abandonAt !== null && phase !== "final" && <AbandonNote at={view.abandonAt} serverNow={serverNow} />}
 
@@ -216,7 +222,7 @@ export default function CanvasClash({ view, byId, act, serverNow, onEvent, accen
         </p>
       )}
 
-      {(phase === "spots" || phase === "reveal") && <Results view={view} players={players} />}
+      {(phase === "spots" || phase === "reveal") && <Results view={view} players={view.teams ? teamPlayers(view, players) : players} />}
 
       {phase === "reveal" && you >= 0 && (
         <button
@@ -236,10 +242,14 @@ export default function CanvasClash({ view, byId, act, serverNow, onEvent, accen
         </button>
       )}
 
-      {phase === "final" && <Standings view={view} players={players} />}
+      {phase === "final" && (view.teams ? <TeamStandings view={view} players={players} /> : <Standings view={view} players={players} />)}
 
       {you < 0 && phase !== "final" && (
-        <Note>👀 You&apos;re watching. Everyone has a secret emblem: the coloured flashes show who is painting where.</Note>
+        <Note>
+          {view.teams
+            ? "👀 You're watching Red vs Blue. Each team shares a secret emblem: the flashes show which team is painting where."
+            : "👀 You're watching. Everyone has a secret emblem: the coloured flashes show who is painting where."}
+        </Note>
       )}
     </div>
   );
@@ -268,7 +278,7 @@ function Status({ view, serverNow }: { view: PixelsView; serverNow: () => number
     case "paint":
       return you >= 0 && mine ? (
         <>
-          Paint your {mine.icon} {mine.name}!
+          Paint {view.teams ? "your team's" : "your"} {mine.icon} {mine.name}!
           <Secs endsAt={view.endsAt} serverNow={serverNow} />
         </>
       ) : (
@@ -286,11 +296,16 @@ function Status({ view, serverNow }: { view: PixelsView; serverNow: () => number
         <>PERFECT copy! +{view.pts[you]} 🎉</>
       ) : (
         <>
-          Your best copy: {n}/{EMBLEM_CELLS} → +{view.pts[you]}
+          {view.teams ? "Team's" : "Your"} best copy: {n}/{EMBLEM_CELLS} → +{view.pts[you]}
         </>
       );
     }
     case "final":
+      if (view.teams && view.endReason !== "abandoned" && view.winners?.length) {
+        const [a, b] = teamTotals(view);
+        if (a !== b) return <>{TEAMS[a > b ? 0 : 1].name} team wins! 🎨</>;
+        return <>Red and Blue tie! 🎨</>;
+      }
       return view.endReason === "abandoned" ? <>Game over: painters left</> : <>Game over! 🎨</>;
   }
 }
@@ -345,7 +360,7 @@ function MineBadge({ view, live, open, onToggle }: { view: PixelsView; live: num
         <span className="block truncate text-sm font-bold">
           <span aria-hidden>{mine.icon} </span>
           {mine.name}
-          {secret && <span className="hidden font-normal text-muted @sm:inline"> · secret</span>}
+          {secret && <span className="hidden font-normal text-muted @sm:inline"> · {view.teams ? "team secret" : "secret"}</span>}
         </span>
         {painting && live !== null ? (
           <span className="flex items-center gap-1.5 text-xs whitespace-nowrap text-muted" aria-live="off">
@@ -371,16 +386,17 @@ function MineBadge({ view, live, open, onToggle }: { view: PixelsView; live: num
   );
 }
 
-function IntroCard({ view, serverNow }: { view: PixelsView; serverNow: () => number }) {
+function IntroCard({ view, players, serverNow }: { view: PixelsView; players: Player[]; serverNow: () => number }) {
   const s = useSecondsLeft(view.endsAt, serverNow);
   const mine = view.mine;
   return (
     <div className="absolute inset-0 grid place-items-center bg-ink/40 p-2">
       <div key={view.round} className="pix-in card flex max-w-full flex-col items-center gap-1.5 px-4 py-3 text-center @md:gap-2 @md:px-6 @md:py-4">
+        {view.teams && <TeamIntro view={view} players={players} />}
         {mine ? (
           <>
             <span className="label">
-              Round {view.round} of {view.rounds} · your secret emblem
+              Round {view.round} of {view.rounds} · {view.teams ? "team emblem" : "your secret emblem"}
             </span>
             <span className="w-24 @md:w-36">
               <PixelArt art={mine.art} size="100%" digits label={`${mine.name} emblem`} className="pix-pop" />
@@ -388,7 +404,9 @@ function IntroCard({ view, serverNow }: { view: PixelsView; serverNow: () => num
             <span className="font-display text-lg font-extrabold @md:text-2xl">
               {mine.icon} {mine.name}
             </span>
-            <span className="hidden text-sm text-muted @sm:block">Paint it anywhere. Guard it. Wreck everyone else&apos;s.</span>
+            <span className="hidden text-sm text-muted @sm:block">
+              {view.teams ? "Paint it together. Guard it. Wreck the other team's." : "Paint it anywhere. Guard it. Wreck everyone else's."}
+            </span>
           </>
         ) : (
           <>
@@ -396,7 +414,7 @@ function IntroCard({ view, serverNow }: { view: PixelsView; serverNow: () => num
               Round {view.round} of {view.rounds}
             </span>
             <span className="text-4xl">🤫</span>
-            <span className="font-display text-lg font-extrabold @md:text-2xl">Secret emblems handed out</span>
+            <span className="font-display text-lg font-extrabold @md:text-2xl">{view.teams ? "One secret emblem per team" : "Secret emblems handed out"}</span>
             <span className="text-sm text-muted">Watch who paints where…</span>
           </>
         )}
@@ -469,7 +487,7 @@ function Palette({ color, mineArt, onPick }: { color: number; mineArt: string | 
 
 // ---------- reveal ----------
 
-function SpotBoxes({ view, players }: { view: PixelsView; players: Player[] }) {
+function SpotBoxes({ view, players }: { view: PixelsView; players: (Player | undefined)[] }) {
   const spots = view.spots!;
   const stack = new Map<string, number>();
   return (
@@ -518,13 +536,13 @@ function SpotBoxes({ view, players }: { view: PixelsView; players: Player[] }) {
   );
 }
 
-function Results({ view, players }: { view: PixelsView; players: Player[] }) {
+function Results({ view, players }: { view: PixelsView; players: (Player | undefined)[] }) {
   const spots = view.spots ?? [];
   const revealed = view.emblems !== null && view.pts !== null;
-  const order = players.map((_, i) => i);
+  const order = players.flatMap((p, i) => (p ? [i] : []));
   if (revealed) order.sort((a, b) => view.pts![b] - view.pts![a]);
   return (
-    <section aria-label={revealed ? "Round results" : "Best copies"} className="grid grid-cols-2 gap-2 @xl:grid-cols-4">
+    <section aria-label={revealed ? "Round results" : "Best copies"} className={`grid grid-cols-2 gap-2 ${view.teams ? "mx-auto w-full max-w-lg" : "@xl:grid-cols-4"}`}>
       {order.map((i, rank) => {
         const p = players[i];
         const sp = spots[i];
@@ -627,6 +645,173 @@ function Standings({ view, players }: { view: PixelsView; players: Player[] }) {
               <b className="w-9 shrink-0 text-right font-display text-xl leading-none font-extrabold tabular-nums" style={{ color: won ? p.color : undefined }}>
                 {view.totals[i]}
               </b>
+            </li>
+          );
+        })}
+      </ol>
+    </section>
+  );
+}
+
+// ---------- Red vs Blue ----------
+
+const TEAM_ICON = ["🟥", "🟦"];
+
+/** Team totals: teammates share every round's score, so any member's total is the team's. */
+function teamTotals(view: PixelsView): [number, number] {
+  const t = view.teams;
+  if (!t) return [0, 0];
+  const total = (k: number) => {
+    const i = t[k].length ? view.ids.indexOf(t[k][0]) : -1;
+    return i < 0 ? 0 : view.totals[i];
+  };
+  return [total(0), total(1)];
+}
+
+/** One stand-in "player" per team at its first member's seat (others empty): for per-emblem cards and boxes. */
+function teamPlayers(view: PixelsView, players: Player[]): (Player | undefined)[] {
+  const out: (Player | undefined)[] = players.map(() => undefined);
+  view.teams?.forEach((ids, k) => {
+    const i = ids.length ? view.ids.indexOf(ids[0]) : -1;
+    if (i < 0) return;
+    out[i] = {
+      id: `team-${k}`,
+      name: `${TEAMS[k].name} team`,
+      color: TEAMS[k].color,
+      avatar: TEAM_ICON[k],
+      connected: ids.some((id) => players[view.ids.indexOf(id)]?.connected),
+    };
+  });
+  return out;
+}
+
+function TeamIntro({ view, players }: { view: PixelsView; players: Player[] }) {
+  const teams = view.teams!;
+  const mine = view.you >= 0 ? teamOf(teams, view.ids[view.you]) : -1;
+  if (mine < 0) {
+    return (
+      <span className="font-display text-base font-extrabold @md:text-xl">
+        <span style={{ color: TEAMS[0].color }}>{TEAMS[0].name}</span> vs <span style={{ color: TEAMS[1].color }}>{TEAMS[1].name}</span>
+      </span>
+    );
+  }
+  const mates = teams[mine].filter((id) => id !== view.ids[view.you]).map((id) => players[view.ids.indexOf(id)]?.name ?? "?");
+  const c = TEAMS[mine].color;
+  return (
+    <span className="pix-pop flex max-w-full flex-col items-center rounded-xl px-3 py-1" style={{ background: `${c}22`, boxShadow: `inset 0 0 0 1.5px ${c}` }}>
+      <span className="font-display text-base leading-tight font-extrabold @md:text-xl" style={{ color: c }}>
+        You&apos;re on {TEAMS[mine].name}
+      </span>
+      <span className="max-w-[16rem] truncate text-xs text-muted">{mates.length ? `with ${mates.join(", ")}` : "a team of one: paint fast!"}</span>
+    </span>
+  );
+}
+
+function TeamStrip({ view, players, ready }: { view: PixelsView; players: Player[]; ready: number[] }) {
+  const teams = view.teams!;
+  const totals = teamTotals(view);
+  const lead = totals[0] === totals[1] ? -1 : totals[0] > totals[1] ? 0 : 1;
+  return (
+    <div className="grid grid-cols-2 gap-2" aria-label="Team scores">
+      {teams.map((ids, k) => {
+        const c = TEAMS[k].color;
+        return (
+          <section
+            key={k}
+            className="card flex min-w-0 flex-col gap-1 px-2 py-1.5"
+            style={{ borderColor: `${c}88`, background: `linear-gradient(180deg, ${c}26, ${c}0a)` }}
+            aria-label={`${TEAMS[k].name} team: ${totals[k]} points`}
+          >
+            <div className="flex items-center justify-between gap-1">
+              <span className="font-display text-sm font-extrabold" style={{ color: c }}>
+                {TEAMS[k].name}
+                {lead === k && <span aria-label="leading"> 👑</span>}
+              </span>
+              <b
+                key={totals[k]}
+                className={`font-display text-lg leading-none font-extrabold tabular-nums ${totals[k] ? "pix-bump" : ""}`}
+                style={{ color: c, display: "inline-block" }}
+              >
+                {totals[k]}
+              </b>
+            </div>
+            <ul className="flex flex-wrap gap-1">
+              {ids.map((id) => {
+                const i = view.ids.indexOf(id);
+                const p = players[i];
+                if (!p) return null;
+                return (
+                  <li key={id}>
+                    <PlayerChip player={p} size="sm" dim={!p.connected}>
+                      {i === view.you && <span className="text-[10px] font-semibold text-muted">you</span>}
+                      {ready.includes(i) && <span aria-label="ready">✓</span>}
+                      {!p.connected && <span aria-label="offline">⚠</span>}
+                    </PlayerChip>
+                  </li>
+                );
+              })}
+            </ul>
+          </section>
+        );
+      })}
+    </div>
+  );
+}
+
+function TeamStandings({ view, players }: { view: PixelsView; players: Player[] }) {
+  const teams = view.teams!;
+  const history = view.history ?? [];
+  const totals = teamTotals(view);
+  const order = totals[1] > totals[0] ? [1, 0] : [0, 1];
+  const winners = new Set(view.winners ?? []);
+  return (
+    <section className="card pix-in p-3" aria-label="Final standings">
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <span className="label">Final standings</span>
+        <span className="text-xs text-muted">
+          {history.length} round{history.length === 1 ? "" : "s"} · each team&apos;s best copy
+        </span>
+      </div>
+      <ol className="flex flex-col gap-2">
+        {order.map((k) => {
+          const c = TEAMS[k].color;
+          const seat = teams[k].length ? view.ids.indexOf(teams[k][0]) : -1;
+          const won = teams[k].some((id) => winners.has(id));
+          return (
+            <li
+              key={k}
+              className="flex min-w-0 flex-col gap-1.5 rounded-xl px-2 py-2"
+              style={{ background: won ? `${c}1f` : "var(--color-panel-2)", boxShadow: `inset 0 0 0 1px ${won ? c : `${c}44`}` }}
+            >
+              <div className="flex min-w-0 items-center gap-2">
+                <span className="w-6 shrink-0 text-center text-lg leading-none">{won ? "🏆" : ""}</span>
+                <span className="min-w-0 flex-1 truncate font-display text-lg font-extrabold" style={{ color: c }}>
+                  {TEAMS[k].name} team
+                </span>
+                {seat >= 0 && (
+                  <span className="flex shrink-0 items-center gap-1.5" aria-label="Rounds">
+                    {history.map((r, j) => (
+                      <span key={j} className="flex flex-col items-center gap-0.5" title={`Round ${j + 1}: ${r.emblems[seat]?.name}, ${r.n[seat]}/25`}>
+                        <PixelArt art={r.emblems[seat]?.art ?? ""} size={22} label={`Round ${j + 1}: ${r.emblems[seat]?.name}, ${r.n[seat]} of 25`} />
+                        <span className="font-mono text-[10px] leading-none text-muted tabular-nums">{r.pts[seat]}</span>
+                      </span>
+                    ))}
+                  </span>
+                )}
+                <b className="w-9 shrink-0 text-right font-display text-xl leading-none font-extrabold tabular-nums" style={{ color: c }}>
+                  {totals[k]}
+                </b>
+              </div>
+              <ul className="flex flex-wrap gap-1 pl-8">
+                {teams[k].map((id) => {
+                  const p = players[view.ids.indexOf(id)];
+                  return p ? (
+                    <li key={id}>
+                      <PlayerChip player={p} size="sm" dim={!p.connected} />
+                    </li>
+                  ) : null;
+                })}
+              </ul>
             </li>
           );
         })}

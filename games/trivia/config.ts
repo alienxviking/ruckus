@@ -24,6 +24,17 @@ export const config: GameConfig = {
       ],
       default: 15,
     },
+    {
+      kind: "choice",
+      key: "mode",
+      label: "Mode",
+      options: [
+        { value: "solo", label: "Solo" },
+        { value: "teams", label: "Red vs Blue" },
+      ],
+      default: "solo",
+      hint: "Red vs Blue: random teams",
+    },
   ],
   bots: true,
 };

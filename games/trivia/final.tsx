@@ -6,6 +6,7 @@ import type { Player } from "@/shared/types";
 import type { PlayerLine, TriviaView } from "./server";
 import { CATEGORY_EMOJI, fmt } from "./shared";
 import { byRank } from "./standings";
+import { TeamFinal } from "./teams";
 import { CountUp, MEDALS, cssVars, ordinal, personOf, seconds } from "./ui";
 import { Avatar } from "@/components/Avatar";
 
@@ -113,6 +114,8 @@ export function FinalScreen({
       <h2 className="text-center font-display text-2xl font-black">
         <span aria-hidden>🏁</span> Final standings
       </h2>
+
+      {view.teams && <TeamFinal teams={view.teams} me={me} />}
 
       {solo ? (
         <SoloCard

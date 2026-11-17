@@ -26,6 +26,17 @@ export const config: GameConfig = {
       default: 3,
       hint: "Hits each player can take in a round.",
     },
+    {
+      kind: "choice",
+      key: "mode",
+      label: "Mode",
+      options: [
+        { value: "solo", label: "Solo" },
+        { value: "teams", label: "Red vs Blue" },
+      ],
+      default: "solo",
+      hint: "Red vs Blue: random teams",
+    },
   ],
   bots: true,
 };

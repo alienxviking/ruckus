@@ -386,6 +386,8 @@ interface Data {
   avatars: string[];
   away: boolean[];
   me: number;
+  /** Red vs Blue: team (0/1) per painter index; teammates' turf reads as one territory. */
+  sides: number[] | null;
   winners: string[] | null;
   pred: TurfPredictor;
   serverNow: () => number;
@@ -430,6 +432,9 @@ function buildLayer(layer: HTMLCanvasElement, sc: Scene, snap: Snap, d: Data, de
   const edges = Array.from({ length: n }, () => new Path2D());
   const e = Math.max(1, Math.round((devW / w) * 0.13));
   const owner = (i: number) => tiles.charCodeAt(i) - 48; // "." -> -2
+  // Turf group: the painter, or in Red vs Blue the team (no seams between teammates' paint).
+  const sides = d.sides;
+  const grp = sides ? (o: number) => (o >= 0 ? (sides[o] ?? o) : o) : (o: number) => o;
 
   for (let y = 0; y < h; y++) {
     for (let x = 0; x < w; x++) {
@@ -441,16 +446,17 @@ function buildLayer(layer: HTMLCanvasElement, sc: Scene, snap: Snap, d: Data, de
       const tw = xs[x + 1] - x0;
       const th = ys[y + 1] - y0;
       fills[o].rect(x0, y0, tw, th);
-      if (x === 0 || owner(i - 1) !== o) edges[o].rect(x0, y0, e, th);
-      if (x === w - 1 || owner(i + 1) !== o) edges[o].rect(x0 + tw - e, y0, e, th);
-      if (y === 0 || owner(i - w) !== o) edges[o].rect(x0, y0, tw, e);
-      if (y === h - 1 || owner(i + w) !== o) edges[o].rect(x0, y0 + th - e, tw, e);
+      const k = grp(o);
+      if (x === 0 || grp(owner(i - 1)) !== k) edges[o].rect(x0, y0, e, th);
+      if (x === w - 1 || grp(owner(i + 1)) !== k) edges[o].rect(x0 + tw - e, y0, e, th);
+      if (y === 0 || grp(owner(i - w)) !== k) edges[o].rect(x0, y0, tw, e);
+      if (y === h - 1 || grp(owner(i + w)) !== k) edges[o].rect(x0, y0 + th - e, tw, e);
     }
   }
   for (let o = 0; o < n; o++) {
     g.fillStyle = d.palettes[o].fill;
     g.fill(fills[o]);
-    const tex = textures[o];
+    const tex = textures[grp(o)];
     if (tex) {
       g.fillStyle = tex;
       g.fill(fills[o]);
@@ -667,6 +673,12 @@ function drawFrame(
   if (mineOn) {
     const pal = palettes[d.me];
     const mine = 48 + d.me;
+    const sides = d.sides;
+    // Already ours (or, in Red vs Blue, a teammate's): the server won't repaint it.
+    const ours = (ti: number) => {
+      const c = view.tiles.charCodeAt(ti);
+      return c === mine || (!!sides && c >= 48 && sides[c - 48] === sides[d.me]);
+    };
     const K = Math.floor(tau);
     const f = tau - K;
     g.fillStyle = pal.trail;
@@ -680,7 +692,7 @@ function drawFrame(
         const from = k === 0 ? prev : mid;
         if (ti === from) return;
         const prog = t <= K ? 1 : mid >= 0 ? clamp01(f * 2 - k) : f;
-        if (prog > 0 && view.tiles.charCodeAt(ti) !== mine) rollTile(g, ti, from, w, ts, prog);
+        if (prog > 0 && !ours(ti)) rollTile(g, ti, from, w, ts, prog);
       });
       prev = end;
     }
@@ -915,6 +927,8 @@ export interface TurfBoardProps {
   /** The tick deltas heard lately: they fill in ticks a full view skipped over. */
   deltas?: TurfDelta[];
   colors: string[];
+  /** Red vs Blue: team (0/1) per painter index (null in a free-for-all). */
+  sides?: number[] | null;
   avatars: string[];
   away: boolean[];
   /** Viewer's painter index, -1 when watching. */
@@ -930,7 +944,7 @@ export interface TurfBoardProps {
 }
 
 export function TurfBoard(props: TurfBoardProps) {
-  const { view, steps, deltas, colors, avatars, away, me, steer, pred, serverNow, onEvent, label, children } = props;
+  const { view, steps, deltas, colors, sides = null, avatars, away, me, steer, pred, serverNow, onEvent, label, children } = props;
   const wrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const sizeRef = useRef<Size>({ cssW: 0, cssH: 0, dpr: 1 });
@@ -942,13 +956,14 @@ export function TurfBoard(props: TurfBoardProps) {
   // Keep the renderer's copy of the props current.
   useEffect(() => {
     const sc = sceneRef.current;
-    const key = colors.join();
+    const key = `${colors.join()}|${sides?.join() ?? ""}`;
     dataRef.current = {
       view,
       palettes: colors.map(palette),
       avatars,
       away,
       me,
+      sides,
       winners: view.winners ?? null,
       pred,
       serverNow,

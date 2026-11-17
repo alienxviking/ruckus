@@ -8,6 +8,7 @@ export const rules: GameRules = {
     "Every new pixel briefly flashes in its painter's colour, so you can work out who is painting what, then paint over their emblem to wreck it.",
     "When time's up, the game finds the best copy of each emblem anywhere on the canvas and reveals everyone's emblem.",
     "Tap Ready to move on. The canvas is wiped clean and you get a new emblem for the next round.",
+    "Red vs Blue (host setting): players are split into two random teams. Each team shares one secret emblem, paints it together and tries to wreck the other team's.",
   ],
   controls: {
     desktop: [
@@ -25,6 +26,7 @@ export const rules: GameRules = {
     "Your best copy scores 1 point for every pixel that matches your emblem, up to 25.",
     "A perfect copy (all 25 pixels right) earns a 5-point bonus, so 30 points in total.",
     "Points add up over every round. The highest total wins, and equal top scores share the win.",
+    "Red vs Blue: each team scores its own best copy the same way (up to 30 a round), so a smaller team isn't at a disadvantage. The team with more points wins and every member shares the win.",
   ],
   tips: [
     "Paint takes a moment to recharge, so you can only lay down a few pixels each second. Don't waste them.",

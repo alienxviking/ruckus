@@ -21,7 +21,7 @@ import { CATALOG, CATALOG_BY_ID } from "../games/catalog";
 import { GAME_DEFS } from "../games/server-registry";
 import { GAME_CONFIG } from "../games/config";
 import { validSetting, type Settings } from "../shared/settings";
-import { clientIp, isPublicRoomId, Limiter, LIMITS_ROOM, Stats, type LimitKind, type RoomReport } from "./limits";
+import { cleanErrorReport, clientIp, isPublicRoomId, Limiter, LIMITS_ROOM, Stats, type ErrorEntry, type LimitKind, type RoomReport } from "./limits";
 
 const HOST_HANDOFF_MS = 8_000; // host must be gone this long before someone else takes over
 const REMOVE_AFTER_MS = 60_000; // disconnected lobby players disappear after this
@@ -903,18 +903,24 @@ export class RuckusRoom extends Server<Env> {
     if (!this.statsLoaded) {
       this.statsLoaded = true;
       const saved = await this.ctx.storage.get<Stats["days"]>("days").catch(() => undefined);
-      if (Array.isArray(saved)) this.stats.days = saved;
+      if (Array.isArray(saved)) this.stats.days = saved.map((d) => ({ ...d, errors: d.errors ?? 0 }));
+      const errs = await this.ctx.storage.get<ErrorEntry[]>("errors").catch(() => undefined);
+      if (Array.isArray(errs)) this.stats.errors = errs;
     }
     const day = this.stats.today(now);
     day.limiterRequests++;
     if (req.method === "GET") return json(this.stats.snapshot(now));
     if (req.method !== "POST") return new Response("Not found", { status: 404 });
     const body = (await req.json().catch(() => null)) as
-      | { kind?: LimitKind; ip?: string | null; room?: string; report?: RoomReport }
+      | { kind?: LimitKind; ip?: string | null; room?: string; report?: RoomReport; error?: unknown }
       | null;
     let verdict: { ok: true } | { ok: false; reason: string } = { ok: true };
     if (body?.report && typeof body.report.room === "string") {
       this.stats.report(body.report, now);
+    } else if (body?.error) {
+      const e = cleanErrorReport(body.error);
+      const ok = !e ? false : typeof body.ip === "string" ? this.limiter.check("error", body.ip, now).ok : true;
+      if (e && ok) this.stats.recordError(e, now);
     } else if (body && (body.kind === "create" || body.kind === "connect")) {
       if (typeof body.ip === "string") verdict = this.limiter.check(body.kind, body.ip, now);
       if (!verdict.ok) day.blocked++;
@@ -929,6 +935,7 @@ export class RuckusRoom extends Server<Env> {
       this.statsSaveTimer = setTimeout(() => {
         this.statsSaveTimer = null;
         void this.ctx.storage.put("days", this.stats.days).catch(() => {});
+        void this.ctx.storage.put("errors", this.stats.errors).catch(() => {});
       }, 10_000);
     }
     return json(verdict);
@@ -1017,6 +1024,7 @@ export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
     if (url.pathname === "/stats") return statsRequest(request, env);
+    if (url.pathname === "/errors") return errorsRequest(request, env);
     const res = await routePartykitRequest(request, env, {
       cors: true,
       onBeforeConnect: async (req, lobby) => {
@@ -1046,6 +1054,29 @@ async function statsRequest(request: Request, env: Env): Promise<Response> {
   const stub = await getServerByName(env.Main, LIMITS_ROOM);
   const res = await stub.fetch(new Request("https://limits.internal/", { method: "GET" }));
   return new Response(await res.text(), { headers: { ...cors, "Content-Type": "application/json", "Cache-Control": "no-store" } });
+}
+
+/** Crash reports from browsers: POST /errors (small JSON). Rate limited per IP; never fails loudly. */
+async function errorsRequest(request: Request, env: Env): Promise<Response> {
+  const cors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "Content-Type", "Access-Control-Allow-Methods": "POST, OPTIONS" };
+  if (request.method === "OPTIONS") return new Response(null, { headers: cors });
+  if (request.method !== "POST") return new Response("Not found", { status: 404, headers: cors });
+  const text = await request.text().catch(() => "");
+  if (text.length > 4_000) return new Response(null, { status: 413, headers: cors });
+  let error: unknown = null;
+  try {
+    error = JSON.parse(text);
+  } catch {
+    return new Response(null, { status: 400, headers: cors });
+  }
+  if (!cleanErrorReport(error)) return new Response(null, { status: 400, headers: cors });
+  try {
+    const stub = await getServerByName(env.Main, LIMITS_ROOM);
+    await stub.fetch(new Request("https://limits.internal/", { method: "POST", body: JSON.stringify({ error, ip: clientIp(request) }) }));
+  } catch {
+    /* best effort */
+  }
+  return new Response(null, { status: 204, headers: cors });
 }
 
 function timingSafeEqual(a: string, b: string): boolean {

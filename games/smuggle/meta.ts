@@ -8,13 +8,13 @@ export const meta: GameMeta = {
   "category": "party",
   "minPlayers": 4,
   "maxPlayers": 12,
-  "minutes": 10,
+  "minutes": 12,
   "emoji": "🗣️",
   "accent": "#f59e0b",
   "how": [
-    "Teams take turns: one player describes a secret word out loud while their team shouts guesses.",
-    "Five banned words are off limits. The other team sees them and can buzz you.",
-    "Most words smuggled after the last round wins."
+    "Two teams take turns: one player describes a secret word out loud while their teammates shout guesses.",
+    "Five banned words are off limits. The other team sees them and buzzes if one slips out.",
+    "Got it +1, buzzed −1. Most points after everyone has described wins."
   ],
   "original": true,
   "isNew": true,

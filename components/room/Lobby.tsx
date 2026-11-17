@@ -9,6 +9,7 @@ import { GameBadge } from "../GameBadge";
 import { GameBrowser } from "../GameBrowser";
 import { Magnetic } from "../Magnetic";
 import { HowToPlay } from "./HowToPlay";
+import { Dices } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 export function Lobby({
@@ -30,6 +31,34 @@ export function Lobby({
   const humans = room.players.filter((p) => p.connected && !p.bot).length;
   const host = room.players.find((p) => p.id === room.hostId);
   const tooFew = online < game.minPlayers;
+
+  // "Surprise me": a random game that fits everyone here (bots count where they can play),
+  // skipping the one picked and the last few played.
+  const [rolling, setRolling] = useState(false);
+  const surprise = () => {
+    if (rolling) return;
+    const bots = room.players.filter((p) => p.connected && p.bot).length;
+    const recent = new Set([game.id, ...room.history.slice(-5).map((h) => h.gameId)]);
+    const fits = CATALOG.filter((g) => {
+      const n = humans + (GAME_CONFIG[g.id]?.bots ? bots : 0);
+      return n >= g.minPlayers && n <= g.maxPlayers;
+    });
+    const fresh = fits.filter((g) => !recent.has(g.id));
+    const pool = fresh.length ? fresh : fits.filter((g) => g.id !== game.id);
+    if (!pool.length) return;
+    const pick = pool[Math.floor(Math.random() * pool.length)];
+    setRolling(true);
+    window.setTimeout(() => {
+      send({ t: "pick", gameId: pick.id });
+      setRolling(false);
+    }, 420);
+  };
+  const surpriseButton = (className = "") => (
+    <button type="button" className={`btn px-3 py-1.5 text-sm ${className}`} onClick={surprise} disabled={rolling}>
+      <Dices aria-hidden className={`size-4 ${rolling ? "motion-safe:animate-spin" : ""}`} strokeWidth={2} />
+      Surprise me
+    </button>
+  );
   const tooMany = online > game.maxPlayers;
 
   // When the big Start button scrolls out of view (the host is browsing games further
@@ -79,7 +108,10 @@ export function Lobby({
               </li>
             ))}
           </ul>
-          <HowToPlay gameId={game.id} className="mt-4" />
+          <div className="mt-4 flex flex-wrap gap-2">
+            <HowToPlay gameId={game.id} />
+            {isHost && surpriseButton()}
+          </div>
         </div>
         <div className="flex flex-col justify-end gap-2 sm:w-52">
           {isHost ? (
@@ -134,7 +166,15 @@ export function Lobby({
       )}
 
       <div>
-        <h2 className="label mb-3">{isHost ? "Pick a game" : "Games"}</h2>
+        <div className="mb-3 flex items-center justify-between gap-2">
+          <h2 className="label">{isHost ? "Pick a game" : "Games"}</h2>
+          {isHost && (
+            <span className="flex items-center gap-2 text-xs text-muted">
+              <span className="hidden sm:inline">Can&apos;t decide?</span>
+              {surpriseButton()}
+            </span>
+          )}
+        </div>
         <GameBrowser
           selectedId={game.id}
           disabled={!isHost}

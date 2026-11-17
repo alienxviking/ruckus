@@ -8,6 +8,7 @@ export const rules: GameRules = {
     "Hide behind snow walls: each one shrinks as it gets hit and crumbles after 6 hits. Trees block snowballs completely. Long throws arc up and over walls.",
     "Grab power-ups for 3 special throws: ☃️ Big ball does 2 damage with a wide splash, ❄️ Triple shot throws three balls in a fan.",
     "After 60 seconds a blizzard hits and any single hit knocks you out. A round still going at 100 seconds ends in a draw.",
+    "Red vs Blue (host setting): players are split into two random teams that start on opposite sides. Teammates' snowballs fly straight through you, so there's no friendly fire. Coats and name tags show each kid's team colour.",
   ],
   controls: {
     desktop: [
@@ -22,6 +23,7 @@ export const rules: GameRules = {
   scoring: [
     "You have 3 hearts (the host can pick 1 or 5 instead). Each hit costs 1 (a Big ball costs 2). Lose them all and you're out for the round.",
     "The last player standing wins the round. A draw gives nobody the round.",
+    "Red vs Blue: the round goes to the last team with anyone standing, and every member of that team banks the round win. The first team to the target takes the match, and everyone on it wins (if no team gets there in time, the team with more round wins takes it; level is a draw).",
     "First to 3 round wins takes the game (or 2 or 5, if the host changes it). If nobody gets there in 7 rounds (5 when playing to 2, 11 when playing to 5), the most round wins takes it (ties share the win).",
   ],
   tips: [

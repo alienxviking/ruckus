@@ -56,8 +56,15 @@ export function GameCard({
           New
         </span>
       )}
-      {game.original && (
-        <span className="rounded-sm border border-brand-2/20 bg-brand-2/5 px-1.5 py-0.5 text-brand-2/85">Original</span>
+      {/* At most three tags: how you play it (teams / on a call) beats "original". */}
+      {game.call ? (
+        <span className="rounded-sm border border-sky-300/25 bg-sky-300/5 px-1.5 py-0.5 text-sky-200/90">On a call</span>
+      ) : game.teams ? (
+        <span className="rounded-sm border border-rose-300/25 bg-rose-300/5 px-1.5 py-0.5 text-rose-200/90">Teams</span>
+      ) : (
+        game.original && (
+          <span className="rounded-sm border border-brand-2/20 bg-brand-2/5 px-1.5 py-0.5 text-brand-2/85">Original</span>
+        )
       )}
       <span className="rounded-sm border border-line px-1.5 py-0.5 text-muted">{CATEGORY_LABEL[game.category]}</span>
     </div>
@@ -79,7 +86,9 @@ export function GameCard({
               {" "}
               ({CATEGORY_LABEL[game.category]}
               {game.original ? ", original" : ""}
-              {game.isNew ? ", new" : ""})
+              {game.isNew ? ", new" : ""}
+              {game.teams ? ", team game" : ""}
+              {game.call ? ", made for video calls" : ""})
             </span>
           </div>
           <p className="mt-1 text-sm text-muted">{game.tagline}</p>

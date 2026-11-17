@@ -36,6 +36,9 @@ const CSS = `
 @keyframes blz-drain { from { transform: scaleX(1); } to { transform: scaleX(0); } }
 @keyframes blz-spark { 0% { opacity: 1; transform: translate(-50%, -50%) scale(1); } 100% { opacity: 0; transform: translate(calc(-50% + var(--dx)), calc(-50% + var(--dy))) scale(.3); } }
 @keyframes blz-squish { 0% { transform: scale(.9); } 100% { transform: scale(1); } }
+@keyframes blz-stamp { 0% { opacity: 0; transform: scale(2.4) rotate(-14deg); } 55% { opacity: 1; transform: scale(.92) rotate(-5deg); } 75% { transform: scale(1.06) rotate(-7deg); } 100% { transform: scale(1) rotate(-6deg); } }
+@keyframes blz-mole { 0% { transform: translateY(70%) scale(.8); } 60% { transform: translateY(-6%) scale(1.05); } 100% { transform: none; } }
+@keyframes blz-bonk { 0% { transform: scale(1.4) rotate(-10deg); opacity: 1; } 100% { transform: scale(.9) rotate(4deg); opacity: .9; } }
 .blz-in { animation: blz-in .35s ${EASE_OUT} both; }
 .blz-tile { animation: blz-tile .38s ${EASE_SPRING} both; animation-delay: calc(var(--i, 0) * 18ms); }
 .blz-pop { animation: blz-pop .45s ${EASE_SPRING} both; animation-delay: var(--d, 0ms); }
@@ -53,10 +56,14 @@ const CSS = `
 .blz-drain { transform-origin: left; animation: blz-drain linear both; }
 .blz-spark { animation: blz-spark .7s ease-out both; }
 .blz-squish { animation: blz-squish .14s ease-out both; }
+.blz-stamp { animation: blz-stamp .6s ${EASE_SPRING} both; animation-delay: var(--d, 0ms); }
+.blz-mole { animation: blz-mole .18s ${EASE_OUT} both; }
+.blz-bonk { animation: blz-bonk .25s ease-out both; }
 @media (prefers-reduced-motion: reduce) {
   .blz-float, .blz-ring, .blz-spark { display: none; }
   .blz-in, .blz-tile, .blz-pop, .blz-card, .blz-wiggle, .blz-slide, .blz-shake, .blz-lock,
-  .blz-pulse, .blz-glow, .blz-count, .blz-bar, .blz-squish { animation: none; }
+  .blz-pulse, .blz-glow, .blz-count, .blz-bar, .blz-squish, .blz-mole, .blz-bonk { animation: none; }
+  .blz-stamp { animation: none; transform: rotate(-6deg); }
 }
 `;
 
@@ -199,17 +206,25 @@ export function arrowOf(e: KeyboardEvent): number {
   return ARROW_KEYS[e.key] ?? -1;
 }
 
-export type Look = "open" | "plain" | "locked" | "faded" | "correct" | "wrong" | "dim";
+export type Look = "open" | "plain" | "locked" | "faded" | "correct" | "wrong" | "dim" | "trap";
 
-/** Visual state of an answer button. */
+/**
+ * Visual state of an answer button. In a reverse round the real answer is the trap,
+ * and any other pick of yours was right.
+ */
 export function lookOf(
   i: number,
   phase: "play" | "result",
   myPick: number | null,
   canAnswer: boolean,
   answer: number | null,
+  reverse = false,
 ): Look {
   if (phase === "result") {
+    if (reverse && answer !== null && answer >= 0) {
+      if (i === answer) return i === myPick ? "wrong" : "trap";
+      return i === myPick ? "correct" : "dim";
+    }
     if (i === answer) return "correct";
     return i === myPick ? "wrong" : "dim";
   }
@@ -225,6 +240,7 @@ const LOOK_CLASS: Record<Look, string> = {
   correct: "blz-pop",
   wrong: "blz-shake",
   dim: "opacity-45",
+  trap: "",
 };
 
 /**
@@ -253,11 +269,12 @@ export function ChoiceButton({
   className?: string;
 }) {
   const live = look === "open";
-  const border = look === "correct" ? GREEN : look === "wrong" ? ROSE : look === "locked" ? color : "var(--color-line)";
+  const border =
+    look === "correct" ? GREEN : look === "wrong" || look === "trap" ? ROSE : look === "locked" ? color : "var(--color-line)";
   const bg =
     look === "correct"
       ? GREEN + "26"
-      : look === "wrong"
+      : look === "wrong" || look === "trap"
         ? ROSE + "22"
         : look === "locked"
           ? color + "2b"
@@ -290,6 +307,11 @@ export function ChoiceButton({
       {look === "wrong" && (
         <span aria-hidden className="absolute top-1 right-2 text-sm font-black" style={{ color: ROSE }}>
           ✗
+        </span>
+      )}
+      {look === "trap" && (
+        <span aria-hidden className="absolute top-1 right-2 text-[10px] font-black tracking-wide uppercase" style={{ color: ROSE }}>
+          trap
         </span>
       )}
       {look === "locked" && (

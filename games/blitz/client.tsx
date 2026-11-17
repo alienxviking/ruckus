@@ -7,7 +7,20 @@ import { Note, TimerBar, useSecondsLeft } from "@/components/game-ui";
 import type { BlitzAction, BlitzView } from "./server";
 import { Board } from "./boards";
 import { feedback, sfx } from "@/lib/feedback";
-import { DOUBLE_LAST, META, MICRO_TYPES, RANKED, fmtPoints, fmtSecs, type Pick, type ResLine, type RoundResult } from "./shared";
+import {
+  DOUBLE_LAST,
+  META,
+  RANKED,
+  TWISTS,
+  finaleMult,
+  fmtPoints,
+  fmtSecs,
+  kindsFor,
+  type MicroType,
+  type Pick,
+  type ResLine,
+  type RoundResult,
+} from "./shared";
 import { BlitzStyles, Face, GOLD, GREEN, MEDALS, ROSE, Sparks, cssVars, keyboard, ordinal, personOf } from "./ui";
 
 type Props = GameClientProps<BlitzView, BlitzAction>;
@@ -62,7 +75,13 @@ export default function Blitz({ view, me, byId, isPlayer, act, serverNow, accent
   if (playing) myPick = view.you?.answered ? view.you.pick : pending?.r === view.round ? pending.pick : null;
   if (phase === "result") myPick = view.last?.res.find((l) => l.id === me)?.pick ?? null;
   const pz = view.puzzle;
-  const open = !!pz && (pz.t === "count" ? pz.options !== null : pz.t === "memory" ? pz.seq === null : true);
+  const open =
+    !!pz &&
+    (pz.t === "count" || pz.t === "gone" || pz.t === "digits"
+      ? pz.options !== null
+      : pz.t === "memory"
+        ? pz.seq === null
+        : true);
   const canAnswer = isPlayer && playing && open && !answered;
   const meta = view.micro ? META[view.micro.type] : null;
 
@@ -128,7 +147,6 @@ export default function Blitz({ view, me, byId, isPlayer, act, serverNow, accent
 
 function TopBar({ view, me, isPlayer, accent }: { view: BlitzView; me: string; isPlayer: boolean; accent: string }) {
   const current = view.phase === "ready" || view.phase === "play" ? view.round - 1 : -1;
-  const doubleFrom = view.total - DOUBLE_LAST;
   return (
     <div className="flex flex-col gap-2">
       <div className="flex items-center justify-between gap-2">
@@ -140,12 +158,12 @@ function TopBar({ view, me, isPlayer, accent }: { view: BlitzView; me: string; i
               {view.round}/{view.total}
             </span>
           )}
-          {view.micro?.double && view.phase !== "final" && (
+          {view.micro && view.micro.mult > 1 && view.phase !== "final" && (
             <span
               className="blz-pop rounded-full px-2 py-0.5 font-sans text-[11px] font-black tracking-wide uppercase"
               style={{ background: "#f9731633", color: "#fb923c" }}
             >
-              🔥 ×2
+              {view.micro.boss ? "👑" : view.micro.twist === "double" ? "💎" : "🔥"} ×{view.micro.mult}
             </span>
           )}
         </span>
@@ -163,11 +181,13 @@ function TopBar({ view, me, isPlayer, accent }: { view: BlitzView; me: string; i
           const done = view.recap[i];
           const isCur = i === current;
           const type = done?.type ?? (isCur ? view.micro?.type : undefined);
-          const dbl = i >= doubleFrom;
+          const fm = finaleMult(i + 1, view.total, view.finale);
+          const dbl = fm > 1;
+          const twist = done?.twist ?? (isCur ? view.micro?.twist : null);
           return (
             <li
               key={i}
-              className={`grid h-7 place-items-center rounded-md border text-[13px] leading-none ${isCur ? "blz-glow" : ""}`}
+              className={`relative grid h-7 place-items-center rounded-md border text-[13px] leading-none ${isCur ? "blz-glow" : ""}`}
               style={{
                 ...cssVars({ "--c": type ? META[type].color + "aa" : accent }),
                 borderColor: type ? META[type].color + (isCur ? "" : "66") : dbl ? "#fb923c66" : "var(--color-line)",
@@ -176,10 +196,17 @@ function TopBar({ view, me, isPlayer, accent }: { view: BlitzView; me: string; i
               }}
             >
               <span aria-hidden className={!type && dbl ? "text-[10px] opacity-70" : ""}>
-                {type ? META[type].icon : dbl ? "🔥" : "·"}
+                {type ? META[type].icon : dbl ? (fm === 3 ? "👑" : "🔥") : "·"}
               </span>
+              {twist && (
+                <span aria-hidden className="pointer-events-none absolute -top-1.5 -right-1 text-[9px] leading-none">
+                  {TWISTS[twist].icon}
+                </span>
+              )}
               <span className="sr-only">
-                {type ? `${i + 1}: ${META[type].title}` : `${i + 1}: still to come${dbl ? ", double points" : ""}`}
+                {type
+                  ? `${i + 1}: ${META[type].title}${twist ? `, ${TWISTS[twist].title}` : ""}`
+                  : `${i + 1}: still to come${fm === 3 ? ", boss round" : dbl ? ", double points" : ""}`}
               </span>
             </li>
           );
@@ -191,8 +218,17 @@ function TopBar({ view, me, isPlayer, accent }: { view: BlitzView; me: string; i
 
 // ---------- intro / ready ----------
 
+const MIX_NAMES = { all: "Everything", brainy: "Brainy", reflex: "Reflexes", chaos: "Chaos" } as const;
+
 function Intro({ view, serverNow, accent }: { view: BlitzView; serverNow: () => number; accent: string }) {
   const secs = useSecondsLeft(view.endsAt, serverNow);
+  const kinds = kindsFor(view.mix);
+  const finaleLine: [string, string] =
+    view.finale === "boss"
+      ? ["👑", "The last one is a ×3 boss"]
+      : view.finale === "double"
+        ? ["🔥", `The last ${DOUBLE_LAST} count double`]
+        : ["⏱️", "They get faster as you go"];
   return (
     <div
       className="blz-in -m-3 flex flex-1 flex-col items-center justify-center gap-4 p-5 text-center @sm:-m-4"
@@ -200,7 +236,9 @@ function Intro({ view, serverNow, accent }: { view: BlitzView; serverNow: () => 
         background: `radial-gradient(120% 80% at 50% 0%, ${accent}2e, transparent 65%)`,
       }}
     >
-      <span className="label">{view.total} microgames · a few seconds each</span>
+      <span className="label">
+        {view.total} microgames · {MIX_NAMES[view.mix]} mix
+      </span>
       <h2 className="font-display text-4xl font-black tracking-tight @md:text-5xl">Get ready to blitz!</h2>
       <div
         key={secs}
@@ -217,8 +255,8 @@ function Intro({ view, serverNow, accent }: { view: BlitzView; serverNow: () => 
       <ul className="grid gap-x-6 gap-y-1.5 text-left text-sm text-muted @lg:grid-cols-3">
         {[
           ["✅", "Right + fast scores up to 200"],
-          ["🔥", `The last ${DOUBLE_LAST} count double`],
-          ["⌨️", "Keys: 1–9, arrows, Space"],
+          finaleLine,
+          ["🔄", "Twists: reverse, speed, ×2"],
         ].map(([icon, text]) => (
           <li key={icon} className="flex gap-2">
             <span aria-hidden className="w-5 shrink-0 text-center">
@@ -228,16 +266,16 @@ function Intro({ view, serverNow, accent }: { view: BlitzView; serverNow: () => 
           </li>
         ))}
       </ul>
-      <div className="flex flex-wrap justify-center gap-1.5" aria-label="Tonight's microgames">
-        {MICRO_TYPES.map((t, i) => (
+      <div className="flex max-w-xl flex-wrap justify-center gap-1" aria-label={`${kinds.length} microgames in the mix`}>
+        {kinds.map((t, i) => (
           <span
             key={t}
             title={META[t].title}
-            className="blz-pop grid size-9 place-items-center rounded-xl border text-lg"
+            className="blz-pop grid size-8 place-items-center rounded-lg border text-base"
             style={{
               borderColor: META[t].color + "66",
               background: META[t].color + "1a",
-              ...cssVars({ "--d": `${200 + i * 50}ms` }),
+              ...cssVars({ "--d": `${200 + i * 30}ms` }),
             }}
           >
             <span aria-hidden>{META[t].icon}</span>
@@ -252,6 +290,7 @@ function Intro({ view, serverNow, accent }: { view: BlitzView; serverNow: () => 
 function ReadyCard({ view, serverNow }: { view: BlitzView; serverNow: () => number }) {
   const micro = view.micro!;
   const m = META[micro.type];
+  const twist = micro.twist ? TWISTS[micro.twist] : null;
   return (
     <div
       className="-m-3 flex flex-1 flex-col items-center justify-center gap-3 p-5 text-center @sm:-m-4"
@@ -259,9 +298,33 @@ function ReadyCard({ view, serverNow }: { view: BlitzView; serverNow: () => numb
         background: `radial-gradient(110% 85% at 50% 15%, ${m.color}38, transparent 70%)`,
       }}
     >
-      <span className="label blz-in">
-        Microgame {view.round} of {view.total}
-      </span>
+      {micro.boss ? (
+        <span
+          className="blz-stamp rounded-xl border-2 px-4 py-1 font-display text-2xl font-black tracking-wide uppercase"
+          style={{ borderColor: "#facc15", color: "#fde047", background: "#facc1522", boxShadow: "0 0 40px -8px #facc15" }}
+        >
+          👑 Boss round · ×3
+        </span>
+      ) : (
+        <span className="label blz-in">
+          Microgame {view.round} of {view.total}
+        </span>
+      )}
+      {twist && (
+        <span
+          className="blz-stamp flex flex-col items-center rounded-2xl border-[3px] px-4 py-1.5"
+          style={{
+            borderColor: twist.color,
+            background: twist.color + "26",
+            boxShadow: `0 0 48px -10px ${twist.color}`,
+          }}
+        >
+          <span className="font-display text-3xl font-black tracking-wide uppercase @md:text-4xl" style={{ color: twist.color }}>
+            {twist.icon} {twist.title}
+          </span>
+          <span className="text-sm font-bold">{twist.how}</span>
+        </span>
+      )}
       <span className="blz-card">
         <span
           aria-hidden
@@ -280,7 +343,7 @@ function ReadyCard({ view, serverNow }: { view: BlitzView; serverNow: () => numb
       <p className="blz-slide max-w-md text-lg font-semibold text-balance" style={cssVars({ "--d": "90ms" })}>
         {m.how}
       </p>
-      {micro.double && (
+      {micro.double && !micro.boss && micro.twist !== "double" && (
         <span
           className="blz-pop rounded-full border px-3 py-1 text-sm font-black tracking-wide uppercase"
           style={{
@@ -322,7 +385,7 @@ function StageHeader({
   const waiting = view.ids.filter((id) => !view.answered.includes(id) && byId[id]?.connected !== false).length;
   let side: ReactNode;
   if (result) side = view.round >= view.total ? "Final scores next" : `Next up in ${secs}s`;
-  else if (micro.type === "tap") side = `${secs}s`;
+  else if (micro.type === "tap" || micro.type === "whack") side = `${secs}s`;
   else if (isPlayer && answered && view.ids.length > 1) side = waiting > 0 ? `🔒 Waiting for ${waiting}` : "🔒 Locked";
   else if (isPlayer && answered) side = "🔒 Locked";
   else side = `${secs}s`;
@@ -340,6 +403,22 @@ function StageHeader({
           <span className="truncate font-display text-lg font-black" style={{ color: m.color }}>
             {m.title}
           </span>
+          {micro.twist && (
+            <span
+              className="shrink-0 rounded-full px-2 py-0.5 text-[11px] font-black tracking-wide uppercase"
+              style={{ background: TWISTS[micro.twist].color + "2e", color: TWISTS[micro.twist].color }}
+              title={TWISTS[micro.twist].how}
+            >
+              {TWISTS[micro.twist].icon}
+              <span className="hidden @md:inline"> {TWISTS[micro.twist].title.replace("!", "")}</span>
+              <span className="sr-only @md:hidden"> {TWISTS[micro.twist].title}</span>
+            </span>
+          )}
+          {micro.boss && (
+            <span className="shrink-0 rounded-full px-2 py-0.5 text-[11px] font-black uppercase" style={{ background: "#facc152e", color: "#fde047" }}>
+              👑 ×3
+            </span>
+          )}
         </span>
         <span
           className={`shrink-0 text-sm font-bold tabular-nums ${!result && secs <= 2 && !answered ? "blz-pulse text-rose-300" : "text-muted"}`}
@@ -348,6 +427,14 @@ function StageHeader({
         </span>
       </div>
       <TimerBar endsAt={view.endsAt} total={view.phaseMs} serverNow={serverNow} color={result ? "#a39dc8" : m.color} />
+      {micro.twist === "reverse" && !result && (
+        <p
+          className="blz-pulse rounded-xl border-2 px-2 py-1 text-center text-sm font-black tracking-wide uppercase"
+          style={{ borderColor: TWISTS.reverse.color, color: TWISTS.reverse.color, background: TWISTS.reverse.color + "1a" }}
+        >
+          🔄 Reverse: tap a WRONG answer
+        </p>
+      )}
     </div>
   );
 }
@@ -366,11 +453,39 @@ function crowdLine(result: RoundResult, byId: Record<string, Player>): string {
       ? `⚡ Fastest: ${best.map((l) => personOf(byId, l.id).name).join(" & ")} (${best[0].v})`
       : "Nobody tapped!";
   }
+  if (result.type === "simon" && result.answer === -1) {
+    const held = result.res.filter((l) => l.ok === true).length;
+    return held === n ? "Nobody fell for it!" : held ? `${held}/${n} held their nerve` : "Everyone fell for it!";
+  }
+  if (result.type === "whack" || result.type === "spin") {
+    if (!scored.length) return result.type === "whack" ? "The moles win this one" : "Nobody hit the zone";
+    const best = scored.reduce((a, b) => (b.pts > a.pts ? b : a));
+    return `${result.type === "whack" ? "🔨 Top whacker" : "🎯 Closest"}: ${personOf(byId, best.id).name}`;
+  }
   if (!scored.length) return "Nobody got it";
   const fastest = scored.reduce((a, b) => ((b.ms ?? 1e9) < (a.ms ?? 1e9) ? b : a));
   const who = scored.length === n ? "Everyone got it" : `${scored.length}/${n} got it`;
   return `${who} · ⚡ ${personOf(byId, fastest.id).name} ${fmtSecs(fastest.ms ?? 0)}`;
 }
+
+const GOOD_HEAD: Partial<Record<MicroType, string>> = {
+  green: "⚡ Quick draw!",
+  spin: "🎯 In the zone!",
+  whack: "🔨 Bonk!",
+};
+const BAD_HEAD: Partial<Record<MicroType, string>> = {
+  clock: "😬 Way off!",
+  green: "🚦 Too early!",
+  spin: "😬 Missed the zone!",
+  whack: "💥 Ouch, bombs!",
+};
+const NONE_HEAD: Partial<Record<MicroType, string>> = {
+  tap: "😴 No taps!",
+  clock: "⌛ Never stopped!",
+  spin: "⌛ Never stopped!",
+  green: "⌛ Never tapped!",
+  whack: "😴 No whacks!",
+};
 
 function Outcome({
   result,
@@ -386,6 +501,8 @@ function Outcome({
   const line = result.res.find((l) => l.id === me) ?? null;
   const crowd = crowdLine(result, byId);
   const ranked = RANKED.includes(result.type);
+  const t = result.type;
+  const heldSimon = t === "simon" && result.answer === -1;
   let head: ReactNode;
   let detail: string | null = null;
   let tone = "var(--color-line)";
@@ -410,17 +527,21 @@ function Outcome({
           {medal} {ordinal(line.rank ?? 1)} · {pts}
         </>
       ) : (
-        <>✅ Correct! {pts}</>
+        <>
+          {GOOD_HEAD[t] ?? (heldSimon ? "🧊 Held your nerve!" : "✅ Correct!")} {pts}
+        </>
       );
-      if (result.type === "clock" && line.v !== null) detail = `You stopped at ${fmtSecs(line.v)}`;
-      else if (result.type === "tap") detail = `${line.v} taps`;
-      else if (line.ms !== null) detail = `in ${fmtSecs(line.ms)}`;
+      if (t === "clock" && line.v !== null) detail = `You stopped at ${fmtSecs(line.v)}`;
+      else if (t === "tap") detail = `${line.v} taps`;
+      else if (t === "whack") detail = `${line.v} mole${line.v === 1 ? "" : "s"}`;
+      else if (t === "green" && line.ms !== null) detail = `reaction ${fmtSecs(line.ms)}`;
+      else if (line.ms !== null && t !== "spin") detail = `in ${fmtSecs(line.ms)}`;
     } else if (line.ok === false) {
       tone = ROSE;
-      head = result.type === "clock" ? "😬 Way off!" : "❌ Not quite!";
-      if (result.type === "clock" && line.v !== null) detail = `You stopped at ${fmtSecs(line.v)}`;
+      head = heldSimon ? "🙊 Simon didn't say!" : (BAD_HEAD[t] ?? "❌ Not quite!");
+      if (t === "clock" && line.v !== null) detail = `You stopped at ${fmtSecs(line.v)}`;
     } else {
-      head = result.type === "tap" ? "😴 No taps!" : result.type === "clock" ? "⌛ Never stopped!" : "⌛ Too slow!";
+      head = NONE_HEAD[t] ?? "⌛ Too slow!";
     }
   } else {
     head = <>💡 Results</>;
@@ -595,6 +716,11 @@ function Final({ view, byId, me }: { view: BlitzView; byId: Record<string, Playe
                     {m.title}
                   </span>
                 </span>
+                {(r.twist || r.mult > 1) && (
+                  <span className="text-[10px] font-black text-muted">
+                    {r.twist ? `${TWISTS[r.twist].icon} ${TWISTS[r.twist].title.replace("!", "")}` : `×${r.mult}`}
+                  </span>
+                )}
                 {best.length ? (
                   <span className="flex items-center gap-1">
                     <span className="flex -space-x-1.5">
@@ -604,7 +730,7 @@ function Final({ view, byId, me }: { view: BlitzView; byId: Record<string, Playe
                     </span>
                     <span className="font-mono text-[11px] font-bold text-muted">
                       {r.pts}
-                      {r.double ? " 🔥" : ""}
+                      {r.mult === 3 ? " 👑" : r.double ? " 🔥" : ""}
                     </span>
                   </span>
                 ) : (
@@ -628,7 +754,9 @@ function liveText(view: BlitzView, me: string, isPlayer: boolean, answered: bool
       return `Blitz is about to start: ${view.total} microgames.`;
     case "ready":
       return m
-        ? `Microgame ${view.round} of ${view.total}: ${m.title}. ${m.how}.${view.micro?.double ? " Double points." : ""}`
+        ? `Microgame ${view.round} of ${view.total}: ${m.title}. ${m.how}.${
+            view.micro?.twist ? ` Twist: ${TWISTS[view.micro.twist].title} ${TWISTS[view.micro.twist].how}.` : ""
+          }${view.micro?.boss ? " Boss round, triple points." : view.micro?.double ? " Double points." : ""}`
         : "";
     case "play":
       return answered ? "Locked in." : m ? `Go! ${m.title}.` : "";

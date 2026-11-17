@@ -8,13 +8,13 @@ export const meta: GameMeta = {
   "category": "brain",
   "minPlayers": 1,
   "maxPlayers": 12,
-  "minutes": 4,
+  "minutes": 5,
   "emoji": "🪜",
   "accent": "#c084fc",
   "how": [
     "Turn the start word into the goal word, one letter at a time.",
-    "Every step must be a real word.",
-    "Fewest steps and fastest finish score most. Play solo or race friends."
+    "Every step must be a real word. Match par for full points.",
+    "Solve fast to score more. Play solo or race friends on the same ladders."
   ],
   "original": true,
   "isNew": true

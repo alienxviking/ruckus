@@ -8,13 +8,13 @@ export const meta: GameMeta = {
   "category": "party",
   "minPlayers": 3,
   "maxPlayers": 12,
-  "minutes": 8,
+  "minutes": 10,
   "emoji": "🔥",
   "accent": "#fb7185",
   "how": [
-    "Each round one player takes the hot seat and secretly answers a fun question.",
-    "Everyone else guesses what they picked, then talk it out on the call.",
-    "Score for every right guess. The hot seat scores when friends read them right."
+    "Each round one player takes the hot seat and secretly answers a fun question about themselves.",
+    "Everyone else predicts their pick. Drumroll, reveal, then talk it out on the call.",
+    "Right reads score 100. The hot seat scores when friends read them right."
   ],
   "original": true,
   "isNew": true,

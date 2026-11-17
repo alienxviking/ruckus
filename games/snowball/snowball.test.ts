@@ -613,4 +613,145 @@ for (const n of [2, 3, 5]) {
   assert(t.result?.winners.join() === "bot-0", "a bot beats a player who never moves");
 }
 
+// ---------- Red vs Blue ----------
+{
+  // Split: even (first team gets the extra one); solo by default; one player can't make teams.
+  for (const n of [2, 3, 4, 5, 8]) {
+    const t = makeTestCtx(n, 90 + n, { mode: "teams" });
+    const s = game.setup(t.ctx);
+    assert(s.teams, `teams with ${n}`);
+    assert(s.teams[0].length === Math.ceil(n / 2) && s.teams[1].length === Math.floor(n / 2), `even split ${n}`);
+    assert([...s.teams[0], ...s.teams[1]].sort().join() === t.ids.slice().sort().join(), "everyone on exactly one team");
+    s.ids.forEach((id, slot) => assert(s.team[slot] === (s.teams![0].includes(id) ? 0 : 1), "team per slot"));
+    const v = game.view(s, t.ids[0], t.ctx) as SnowView;
+    assert(v.teams && v.teams[0].join() === s.teams[0].join() && v.teamWins.join() === "0,0", "view shows teams");
+  }
+  assert(game.setup(makeTestCtx(4, 1).ctx).teams === null, "solo by default");
+  assert(game.setup(makeTestCtx(1, 1, { mode: "teams" }).ctx).teams === null, "no teams for one player");
+}
+
+/** A 4-player team match on the bare range, from kid 0's point of view. */
+function teamMatch(seed: number, settings: Record<string, number | string> = {}) {
+  const t = makeTestCtx(4, seed, { mode: "teams", ...settings });
+  const s = game.setup(t.ctx);
+  toFight(t, s);
+  clearField(s);
+  const mine = s.team[0];
+  const mate = s.kids.findIndex((k) => k.slot !== 0 && s.team[k.slot] === mine);
+  const foes = s.kids.filter((k) => s.team[k.slot] !== mine).map((k) => k.slot);
+  return { t, s, mine, mate, foes };
+}
+
+{
+  // No friendly fire: plain, big (2 damage) and triple throws all pass through a teammate.
+  const { t, s, mate, foes } = teamMatch(5);
+  assert(mate > 0 && foes.length === 2, "2v2");
+  assert(hit(t, s, 0, mate) === 0, "a teammate's snowball does no damage");
+  s.kids[0].power = "big";
+  s.kids[0].charges = 3;
+  assert(hit(t, s, 0, mate) === 0, "a teammate's big ball does no damage");
+  s.kids[0].power = "triple";
+  s.kids[0].charges = 3;
+  assert(hit(t, s, 0, mate) === 0, "a teammate's triple shot does no damage");
+  assert(s.hits[0] === 0 && s.kos[0] === 0, "no hit credit for teammates");
+  const ends = lastSnaps(t).flatMap((sn) => sn.e ?? []);
+  assert(!ends.some((e) => e[2] === END_PLAYER && e[3] === mate), "no SPLAT on a teammate");
+  s.kids[0].power = null;
+  s.kids[0].charges = 0;
+  assert(hit(t, s, 0, foes[0]) >= 1, "enemies still take hits");
+  assert(s.hits[0] >= 1, "enemy hits count");
+}
+
+{
+  // Last team standing: the round only ends once a whole team is out; every member banks the win.
+  const { t, s, mine, mate, foes } = teamMatch(6);
+  s.kids[foes[0]].hp = 1;
+  s.kids[foes[1]].hp = 1;
+  s.kids[mate].hp = 1;
+  assert(hit(t, s, 0, foes[0]) === 1 && !s.kids[foes[0]].alive, "first enemy out");
+  assert(s.phase === "fight", "round goes on while each team has someone standing");
+  assert(hit(t, s, 0, foes[1]) === 1, "second enemy out");
+  assert((s.phase as string) === "roundOver", "round over once only one team is left");
+  assert(s.lastTeam === mine && s.lastWinner === null, "the team takes the round");
+  assert(s.teamWins[mine] === 1 && s.teamWins[1 - mine] === 0, "team round win");
+  assert(s.wins[0] === 1 && s.wins[mate] === 1 && s.wins[foes[0]] === 0, "every member banks it");
+  assert(s.history[0].team === mine && s.history[0].winner === null, "history records the team");
+  assert(s.kos[0] === 2, "knockout credit");
+}
+
+{
+  // Winning the match: the whole team wins (even a teammate who was knocked out), with a team headline.
+  const { t, s, mine, mate, foes } = teamMatch(7, { wins: 2 });
+  s.teamWins[mine] = 1;
+  s.kids[mate].alive = false; // the teammate is already out: still a winner
+  for (const f of foes) {
+    s.kids[f].hp = 1;
+    hit(t, s, 0, f);
+  }
+  assert(t.result, "match over");
+  assert(t.result.winners.slice().sort().join() === s.teams![mine].slice().sort().join(), "winners = the whole team");
+  assert(t.result.winners.includes(t.ids[mate]), "knocked-out teammate wins too");
+  const name = mine === 0 ? "Red" : "Blue";
+  assert(t.result.headline.startsWith(`${name} team wins 2–0`), `headline: ${t.result.headline}`);
+  assert(s.champTeam === mine, "champion team");
+  const v = game.view(s, t.ids[0], t.ctx) as SnowView;
+  assert(v.champTeam === mine && v.teamWins[mine] === 2, "view shows the result");
+}
+
+{
+  // A drawn match at the round cap (level on round wins): nobody wins.
+  const { t, s } = teamMatch(8, { wins: 2 });
+  s.round = s.maxRounds;
+  s.teamWins = [1, 1];
+  run(t, s, ROUND_CAP_MS + 500);
+  assert(t.result && t.result.winners.length === 0, "level teams draw");
+  assert(/draw/.test(t.result.headline), `draw headline: ${t.result.headline}`);
+}
+
+{
+  // Teams spawn on opposite sides: each team's centre is closer to its own kids than the other's.
+  const t = makeTestCtx(6, 12, { mode: "teams" });
+  const s = game.setup(t.ctx);
+  const centre = (team: number) => {
+    const ks = s.kids.filter((k) => s.team[k.slot] === team);
+    return [ks.reduce((a, k) => a + k.x, 0) / ks.length, ks.reduce((a, k) => a + k.y, 0) / ks.length];
+  };
+  const [r, b] = [centre(0), centre(1)];
+  assert(Math.hypot(r[0] - b[0], r[1] - b[1]) > 250, "teams start apart");
+}
+
+{
+  // All-bot team matches: bots never hit a teammate, and the match ends with a whole team winning.
+  for (const n of [4, 5]) {
+    const t = makeTestCtx(n, 30 + n, { mode: "teams" }, n);
+    const s = game.setup(t.ctx);
+    const owner = new Map<number, number>();
+    let enemyHits = 0;
+    let seen: Snap | null = null;
+    for (let i = 0; i < 20 * 60 * 20 && !t.result; i++) {
+      t.advance(TICK_MS);
+      game.tick!(s, t.ctx);
+      if (s.snap !== seen) {
+        seen = s.snap;
+        for (const b of seen.b ?? []) owner.set(b[0], b[1]);
+        for (const e of seen.e ?? []) {
+          if (e[2] !== END_PLAYER) continue;
+          const from = owner.get(e[0]);
+          assert(from !== undefined, "ball thrower known");
+          assert(s.team[from] !== s.team[e[3]], "bots never hit a teammate");
+          enemyHits += 1;
+        }
+      }
+      for (const id of t.ids) {
+        const a = game.bot!(s, id, t.ctx);
+        if (a) game.action(s, id, a, t.ctx);
+      }
+    }
+    assert(t.result, `all-bot team match ends (${n} bots)`);
+    assert(enemyHits > 5, "bots hit enemies");
+    const w = t.result.winners.slice().sort().join();
+    assert(w === "" || w === s.teams![0].slice().sort().join() || w === s.teams![1].slice().sort().join(), "a whole team wins");
+  }
+}
+
 console.log("✓ snowball tests passed");

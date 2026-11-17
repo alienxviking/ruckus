@@ -869,6 +869,8 @@ export interface ArenaData {
   accent: string;
   /** Per slot: disconnected right now. */
   offline: boolean[];
+  /** Per slot: team index in Red vs Blue (-1 in solo mode). */
+  team: number[];
 }
 
 function burst(sc: Scene, x: number, y: number, n: number, now: number, color: string, speed: number, size: number) {
@@ -1634,7 +1636,7 @@ export function Arena({
     act({ type: "throw", x: ax, y: ay, s: seq });
   };
 
-  /** Tap to throw: at the nearest opponent, leading them a little. */
+  /** Tap to throw: at the nearest opponent (never a teammate), leading them a little. */
   const autoThrow = () => {
     const sc = scene.current;
     const me = sc.pred;
@@ -1646,6 +1648,7 @@ export function Arena({
     let bd = Infinity;
     for (let i = 0; i < data.view.ids.length; i++) {
       if (i === mine || (Number(a.st[i * 3]) || 0) <= 0) continue;
+      if (data.team[i] >= 0 && data.team[i] === data.team[mine]) continue; // a teammate
       const dd = Math.hypot(sc.pos[i * 2] - me.x, sc.pos[i * 2 + 1] - me.y);
       if (dd < bd) [bd, best] = [dd, i];
     }

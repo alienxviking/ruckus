@@ -1,6 +1,6 @@
 "use client";
 
-import { Activity, Cpu, DoorOpen, KeyRound, Plug, ShieldAlert } from "lucide-react";
+import { Activity, Bug, Cpu, DoorOpen, KeyRound, Plug, ShieldAlert } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { CATALOG_BY_ID } from "@/games/catalog";
 import { partyHost } from "@/lib/identity";
@@ -19,6 +19,17 @@ interface Day {
   gbSeconds: number;
   requestsPct: number;
   gbSecondsPct: number;
+  errors?: number;
+}
+interface ErrorEntry {
+  msg: string;
+  stack: string;
+  where: string;
+  game: string;
+  browser: string;
+  count: number;
+  first: number;
+  last: number;
 }
 interface Snapshot {
   now: number;
@@ -26,6 +37,7 @@ interface Snapshot {
   openRooms: number;
   today: Day;
   days: Day[];
+  errors?: ErrorEntry[];
 }
 
 const KEY = "ruckus:stats-token";
@@ -216,9 +228,40 @@ export function StatsDashboard() {
           </ul>
         </div>
       </section>
+      <section className="card mt-6 p-4">
+        <h2 className="label mb-3 flex items-center gap-2">
+          <Bug aria-hidden className="size-3.5" strokeWidth={2} /> Crashes in players&apos; browsers
+          <span className="ml-auto font-mono normal-case">{t.errors ?? 0} today</span>
+        </h2>
+        {data.errors?.length ? (
+          <ul className="space-y-2">
+            {data.errors.map((e) => (
+              <li key={`${e.msg}|${e.where}|${e.game}`} className="rounded-lg border border-line bg-ink/40 p-3">
+                <details>
+                  <summary className="flex cursor-pointer list-none flex-wrap items-center gap-x-3 gap-y-1 text-sm">
+                    <span className="min-w-0 flex-1 truncate font-semibold">{e.msg}</span>
+                    <span className="font-mono text-xs text-muted">
+                      {e.game ? `${CATALOG_BY_ID[e.game]?.name ?? e.game} · ` : ""}
+                      {e.where} · {e.browser} · ×{e.count} · {ago(data.now - e.last)}
+                    </span>
+                  </summary>
+                  {e.stack && <pre className="mt-2 overflow-x-auto font-mono text-[11px] whitespace-pre text-muted">{e.stack}</pre>}
+                </details>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-sm text-muted">No crashes reported. 🎉</p>
+        )}
+      </section>
       {error && <p className="mt-4 font-mono text-xs text-brand">Last refresh failed: {error}</p>}
     </main>
   );
+}
+
+function ago(ms: number) {
+  const m = Math.round(ms / 60_000);
+  return m < 1 ? "just now" : m < 60 ? `${m} min ago` : m < 48 * 60 ? `${Math.round(m / 60)} h ago` : `${Math.round(m / 1440)} d ago`;
 }
 
 function Meter({

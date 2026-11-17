@@ -567,4 +567,105 @@ for (const [humans, bots] of [
   console.log(`  bots: ${humans} human + ${bots} bots in ${Math.round(ms / 1000)}s, totals ${botTotals.join("/")}`);
 }
 
+// ---------- Red vs Blue ----------
+
+{
+  // Solo by default, and team mode needs two players.
+  check(newGame(4).s.teams === null, "solo by default");
+  const one = makeTestCtx(1, 3, { mode: "teams" });
+  check(game.setup(one.ctx).teams === null, "one player can't make two teams");
+
+  for (const n of [2, 3, 4, 5, 7]) {
+    const t = makeTestCtx(n, 20 + n, { mode: "teams" });
+    const s: PixelsState = game.setup(t.ctx);
+    const [a, b] = s.teams!;
+    check(a.length + b.length === n && Math.abs(a.length - b.length) <= 1, `${n}p: teams split evenly`);
+    check(new Set([...a, ...b]).size === n, `${n}p: everyone on exactly one team`);
+    const red = s.ids.indexOf(a[0]);
+    const blue = s.ids.indexOf(b[0]);
+    for (const id of a) check(s.emblems[s.ids.indexOf(id)] === s.emblems[red], `${n}p: Red shares one emblem`);
+    for (const id of b) check(s.emblems[s.ids.indexOf(id)] === s.emblems[blue], `${n}p: Blue shares one emblem`);
+    check(s.emblems[red] !== s.emblems[blue] && overlap(s.emblems[red], s.emblems[blue]) <= 10, `${n}p: team emblems differ`);
+    const v = view(s, a[a.length - 1], t);
+    check(v.teams?.[0].join() === a.join() && v.mine?.art === EMBLEMS[s.emblems[red]].art, `${n}p: teammates see the team emblem`);
+  }
+
+  // Red (2) paints its emblem perfectly every round; Blue (1) paints a partial copy. Uneven teams
+  // are fair: each team scores its best copy, the same for one painter or five.
+  const t = makeTestCtx(3, 5, { mode: "teams", rounds: 2 });
+  const ends = countEnds(t);
+  const s: PixelsState = game.setup(t.ctx);
+  const [red, blue] = s.teams!;
+  check(red.length === 2 && blue.length === 1, "3 players: Red gets the extra one");
+  const ri = s.ids.indexOf(red[0]);
+  const bi = s.ids.indexOf(blue[0]);
+  for (let r = 0; r < 2; r++) {
+    tick(t, s, INTRO_MS);
+    stamp(s, artOf(s, ri), 1, 1);
+    const blueArt = artOf(s, bi);
+    stamp(s, blueArt, 20, 10);
+    s.board[10 * s.w + 20] = (+blueArt[0] % 8) + 1; // one pixel wrong
+    tick(t, s, s.paintMs);
+    check(s.pts![ri] === EMBLEM_CELLS + PERFECT_BONUS && s.pts![s.ids.indexOf(red[1])] === s.pts![ri], "teammates share the round score");
+    check(s.pts![bi] === EMBLEM_CELLS - 1, "Blue scores its best copy");
+    tick(t, s, SPOTS_MS);
+    tick(t, s, REVEAL_MS);
+  }
+  check(ends.length === 1 && s.phase === "final", "team game ends");
+  const res = t.result!;
+  check(res.winners.length === 2 && red.every((id) => res.winners.includes(id)), "winners are the whole Red team");
+  check(/^Red team wins/.test(res.headline) && res.headline.includes("60") && res.headline.includes("48"), `team headline: ${res.headline}`);
+  check(res.scores![red[0]] === 60 && res.scores![blue[0]] === 48, "per-player scores still reported");
+
+  // Equal teams that tie: everyone shares the win.
+  const t2 = makeTestCtx(4, 9, { mode: "teams", rounds: 2 });
+  const s2: PixelsState = game.setup(t2.ctx);
+  for (let r = 0; r < 2; r++) {
+    tick(t2, s2, INTRO_MS);
+    stamp(s2, EMBLEMS[s2.emblems[s2.ids.indexOf(s2.teams![0][0])]].art, 1, 1);
+    stamp(s2, EMBLEMS[s2.emblems[s2.ids.indexOf(s2.teams![1][0])]].art, 20, 10);
+    tick(t2, s2, s2.paintMs);
+    tick(t2, s2, SPOTS_MS);
+    tick(t2, s2, REVEAL_MS);
+  }
+  check(t2.result!.winners.length === 4 && /Red and Blue tie/.test(t2.result!.headline), `team tie: ${t2.result!.headline}`);
+}
+
+// Bots in Red vs Blue: they finish, cooperate on one copy, and never deface their own team's copy.
+for (const [humans, bots] of [
+  [0, 4],
+  [1, 4],
+]) {
+  const n = humans + bots;
+  const t = makeTestCtx(n, 31, { mode: "teams" }, bots);
+  const s: PixelsState = game.setup(t.ctx);
+  let ms = 0;
+  let selfHarm = 0;
+  while (!t.result && ms < 20 * 60_000) {
+    t.advance(100);
+    ms += 100;
+    for (const id of t.ids) {
+      if (!id.startsWith("bot-")) continue;
+      const a = game.bot!(s, id, t.ctx);
+      if (!a) continue;
+      if (a.type === "paint" && s.phase === "paint") {
+        const art = digits(artOf(s, s.ids.indexOf(id)));
+        const before = bestMatch(s.board, s.w, s.h, art).n;
+        game.action(s, id, a, t.ctx);
+        if (bestMatch(s.board, s.w, s.h, art).n < before) selfHarm++;
+      } else game.action(s, id, a, t.ctx);
+    }
+    game.tick!(s, t.ctx);
+  }
+  check(t.result, `team bots finish the game (${humans} human + ${bots} bots)`);
+  check(selfHarm === 0, `team bots never lower their own team's copy (${selfHarm})`);
+  const [a, b] = s.teams!;
+  const winTeam = a.every((id) => t.result!.winners.includes(id)) ? a : b;
+  check(t.result!.winners.length === winTeam.length || t.result!.winners.length === n, "team bots: winners are a whole team");
+  const tot = s.ids.map((_, i) => s.totals[i]);
+  check(tot.every((x) => x > 20), `team bots score points (${tot.join(", ")})`);
+  check(evs(t, "no").length < 5, "team bots pace themselves under the cooldown");
+  console.log(`  team bots: ${humans} human + ${bots} bots in ${Math.round(ms / 1000)}s: ${t.result!.headline}`);
+}
+
 console.log("✓ pixels: all tests passed");

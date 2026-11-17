@@ -4,7 +4,7 @@ import type { GameMeta } from "../catalog";
 export const meta: GameMeta = {
   "id": "puck",
   "name": "Puck",
-  "tagline": "Air hockey, 1v1 or 2v2. Fast.",
+  "tagline": "Neon air hockey, 1v1 or 2v2. Fast.",
   "category": "arena",
   "minPlayers": 2,
   "maxPlayers": 4,
@@ -12,9 +12,9 @@ export const meta: GameMeta = {
   "emoji": "🏒",
   "accent": "#38bdf8",
   "how": [
-    "Slide your paddle to smack the puck into the other goal.",
-    "Play 1v1, or 2v2 with a teammate on each side.",
-    "First to 7 goals wins."
+    "Drag or mouse your paddle around your half of the table.",
+    "Smash the puck into the far goal. Hit through it for power.",
+    "1v1, 2v1 or 2v2. First side to 7 goals wins."
   ],
   "original": true,
   "isNew": true,

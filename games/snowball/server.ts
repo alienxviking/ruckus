@@ -1,5 +1,6 @@
 import { shuffle, topScorers, type GameCtx, type GameDef } from "../../shared/game";
 import { readSettings } from "../../shared/settings";
+import { TEAMS, splitTeams } from "../../shared/teams";
 import { config } from "./config";
 import {
   ABANDON_MS,
@@ -119,8 +120,10 @@ export interface OutRec {
 }
 
 export interface RoundRec {
-  /** Round winner's player id, null for a draw. */
+  /** Round winner's player id, null for a draw (and always null in team mode). */
   winner: string | null;
+  /** Team mode: the team (0 Red, 1 Blue) that won the round, -1 for a draw. */
+  team?: number;
   /** Slots in the order they were knocked out. */
   order: number[];
 }
@@ -128,6 +131,16 @@ export interface RoundRec {
 export interface SnowState {
   /** Participants in join order; index = slot. */
   ids: string[];
+  /** Team mode (Red vs Blue): the two teams' player ids; null in solo mode. */
+  teams: [string[], string[]] | null;
+  /** Team index per slot (-1 in solo mode). */
+  team: number[];
+  /** Round wins per team (team mode only). */
+  teamWins: [number, number];
+  /** Team mode: the team that took the last round (null = draw / none yet). */
+  lastTeam: number | null;
+  /** Team mode: the team that won the match (null = none / draw). */
+  champTeam: number | null;
   /** Host settings: round wins to take the match, rounds at most, and hearts per round. */
   winsNeeded: number;
   maxRounds: number;
@@ -189,6 +202,13 @@ export interface SnowView {
   fightAt: number;
   field: number;
   ids: string[];
+  /** Team mode (Red vs Blue): the two teams' player ids; null in solo mode. */
+  teams: [string[], string[]] | null;
+  /** Round wins per team (team mode). */
+  teamWins: [number, number];
+  /** Team mode: team that took the last round, and the team that won the match. */
+  lastTeam: number | null;
+  champTeam: number | null;
   wins: number[];
   hits: number[];
   kos: number[];
@@ -242,9 +262,19 @@ function spawnKids(s: SnowState, ctx: GameCtx) {
     ctx.random,
   );
   const rot = Math.floor(ctx.random() * ring);
+  // Team mode: each team spreads over its own half of the ring, the two halves facing each other.
+  const half = Math.floor(ring / 2);
+  const spot = (slot: number, i: number) => {
+    if (!s.teams) return (rot + Math.round((i * ring) / Math.max(1, n))) % ring;
+    const t = s.team[slot];
+    const mates = order.filter((o) => s.team[o] === t);
+    const j = mates.indexOf(slot);
+    const off = Math.min(half - 1, Math.round(((j + 0.5) * half) / mates.length - 0.5));
+    return (rot + t * half + off) % ring;
+  };
   order.forEach((slot, i) => {
     const k = s.kids[slot];
-    const [x, y] = field.spawns[(rot + Math.round((i * ring) / Math.max(1, n))) % ring];
+    const [x, y] = field.spawns[spot(slot, i)];
     const dx = WORLD_W / 2 - x;
     const dy = WORLD_H / 2 - y;
     const m = Math.hypot(dx, dy) || 1;
@@ -285,6 +315,16 @@ function startRound(s: SnowState, ctx: GameCtx) {
   s.pe = [];
   s.pf = [];
   s.lastWinner = null;
+  s.lastTeam = null;
+}
+
+/** Same team (team mode only): teammates' snowballs fly straight through each other. */
+const allies = (s: SnowState, a: number, b: number) => s.team[a] >= 0 && s.team[a] === s.team[b];
+
+/** Teams (or solo players) with someone still standing. */
+function sidesLeft(s: SnowState): number {
+  if (!s.teams) return s.kids.filter((k) => k.alive).length;
+  return new Set(s.kids.filter((k) => k.alive).map((k) => s.team[k.slot])).size;
 }
 
 function pushFx(s: SnowState, fx: FxTuple) {
@@ -315,7 +355,7 @@ function ballStep(s: SnowState, b: Ball, t: number, live: boolean): boolean {
   };
   if (at.h < HIT_H) {
     for (const k of s.kids) {
-      if (!k.alive || k.slot === b.slot) continue;
+      if (!k.alive || k.slot === b.slot || allies(s, k.slot, b.slot)) continue;
       const dx = k.x - at.x;
       const dy = k.y - at.y;
       if (dx * dx + dy * dy > (PLAYER_R + br) ** 2) continue;
@@ -446,7 +486,7 @@ function simulate(s: SnowState, ctx: GameCtx) {
   for (let i = 0; i < n; i++) {
     s.steps += 1;
     substep(s, ctx, simTime(s));
-    if (s.phase === "fight" && s.kids.filter((k) => k.alive).length <= 1) break;
+    if (s.phase === "fight" && sidesLeft(s) <= 1) break;
   }
 }
 
@@ -508,8 +548,25 @@ function winsRecord(s: SnowState): Record<string, number> {
   return Object.fromEntries(s.ids.map((id, i) => [id, s.wins[i]]));
 }
 
-function finishMatch(s: SnowState, ctx: GameCtx, winners: string[], how: "won" | "forfeit" | "abandoned") {
-  if (s.phase === "final") return;
+function teamHeadline(s: SnowState, team: number | null, how: "won" | "forfeit" | "abandoned") {
+  const [r, b] = s.teamWins;
+  if (how === "abandoned") return "Snowball Showdown is over: everyone went inside";
+  if (team === null) return `${TEAMS[0].name} and ${TEAMS[1].name} draw the Showdown ${r}–${b}`;
+  const other = TEAMS[1 - team].name;
+  if (how === "forfeit") return `${TEAMS[team].name} team wins! ${other} went home`;
+  const score = team === 0 ? `${r}–${b}` : `${b}–${r}`;
+  return `${TEAMS[team].name} team wins ${score}! ❄️`;
+}
+
+/** Team mode: the whole team takes the match (team null = draw). */
+function finishTeamMatch(s: SnowState, ctx: GameCtx, team: number | null, how: "won" | "forfeit" | "abandoned") {
+  if (s.phase === "final" || !s.teams) return;
+  s.champTeam = team;
+  const winners = team === null ? [] : s.teams[team].slice();
+  endMatch(s, ctx, winners, teamHeadline(s, team, how));
+}
+
+function endMatch(s: SnowState, ctx: GameCtx, winners: string[], headline: string) {
   s.phase = "final";
   s.endsAt = 0;
   s.power = null;
@@ -518,6 +575,17 @@ function finishMatch(s: SnowState, ctx: GameCtx, winners: string[], how: "won" |
     k.ix = 0;
     k.iy = 0;
   }
+  ctx.end({ winners: winners.slice(), headline, scores: winsRecord(s) });
+}
+
+/** Team with more round wins, or null when level. */
+function leadingTeam(s: SnowState): number | null {
+  const [r, b] = s.teamWins;
+  return r === b ? null : r > b ? 0 : 1;
+}
+
+function finishMatch(s: SnowState, ctx: GameCtx, winners: string[], how: "won" | "forfeit" | "abandoned") {
+  if (s.phase === "final") return;
   const names = winners.map((id) => playerName(ctx, id));
   let headline: string;
   if (how === "abandoned") headline = "Snowball Showdown is over: everyone went inside";
@@ -525,7 +593,23 @@ function finishMatch(s: SnowState, ctx: GameCtx, winners: string[], how: "won" |
   else if (!names.length) headline = "Snowball Showdown ends in a draw: nobody won a round";
   else if (names.length === 1) headline = `${names[0]} is the Snowball champion ❄️`;
   else headline = `${joinNames(names)} share the Snowball crown`;
-  ctx.end({ winners: winners.slice(), headline, scores: winsRecord(s) });
+  endMatch(s, ctx, winners, headline);
+}
+
+function finishTeamRound(s: SnowState, ctx: GameCtx, team: number | null) {
+  s.lastWinner = null;
+  s.lastTeam = team;
+  s.history.push({ winner: null, team: team ?? -1, order: s.outs.map((o) => o.s) });
+  s.power = null;
+  if (team !== null && s.teams) {
+    s.teamWins[team] += 1;
+    // Every member banks the round win (they're the per-player scores).
+    for (const k of s.kids) if (s.team[k.slot] === team) s.wins[k.slot] += 1;
+    if (s.teamWins[team] >= s.winsNeeded) return finishTeamMatch(s, ctx, team, "won");
+  }
+  if (s.round >= s.maxRounds) return finishTeamMatch(s, ctx, leadingTeam(s), "won");
+  s.phase = "roundOver";
+  s.endsAt = ctx.now() + ROUND_OVER_MS;
 }
 
 function finishRound(s: SnowState, ctx: GameCtx, winner: Kid | null) {
@@ -553,7 +637,10 @@ function checkAlone(s: SnowState, ctx: GameCtx): boolean {
     return true;
   }
   if (now - s.aloneSince < ABANDON_MS) return false;
-  if (online.length === 1) finishMatch(s, ctx, online, "forfeit");
+  if (s.teams) {
+    if (online.length === 1) finishTeamMatch(s, ctx, s.team[s.ids.indexOf(online[0])], "forfeit");
+    else finishTeamMatch(s, ctx, leadingTeam(s), "abandoned");
+  } else if (online.length === 1) finishMatch(s, ctx, online, "forfeit");
   else finishMatch(s, ctx, topScorers(winsRecord(s)), "abandoned");
   return true;
 }
@@ -580,8 +667,9 @@ function advance(s: SnowState, ctx: GameCtx): boolean {
       simulate(s, ctx);
       if (s.outs.length !== outsBefore) changed = true;
       const alive = s.kids.filter((k) => k.alive);
-      if (alive.length <= 1) {
-        finishRound(s, ctx, alive[0] ?? null);
+      if (sidesLeft(s) <= 1) {
+        if (s.teams) finishTeamRound(s, ctx, alive.length ? s.team[alive[0].slot] : null);
+        else finishRound(s, ctx, alive[0] ?? null);
         return true;
       }
       const ms = simTime(s) - s.fightAt;
@@ -591,7 +679,8 @@ function advance(s: SnowState, ctx: GameCtx): boolean {
         changed = true;
       }
       if (ms >= ROUND_CAP_MS) {
-        finishRound(s, ctx, null);
+        if (s.teams) finishTeamRound(s, ctx, null);
+        else finishRound(s, ctx, null);
         return true;
       }
       return changed;
@@ -618,11 +707,15 @@ function buildView(s: SnowState): SnowView {
     fightAt: s.fightAt,
     field: s.field,
     ids: s.ids.slice(),
+    teams: s.teams ? [s.teams[0].slice(), s.teams[1].slice()] : null,
+    teamWins: [s.teamWins[0], s.teamWins[1]],
+    lastTeam: s.lastTeam,
+    champTeam: s.champTeam,
     wins: s.wins.slice(),
     hits: s.hits.slice(),
     kos: s.kos.slice(),
     outs: s.outs.map((o) => ({ ...o })),
-    history: s.history.map((h) => ({ winner: h.winner, order: h.order.slice() })),
+    history: s.history.map((h) => ({ ...h, order: h.order.slice() })),
     lastWinner: s.lastWinner,
     champions: s.champions ? s.champions.slice() : null,
     sudden: s.sudden,
@@ -684,7 +777,7 @@ function botAction(s: SnowState, botId: string, ctx: GameCtx): SnowAction | null
   let target: Kid | null = null;
   let best = Infinity;
   for (const o of s.kids) {
-    if (!o.alive || o === k) continue;
+    if (!o.alive || o === k || allies(s, o.slot, k.slot)) continue;
     const d = Math.hypot(o.x - k.x, o.y - k.y);
     if (d < best) {
       best = d;
@@ -754,8 +847,14 @@ export const snowball: GameDef<SnowState, SnowAction> = {
     const set = readSettings(config.settings, ctx.settings);
     const winsNeeded = set.wins as number;
     const maxHp = set.hearts as number;
+    const teams = set.mode === "teams" && ids.length >= 2 ? splitTeams(ids, ctx.random) : null;
     const s: SnowState = {
       ids,
+      teams,
+      team: ids.map((id) => (teams ? (teams[0].includes(id) ? 0 : 1) : -1)),
+      teamWins: [0, 0],
+      lastTeam: null,
+      champTeam: null,
       winsNeeded,
       // 3 wins -> 7 rounds at most (the original match length).
       maxRounds: winsNeeded * 2 + 1,

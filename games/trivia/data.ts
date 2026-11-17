@@ -5,19 +5,11 @@
 // Choices are written correct-first (answer: 0); the game shuffles them per game
 // and tracks the correct position on the server only.
 
-import type { Category, Difficulty } from "./shared";
+import { q, type Question } from "./question";
+import { BANK_A } from "./bank-a";
+import { BANK_B } from "./bank-b";
 
-export interface Question {
-  q: string;
-  choices: [string, string, string, string];
-  answer: number;
-  cat: Category;
-  diff: Difficulty;
-}
-
-function q(cat: Category, diff: Difficulty, text: string, right: string, w1: string, w2: string, w3: string): Question {
-  return { q: text, choices: [right, w1, w2, w3], answer: 0, cat, diff };
-}
+export type { Question };
 
 const SCI = "Science";
 const SPA = "Space";
@@ -32,7 +24,7 @@ const ART = "Art & Music";
 const MAT = "Maths & Logic";
 const FIL = "Film & Books";
 
-export const QUESTIONS: readonly Question[] = [
+const CORE: readonly Question[] = [
   // ── Science ──
   q(SCI, "easy", "What is the chemical symbol for gold?", "Au", "Ag", "Gd", "Go"),
   q(SCI, "easy", "Which gas do plants take in from the air to make their food?", "Carbon dioxide", "Oxygen", "Nitrogen", "Helium"),
@@ -237,3 +229,6 @@ export const QUESTIONS: readonly Question[] = [
   q(FIL, "hard", "Who directed the 1968 film '2001: A Space Odyssey'?", "Stanley Kubrick", "Steven Spielberg", "George Lucas", "Ridley Scott"),
   q(FIL, "hard", "Who wrote 'War and Peace'?", "Leo Tolstoy", "Fyodor Dostoevsky", "Anton Chekhov", "Ivan Turgenev"),
 ];
+
+/** Every question: the original set plus the larger banks. */
+export const QUESTIONS: readonly Question[] = [...CORE, ...BANK_A, ...BANK_B];

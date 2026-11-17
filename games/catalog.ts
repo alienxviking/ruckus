@@ -66,6 +66,7 @@ export const CATALOG: GameMeta[] = [
     minutes: 5,
     emoji: "⚡",
     accent: "#facc15",
+    teams: true,
     how: [
       "10 questions from 10 categories, 15 seconds each. Everyone gets the same question at once.",
       "Tap an answer or press 1–4 / A–D. One pick per question, no take-backs.",
@@ -115,6 +116,7 @@ export const CATALOG: GameMeta[] = [
     emoji: "🖌️",
     accent: "#38bdf8",
     original: true,
+    teams: true,
     how: [
       "Steer with arrows/WASD, a swipe or the on-screen pad. Every tile you enter turns your colour.",
       "Leave your turf and loop back: everything you wall off from the map edge becomes yours, rivals’ paint too.",
@@ -322,7 +324,7 @@ export const CATALOG: GameMeta[] = [
   {
     id: "blitz",
     name: "Blitz",
-    tagline: "Twelve microgames, a few seconds each. Go go go!",
+    tagline: "28 kinds of microgame, a few seconds each, with twists. Go go go!",
     category: "brain",
     minPlayers: 1,
     maxPlayers: 12,
@@ -331,9 +333,9 @@ export const CATALOG: GameMeta[] = [
     accent: "#818cf8",
     original: true,
     how: [
-      "A rapid run of 12 tiny games: spot the odd emoji, quick sums, stop the clock, tap like mad and more.",
-      "Everyone plays each one at the same time. Right answers score up to 200; faster scores more.",
-      "The last three count double. Highest total after all twelve wins. Keys 1–4, arrows and Space work too.",
+      "A rapid run of tiny games drawn from 28 kinds: reflexes, memory, maths, words, whack-a-mole and more.",
+      "Everyone plays each one at once; faster right answers score more. Watch for twists: reverse, speed up, double points.",
+      "It gets harder as it goes and the finale counts extra. Highest total wins. Keys 1–9, arrows and Space work too.",
     ],
   },
   {
@@ -466,6 +468,7 @@ export const CATALOG: GameMeta[] = [
     emoji: "👾",
     accent: "#f0abfc",
     original: true,
+    teams: true,
     how: [
       "Everyone gets a secret 5×5 pixel emblem. Tap or drag to paint it anywhere on the shared canvas.",
       "Every pixel flashes in its painter's colour. Work out whose emblem is whose and paint over it.",
@@ -537,6 +540,7 @@ export const CATALOG: GameMeta[] = [
     accent: "#bae6fd",
     isNew: true,
     original: true,
+    teams: true,
     how: [
       "Walk with WASD or your left thumb; aim at a spot and throw. Long lobs arc right over the walls.",
       "Snow walls crumble as they take hits. Scoop ❄ piles for 5 snowballs and grab ☃️ ❄️ power-ups.",

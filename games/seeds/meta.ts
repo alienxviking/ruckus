@@ -13,8 +13,8 @@ export const meta: GameMeta = {
   "accent": "#84cc16",
   "how": [
     "Pick up all the seeds in one of your pits and sow them one by one around the board.",
-    "Land in your store for another turn; land in an empty pit to capture.",
-    "Most seeds when a side runs out wins."
+    "Last seed in your store: go again. In an empty pit of yours: capture across.",
+    "Most seeds in your store when a row runs dry wins."
   ],
   "original": true,
   "isNew": true

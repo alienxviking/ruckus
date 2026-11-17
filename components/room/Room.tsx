@@ -3,7 +3,8 @@
 import { MessageSquare, X } from "lucide-react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
-import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { CATALOG_BY_ID } from "@/games/catalog";
 import { preloadGame } from "@/games/client-registry";
 import type { Identity } from "@/lib/identity";
 import { useRoom, type PingStore } from "@/lib/useRoom";
@@ -71,6 +72,22 @@ export function Room({
     setDialogMounted(true);
     setEditing(true);
   };
+
+  // A link like /r/CODE?game=sumo (e.g. "Play this with friends" from solo play) picks that
+  // game for the host once, then the address is tidied up.
+  const linkGame = useRef<string | null | undefined>(undefined);
+  const phase = room?.phase;
+  useEffect(() => {
+    if (linkGame.current === undefined) {
+      const g = new URLSearchParams(window.location.search).get("game");
+      linkGame.current = g && CATALOG_BY_ID[g] ? g : null;
+      if (g) window.history.replaceState(null, "", window.location.pathname);
+    }
+    const want = linkGame.current;
+    if (!want || !isHost || phase !== "lobby") return;
+    linkGame.current = null;
+    if (gameId !== want) r.send({ t: "pick", gameId: want });
+  }, [isHost, phase, gameId, r]);
 
   // Fetch the picked game's code while everyone is still in the lobby, so Start is instant.
   useEffect(() => {

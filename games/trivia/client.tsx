@@ -9,6 +9,7 @@ import type { PlayerLine, TriviaAction, TriviaView } from "./server";
 import { CATEGORIES, LETTERS, STREAK_CAP, fmt } from "./shared";
 import { FinalScreen } from "./final";
 import { Leaderboard, Lineup, LockedIn, SoloStats } from "./standings";
+import { TeamIntro, TeamStrip, teamColored } from "./teams";
 import { AnswerButton, CategoryChip, DiffPill, TriviaStyles, cssVars, ordinal, personOf, seconds, type AnswerLook } from "./ui";
 
 /** When several copies of the game share a page (the dev simulator), the one touched last owns the keyboard. */
@@ -31,7 +32,7 @@ function keyToChoice(key: string): number {
 export default function TriviaRush({
   view,
   me,
-  byId,
+  byId: roomById,
   isPlayer,
   act,
   serverNow,
@@ -100,6 +101,8 @@ export default function TriviaRush({
     );
   }
 
+  // In Red vs Blue everyone wears their team colour.
+  const byId = teamColored(roomById, view.teams);
   const lines = view.players;
   const mine = lines.find((l) => l.id === me) ?? null;
   const solo = lines.length === 1;
@@ -117,7 +120,7 @@ export default function TriviaRush({
         {liveText(view, mine, myChoice)}
       </p>
 
-      {phase === "intro" && <Intro view={view} secs={secs} accent={accent} byId={byId} />}
+      {phase === "intro" && <Intro view={view} secs={secs} accent={accent} byId={byId} me={me} />}
 
       {(phase === "question" || phase === "reveal") && q && (
         <>
@@ -127,6 +130,8 @@ export default function TriviaRush({
               <Banner view={view} mine={mine} isPlayer={isPlayer} myChoice={myChoice} secs={secs} byId={byId} />
             </div>
           </StatusBanner>
+
+          {view.teams && <TeamStrip teams={view.teams} lines={lines} me={me} byId={byId} revealing={revealing} />}
 
           <div className="grid items-start gap-3 @2xl:grid-cols-[minmax(0,1fr)_17.5rem]">
             <div className="flex min-w-0 flex-col gap-3">
@@ -304,14 +309,17 @@ function Intro({
   secs,
   accent,
   byId,
+  me,
 }: {
   view: TriviaView;
   secs: number;
   accent: string;
   byId: Record<string, Player>;
+  me: string;
 }) {
   return (
     <>
+      {view.teams && <TeamIntro teams={view.teams} me={me} byId={byId} />}
       <div
         className="card animate-rise flex flex-col items-center gap-4 px-4 py-6 text-center"
         style={{
@@ -347,7 +355,7 @@ function Intro({
           ))}
         </ul>
       </div>
-      <Lineup lines={view.players} byId={byId} />
+      {!view.teams && <Lineup lines={view.players} byId={byId} />}
     </>
   );
 }
@@ -368,6 +376,10 @@ function liveText(view: TriviaView, mine: PlayerLine | null, myChoice: number | 
       return out.correct ? `Correct! Plus ${out.points} points.` : `${out.choice === null ? "Out of time." : "Wrong."} ${answerText}`;
     }
     case "final": {
+      if (view.teams) {
+        const [r, b] = view.teams.map((t) => t.score);
+        return r === b ? `Game over. Red and Blue tie on ${r} points.` : `Game over. ${r > b ? "Red" : "Blue"} team wins, ${Math.max(r, b)} to ${Math.min(r, b)}.`;
+      }
       if (!mine) return "Game over.";
       const how = view.players.length > 1 ? `You finished ${ordinal(mine.rank)} with` : "You scored";
       return `Game over. ${how} ${mine.score} points, ${mine.correct} of ${view.asked} correct.`;

@@ -1,14 +1,15 @@
 "use client";
 
-import { Ban, Dices, Lock } from "lucide-react";
+import { Ban, Dices, Lock, Trophy } from "lucide-react";
 import { useState, useSyncExternalStore } from "react";
 import { ACCESSORIES, AVATARS, MAX_NAME, parseAvatar, PLAYER_COLORS, type AccessoryId } from "@/shared/types";
 import { randomLook } from "@/lib/identity";
 import { ACCESSORY_LABEL } from "@/lib/avatar-art";
-import { getWins, UNLOCK_AT } from "@/lib/progress";
+import { ACHIEVEMENTS, exportCode, getProgress, importCode, lockReason, subscribeProgress } from "@/lib/progress";
 import { Avatar, AVATAR_LABEL } from "../Avatar";
 
-const noop = () => () => {};
+const EMPTY_PROGRESS = { v: 1, wins: 0, gameWins: {}, played: {}, run: 0, bestRun: 0, bigWins: 0 } as const;
+const ACHIEVEMENT_ACC = new Set<AccessoryId>(ACHIEVEMENTS.map((a) => a.accessory));
 
 export interface ProfileValues {
   name: string;
@@ -31,7 +32,10 @@ export function ProfileForm({
   const start = parseAvatar(initial?.avatar ?? look.avatar);
   const [base, setBase] = useState<string>(start?.base ?? look.avatar);
   const [acc, setAcc] = useState<AccessoryId | null>(start?.acc ?? null);
-  const wins = useSyncExternalStore(noop, getWins, () => 0);
+  const progress = useSyncExternalStore(subscribeProgress, getProgress, () => EMPTY_PROGRESS);
+  const wins = progress.wins;
+  // Locked accessories explain themselves on tap (phones have no hover titles).
+  const [hint, setHint] = useState<string | null>(null);
   const avatar = acc ? `${base}+${acc}` : base;
   const valid = name.trim().length > 0;
 
@@ -119,25 +123,30 @@ export function ProfileForm({
         <div className="mb-2 flex items-center justify-between">
           <legend className="label">Wear</legend>
           <span className="font-mono text-[11px] text-muted">
-            {wins} {wins === 1 ? "win" : "wins"} · winning unlocks more
+            {wins} {wins === 1 ? "win" : "wins"} · win &amp; earn badges to unlock more
           </span>
         </div>
         <div className="grid grid-cols-7 gap-1.5">
           {[null, ...ACCESSORIES].map((a) => {
             const on = a === acc;
-            const need = a ? UNLOCK_AT[a] : 0;
-            const locked = need > wins;
+            const reason = a ? lockReason(a, progress) : null;
+            const locked = reason !== null;
+            const badge = a && ACHIEVEMENT_ACC.has(a);
             const label = a ? ACCESSORY_LABEL[a] : "Nothing";
             return (
               <button
                 type="button"
                 key={a ?? "none"}
-                aria-label={locked ? `${label} (unlocks at ${need} wins)` : label}
-                title={locked ? `${label}: win ${need} ${need === 1 ? "game" : "games"} to unlock` : label}
+                aria-label={locked ? `${label} (locked: ${reason})` : label}
+                title={locked ? `${label}: ${reason}` : label}
                 aria-pressed={on}
-                disabled={locked}
-                onClick={() => setAcc(a)}
-                className={`relative grid aspect-square place-items-center rounded-lg transition-[background-color,box-shadow,transform] duration-200 ease-[cubic-bezier(0.34,1.4,0.5,1)] active:scale-90 disabled:cursor-not-allowed ${
+                aria-disabled={locked}
+                onClick={() => {
+                  if (locked) return setHint(`${label} · ${reason}`);
+                  setHint(null);
+                  setAcc(a);
+                }}
+                className={`relative grid aspect-square place-items-center rounded-lg transition-[background-color,box-shadow,transform] duration-200 ease-[cubic-bezier(0.34,1.4,0.5,1)] active:scale-90 aria-disabled:cursor-help ${
                   on ? "scale-105" : locked ? "" : "hover:-translate-y-0.5 hover:bg-panel-2"
                 }`}
                 style={on ? { background: `${color}26`, boxShadow: `inset 0 0 0 1.5px ${color}` } : undefined}
@@ -152,8 +161,14 @@ export function ProfileForm({
                 {locked && (
                   <span className="absolute inset-0 grid place-items-center">
                     <span className="flex items-center gap-0.5 rounded-sm bg-ink/85 px-1 py-px font-mono text-[9px] text-text">
-                      <Lock aria-hidden className="size-2.5" strokeWidth={2.5} />
-                      {need}
+                      {badge ? (
+                        <Trophy aria-hidden className="size-2.5 text-brand-2" strokeWidth={2.5} />
+                      ) : (
+                        <>
+                          <Lock aria-hidden className="size-2.5" strokeWidth={2.5} />
+                          {a ? lockReason(a, progress)?.match(/\((\d+)\/(\d+)\)/)?.[2] : null}
+                        </>
+                      )}
                     </span>
                   </span>
                 )}
@@ -161,6 +176,8 @@ export function ProfileForm({
             );
           })}
         </div>
+        {hint && <p className="mt-2 font-mono text-[11px] text-brand-2">{hint}</p>}
+        <TransferProgress />
       </fieldset>
 
       <fieldset>
@@ -184,5 +201,70 @@ export function ProfileForm({
         {submitLabel}
       </button>
     </form>
+  );
+}
+
+/** Move unlocks to another device: copy a code here, paste it there. No account needed. */
+function TransferProgress() {
+  const [code, setCode] = useState<string | null>(null);
+  const [input, setInput] = useState("");
+  const [msg, setMsg] = useState<string | null>(null);
+  return (
+    <details className="group mt-3 text-xs">
+      <summary className="cursor-pointer list-none text-muted hover:text-text">
+        <span className="underline decoration-dotted underline-offset-2">Move your unlocks to another device</span>
+      </summary>
+      <div className="mt-2 space-y-2 rounded-lg border border-line bg-ink/40 p-3">
+        <p className="text-muted">Copy this code here, then paste it on your other device.</p>
+        <div className="flex gap-2">
+          <input
+            readOnly
+            className="input min-w-0 flex-1 font-mono text-[11px]"
+            value={code ?? ""}
+            placeholder="Your transfer code"
+            aria-label="Your transfer code"
+            onFocus={(e) => e.currentTarget.select()}
+          />
+          <button
+            type="button"
+            className="btn px-3 py-1 text-xs"
+            onClick={async () => {
+              const c = exportCode();
+              setCode(c);
+              try {
+                await navigator.clipboard.writeText(c);
+                setMsg("Copied!");
+              } catch {
+                setMsg("Select the code and copy it.");
+              }
+            }}
+          >
+            Copy code
+          </button>
+        </div>
+        <div className="flex gap-2">
+          <input
+            className="input min-w-0 flex-1 font-mono text-[11px]"
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            placeholder="Paste a code from another device"
+            aria-label="Paste a transfer code"
+          />
+          <button
+            type="button"
+            className="btn px-3 py-1 text-xs"
+            disabled={!input.trim()}
+            onClick={() => {
+              const r = importCode(input);
+              setMsg(r.ok ? `Done! ${r.wins} ${r.wins === 1 ? "win" : "wins"} on this device now.` : r.error);
+              if (r.ok) setInput("");
+            }}
+          >
+            Add
+          </button>
+        </div>
+        {msg && <p className="font-mono text-[11px] text-brand-2">{msg}</p>}
+      </div>
+    </details>
   );
 }

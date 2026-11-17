@@ -2,9 +2,9 @@
 
 // One board per microgame. Each renders both PLAY and RESULT for its puzzle.
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Player } from "@/shared/types";
-import type { BlitzAction, BlitzView } from "./server";
+import type { BlitzView } from "./server";
 import {
   ARROW_COLORS,
   CLOCK_MAX_OFF_MS,
@@ -17,196 +17,33 @@ import {
   TAP_BATCH_MS,
   exprValue,
   fmtSecs,
-  type Pick,
-  type Puzzle,
   type ResLine,
   type RoundResult,
 } from "./shared";
+import { ArrowIcon, ExprView, Face, GOLD, GREEN, MEDALS, ROSE, arrowOf, cssVars, personOf, useKeys } from "./ui";
+import { CellGrid, Choices, Drain, Field, Prompt, lineOf, numPick, type BoardProps, type Pz } from "./kit";
 import {
-  ArrowIcon,
-  ChoiceButton,
-  ExprView,
-  Face,
-  GOLD,
-  GREEN,
-  MEDALS,
-  ROSE,
-  arrowOf,
-  cssVars,
-  digitOf,
-  lookOf,
-  personOf,
-  useKeys,
-} from "./ui";
+  DiceBoard,
+  DigitsBoard,
+  FlankBoard,
+  GoneBoard,
+  GreenBoard,
+  LinesBoard,
+  NextBoard,
+  NotinBoard,
+  RhymeBoard,
+  ShadeBoard,
+  SimonBoard,
+  SpellBoard,
+  SpinBoard,
+  SpotBoard,
+  TimeBoard,
+  WhackBoard,
+} from "./boards-more";
 
-type Pz<T extends Puzzle["t"]> = Extract<Puzzle, { t: T }>;
-
-export interface BoardProps<P extends Puzzle = Puzzle> {
-  pz: P;
-  view: BlitzView;
-  phase: "play" | "result";
-  /** The microgame's colour. */
-  color: string;
-  /** My answer (PLAY: pending or confirmed; RESULT: from the results). */
-  myPick: Pick | null;
-  /** Can answer right now (player, PLAY, answers open, not answered yet). */
-  canAnswer: boolean;
-  answered: boolean;
-  isPlayer: boolean;
-  submit: (a: BlitzAction, pick: Pick | null) => void;
-  act: (a: BlitzAction) => void;
-  result: RoundResult | null;
-  byId: Record<string, Player>;
-  me: string;
-  serverNow: () => number;
-}
-
-const KEY_HINTS = ["1", "2", "3", "4"];
-
-function pickersOf(result: RoundResult | null, byId: Record<string, Player>, match: (p: Pick | null) => boolean): Player[] {
-  if (!result) return [];
-  return result.res.filter((l) => match(l.pick)).map((l) => personOf(byId, l.id));
-}
-
-function lineOf(result: RoundResult | null, id: string): ResLine | null {
-  return result?.res.find((l) => l.id === id) ?? null;
-}
-
-const numPick = (p: Pick | null) => (typeof p === "number" ? p : null);
-
-/** Four answer buttons in a 2x2 grid, keys 1-4. */
-function Choices({
-  props,
-  items,
-  labels,
-  cols = "grid-cols-2",
-  hints = KEY_HINTS,
-  keyMap,
-  className = "",
-}: {
-  props: BoardProps;
-  items: ReactNode[];
-  labels?: string[];
-  cols?: string;
-  hints?: string[];
-  /** Extra keys -> index (e.g. arrows). */
-  keyMap?: (e: KeyboardEvent) => number;
-  className?: string;
-}) {
-  const { phase, myPick, canAnswer, result, byId, color, submit, view, me } = props;
-  const answer = phase === "result" ? numPick(result?.answer ?? null) : null;
-  const mine = numPick(myPick);
-  const choose = (i: number) => {
-    if (canAnswer) submit({ type: "pick", r: view.round, c: i }, i);
-  };
-  useKeys(canAnswer, me, (e) => {
-    let i = digitOf(e);
-    if (i < 0 && keyMap) i = keyMap(e);
-    if (i < 0 || i >= items.length) return false;
-    choose(i);
-    return true;
-  });
-  return (
-    <div role="group" aria-label="Answers" className={`grid gap-x-2.5 gap-y-4 pb-2 ${cols} ${className}`}>
-      {items.map((item, i) => (
-        <div key={i} className="blz-tile flex" style={cssVars({ "--i": i * 3 })}>
-          <ChoiceButton
-            index={i}
-            look={lookOf(i, phase, mine, canAnswer, answer)}
-            color={color}
-            onPick={choose}
-            hint={hints[i]}
-            label={labels?.[i]}
-            pickers={phase === "result" ? pickersOf(result, byId, (p) => p === i) : undefined}
-          >
-            {item}
-          </ChoiceButton>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-/** A big prompt line above a board. */
-function Prompt({ children }: { children: ReactNode }) {
-  return <p className="text-center font-display text-lg font-bold text-balance @md/stage:text-xl">{children}</p>;
-}
+export type { BoardProps };
 
 // ---------- 1. odd one out / 9. find the pair (emoji grids) ----------
-
-function EmojiGrid({
-  props,
-  cells,
-  cols,
-  selected,
-  answers,
-  onCell,
-  label,
-}: {
-  props: BoardProps;
-  cells: string[];
-  cols: number;
-  selected: number[];
-  answers: number[];
-  onCell: (i: number) => void;
-  label: string;
-}) {
-  const { phase, canAnswer, color, answered } = props;
-  const result = phase === "result";
-  return (
-    <div
-      role="group"
-      aria-label={label}
-      className="mx-auto grid w-full gap-1.5"
-      style={{
-        gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`,
-        maxWidth: cols === 5 ? "min(100%, 24rem)" : "min(100%, 21rem)",
-      }}
-    >
-      {cells.map((e, i) => {
-        const isAns = result && answers.includes(i);
-        const mine = selected.includes(i);
-        const wrong = result && mine && !isAns;
-        const ring = isAns ? GREEN : wrong ? ROSE : mine ? color : null;
-        return (
-          <button
-            key={i}
-            type="button"
-            data-cell={i}
-            disabled={!canAnswer}
-            aria-pressed={mine}
-            onClick={() => onCell(i)}
-            className={`blz-tile relative grid aspect-square place-items-center rounded-xl border-2 transition-[transform,opacity,background-color] duration-150 ${
-              canAnswer ? "cursor-pointer hover:scale-105 hover:bg-white/10 active:scale-95" : "cursor-default"
-            } ${isAns ? "blz-pop" : ""}`}
-            style={{
-              ...cssVars({ "--i": i }),
-              borderColor: ring ?? "transparent",
-              background: ring ? ring + "26" : "var(--color-panel-2)",
-            }}
-          >
-            {/* Dimming lives on the emoji: the tile's entrance animation owns the button's opacity. */}
-            <span
-              className="text-[clamp(1.45rem,7.5cqw,2.3rem)] leading-none transition-opacity duration-300 select-none"
-              style={{ opacity: (result && !isAns && !wrong) || (answered && !result && !mine) ? 0.35 : 1 }}
-            >
-              {e}
-            </span>
-            {(isAns || wrong) && (
-              <span
-                aria-hidden
-                className="absolute -top-1.5 -right-1.5 grid size-5 place-items-center rounded-full text-[11px] font-black text-ink"
-                style={{ background: isAns ? GREEN : ROSE }}
-              >
-                {isAns ? "✓" : "✗"}
-              </span>
-            )}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
 
 export function OddBoard(props: BoardProps<Pz<"odd">>) {
   const { pz, phase, result, myPick, submit, view, canAnswer } = props;
@@ -214,10 +51,10 @@ export function OddBoard(props: BoardProps<Pz<"odd">>) {
   return (
     <div className="flex flex-col gap-3">
       <Prompt>{phase === "play" ? "Tap the odd one out!" : "There it was:"}</Prompt>
-      <EmojiGrid
+      <CellGrid
         props={props}
         cells={pz.cells}
-        cols={5}
+        cols={Math.round(Math.sqrt(pz.cells.length))}
         selected={mine === null ? [] : [mine]}
         answers={phase === "result" && typeof result?.answer === "number" ? [result.answer] : []}
         onCell={(i) => canAnswer && submit({ type: "pick", r: view.round, c: i }, i)}
@@ -249,7 +86,7 @@ export function PairBoard(props: BoardProps<Pz<"pair">>) {
               ? "Find the two that match"
               : "…and its twin?"}
       </Prompt>
-      <EmojiGrid
+      <CellGrid
         props={props}
         cells={pz.cells}
         cols={4}
@@ -263,29 +100,6 @@ export function PairBoard(props: BoardProps<Pz<"pair">>) {
 }
 
 // ---------- 2. count flash ----------
-
-function Field({ children, aspect = "16 / 10", label }: { children: ReactNode; aspect?: string; label: string }) {
-  return (
-    <div
-      role="img"
-      aria-label={label}
-      className="relative mx-auto w-full max-w-[34rem] overflow-hidden rounded-2xl border border-line bg-ink/60"
-      style={{ aspectRatio: aspect }}
-    >
-      {children}
-    </div>
-  );
-}
-
-/** A bar that drains to zero by server time `until` (measured once at mount). */
-function Drain({ until, serverNow, color }: { until: number; serverNow: () => number; color: string }) {
-  const [left] = useState(() => Math.max(0, until - serverNow()));
-  return (
-    <div className="h-1.5 w-full overflow-hidden rounded-full bg-panel-2" aria-hidden>
-      <div className="blz-drain h-full rounded-full" style={{ background: color, animationDuration: `${left}ms` }} />
-    </div>
-  );
-}
 
 export function CountBoard(props: BoardProps<Pz<"count">>) {
   const { pz, phase, color, view, serverNow } = props;
@@ -1154,5 +968,37 @@ export function Board(props: BoardProps) {
       return <AnagramBoard {...props} pz={pz} />;
     case "fruit":
       return <FruitBoard {...props} pz={pz} />;
+    case "green":
+      return <GreenBoard {...props} pz={pz} />;
+    case "simon":
+      return <SimonBoard {...props} pz={pz} />;
+    case "gone":
+      return <GoneBoard {...props} pz={pz} />;
+    case "shade":
+      return <ShadeBoard {...props} pz={pz} />;
+    case "lines":
+      return <LinesBoard {...props} pz={pz} />;
+    case "digits":
+      return <DigitsBoard {...props} pz={pz} />;
+    case "spell":
+      return <SpellBoard {...props} pz={pz} />;
+    case "rhyme":
+      return <RhymeBoard {...props} pz={pz} />;
+    case "dice":
+      return <DiceBoard {...props} pz={pz} />;
+    case "next":
+      return <NextBoard {...props} pz={pz} />;
+    case "time":
+      return <TimeBoard {...props} pz={pz} />;
+    case "spin":
+      return <SpinBoard {...props} pz={pz} />;
+    case "whack":
+      return <WhackBoard {...props} pz={pz} />;
+    case "spot":
+      return <SpotBoard {...props} pz={pz} />;
+    case "flank":
+      return <FlankBoard {...props} pz={pz} />;
+    case "notin":
+      return <NotinBoard {...props} pz={pz} />;
   }
 }

@@ -4,7 +4,7 @@
 // screen, check for console errors / crashed game UIs, end the game, and move on.
 // Uses the locally installed Edge (no browser download).
 //
-//   node scripts/browser-smoke.mjs [outDir] [gameId ...]     (default: every game)
+//   npx tsx scripts/browser-smoke.mjs [outDir] [gameId ...]     (default: every game)
 import { chromium } from "playwright-core";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";

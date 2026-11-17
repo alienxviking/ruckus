@@ -6,7 +6,15 @@ import { useId, useState } from "react";
 import { CATALOG, CATEGORY_LABEL, type GameCategory, type GameMeta } from "@/games/catalog";
 import { GameCard } from "./GameCard";
 
-type Filter = "all" | "fits" | GameCategory;
+type Filter = "all" | "fits" | GameCategory | "teams" | "call" | "duo" | "solo";
+
+/** Handy groupings across categories. */
+const GROUPS: { id: Filter; label: string; test: (g: GameMeta) => boolean }[] = [
+  { id: "teams", label: "Teams", test: (g) => !!g.teams },
+  { id: "call", label: "On a call", test: (g) => !!g.call },
+  { id: "duo", label: "2 players", test: (g) => g.minPlayers <= 2 && g.maxPlayers >= 2 && g.maxPlayers <= 4 },
+  { id: "solo", label: "Solo", test: (g) => g.minPlayers === 1 },
+];
 
 const CATEGORIES = Object.keys(CATEGORY_LABEL) as GameCategory[];
 const GLIDE = { type: "spring", stiffness: 520, damping: 42, mass: 0.8 } as const;
@@ -33,8 +41,9 @@ export function GameBrowser({
   const [pending, setPending] = useState<{ id: string; from?: string } | null>(null);
   const activeId = pending && pending.from === selectedId ? pending.id : selectedId;
   const fits = (g: GameMeta) => playerCount !== undefined && playerCount >= g.minPlayers && playerCount <= g.maxPlayers;
+  const group = GROUPS.find((x) => x.id === filter);
   const shown = CATALOG.filter((g) =>
-    filter === "all" ? true : filter === "fits" ? fits(g) : g.category === filter,
+    filter === "all" ? true : filter === "fits" ? fits(g) : group ? group.test(g) : g.category === filter,
   );
 
   const chips: { id: Filter; label: string; count: number }[] = [
@@ -43,6 +52,7 @@ export function GameBrowser({
       ? [{ id: "fits" as const, label: `Fits ${playerCount} ${playerCount === 1 ? "player" : "players"}`, count: CATALOG.filter(fits).length }]
       : []),
     ...CATEGORIES.map((c) => ({ id: c, label: CATEGORY_LABEL[c], count: CATALOG.filter((g) => g.category === c).length })),
+    ...GROUPS.map((x) => ({ id: x.id, label: x.label, count: CATALOG.filter(x.test).length })).filter((c) => c.count > 0),
   ];
 
   return (

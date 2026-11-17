@@ -6,6 +6,7 @@ import { Note, StatusBanner, TimerBar, useSecondsLeft } from "@/components/game-
 import { PLAYER_COLORS, type Player } from "@/shared/types";
 import type { TurfAction, TurfDelta, TurfEvent, TurfView } from "./server";
 import { DIRS, FREEZE_MS, PLAY_MS, POWER_INFO } from "./shared";
+import { TEAMS } from "@/shared/teams";
 
 /** Full length of play; falls back for views from before it was configurable. */
 const playMsOf = (v: TurfView) => v.playMs || PLAY_MS;
@@ -145,7 +146,15 @@ function TurfGame({
   const secsLeft = useSecondsLeft(view.endsAt, serverNow);
   const painters = useMemo(() => parsePainters(view.players), [view.players]);
   const ids = painters.map((p) => p.id).join(",");
-  const colors = useMemo(() => displayColors(ids ? ids.split(",") : [], byId), [ids, byId]);
+  // Red vs Blue: everyone paints in their team's colour; turf textures go by team too.
+  const teams = view.teams ?? null;
+  const sideKey = teams ? painters.map((p) => (teams[0].includes(p.id) ? 0 : 1)).join(",") : "";
+  const sides = useMemo(() => (sideKey ? sideKey.split(",").map(Number) : null), [sideKey]);
+  const colors = useMemo(
+    () => (sides ? sides.map((t) => TEAMS[t].color) : displayColors(ids ? ids.split(",") : [], byId)),
+    [sides, ids, byId],
+  );
+  const texOf = (i: number) => (sides ? sides[i] : i);
   const avatars = painters.map((p) => byId[p.id]?.avatar ?? "🖌️");
   const away = painters.map((p) => byId[p.id]?.connected === false);
   const names = painters.map((p) => byId[p.id]?.name ?? "Someone");
@@ -188,23 +197,25 @@ function TurfGame({
 
   // ----- screen-reader news from transient events -----
   const [news, setNews] = useState({ text: "", n: 0 });
-  const infoRef = useRef({ meIdx, names });
+  const infoRef = useRef({ meIdx, names, sides });
   useEffect(() => {
-    infoRef.current = { meIdx, names };
+    infoRef.current = { meIdx, names, sides };
   });
   useEffect(
     () =>
       onEvent((raw) => {
         const e = raw as TurfEvent | null;
         if (!e || typeof e !== "object") return;
-        const { meIdx: mi, names: nm } = infoRef.current;
+        const { meIdx: mi, names: nm, sides: sd } = infoRef.current;
+        // A teammate's freeze doesn't stop you.
+        const foeFreeze = e.type === "power" && e.kind === "freeze" && mi >= 0 && (!sd || sd[e.by] !== sd[mi]);
         let text = "";
         if (e.type === "capture" && e.by === mi) text = `You filled a loop: +${e.n} tiles!`;
         else if (e.type === "power" && e.by === mi) text = `${POWER_INFO[e.kind]?.label ?? "Power-up"}!`;
-        else if (e.type === "power" && e.kind === "freeze" && mi >= 0) text = `Frozen by ${nm[e.by] ?? "someone"}!`;
+        else if (foeFreeze) text = `Frozen by ${nm[e.by] ?? "someone"}!`;
         if (e.type === "capture" && e.by === mi) feedback("score");
         else if (e.type === "power" && e.by === mi) feedback("pop");
-        else if (e.type === "power" && e.kind === "freeze" && mi >= 0) feedback("hit");
+        else if (foeFreeze) feedback("hit");
         if (text) setNews((prev) => ({ text, n: prev.n + 1 }));
       }),
     [onEvent],
@@ -229,6 +240,10 @@ function TurfGame({
   const frozenFor = mine && view.phase === "play" ? Math.min(FREEZE_MS, Math.max(0, mine.frozen - now)) : 0;
   const dashFor = mine && view.phase === "play" ? Math.max(0, mine.dash - now) : 0;
   const leaderIdx = painters.reduce((best, p, i) => (best === -1 || p.n > painters[best].n ? i : best), -1);
+  const teamTiles = [0, 0];
+  if (sides) painters.forEach((p, i) => (teamTiles[sides[i]] += p.n));
+  const leadTeam: number = teamTiles[0] === teamTiles[1] ? -1 : teamTiles[0] > teamTiles[1] ? 0 : 1;
+  const myTeam = sides && meIdx >= 0 ? sides[meIdx] : -1;
   const showGo = view.phase === "play" && now - (view.endsAt - playMsOf(view)) < 900;
   const abandonIn =
     view.abandonAt && view.phase !== "over" ? Math.max(0, Math.ceil((view.abandonAt - now) / 1000)) : null;
@@ -246,7 +261,17 @@ function TurfGame({
       "Get ready…"
     );
   } else if (view.phase === "play") {
-    if (!mine) {
+    if (!mine && sides) {
+      status =
+        leadTeam >= 0 ? (
+          <>
+            🖌️ <span style={{ color: TEAMS[leadTeam].color }}>{TEAMS[leadTeam].name}</span> leads with{" "}
+            {pctText(teamTiles[leadTeam], total)}%
+          </>
+        ) : (
+          "🖌️ Red and Blue are level"
+        );
+    } else if (!mine) {
       status =
         leaderIdx >= 0 ? (
           <>
@@ -278,7 +303,14 @@ function TurfGame({
   const boardLabel =
     `Turf map, ${view.w} by ${view.h} tiles. ` +
     (mine ? `You are the ${avatarText(avatars[meIdx])} painter at column ${mine.x + 1}, row ${mine.y + 1}, heading ${DIRS[mine.dir]}. ` : "") +
-    (leaderIdx >= 0 ? `${names[leaderIdx]} leads with ${pctText(painters[leaderIdx].n, total)}% of the map.` : "");
+    (myTeam >= 0 ? `You are on the ${TEAMS[myTeam].name} team. ` : "") +
+    (sides
+      ? `Red ${pctText(teamTiles[0], total)}%, Blue ${pctText(teamTiles[1], total)}%.`
+      : leaderIdx >= 0
+        ? `${names[leaderIdx]} leads with ${pctText(painters[leaderIdx].n, total)}% of the map.`
+        : "");
+
+  const teamIntro = sides && teams && view.phase === "countdown";
 
   return (
     <div className="@container mx-auto flex w-full max-w-4xl flex-col gap-3">
@@ -304,6 +336,7 @@ function TurfGame({
         steps={steps}
         deltas={deltas}
         colors={colors}
+        sides={sides}
         avatars={avatars}
         away={away}
         me={meIdx}
@@ -314,7 +347,17 @@ function TurfGame({
         label={boardLabel}
       >
         {view.phase === "countdown" && (
-          <div className="pointer-events-none absolute inset-0 grid place-items-center bg-ink/25">
+          <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-2 bg-ink/25">
+            {teamIntro && (
+              <TeamIntro
+                team={myTeam}
+                mates={
+                  myTeam >= 0
+                    ? teams[myTeam].filter((id) => id !== painters[meIdx]?.id).map((id) => byId[id]?.name ?? "Someone")
+                    : []
+                }
+              />
+            )}
             <span
               key={secsLeft}
               className="animate-pop font-display text-6xl font-extrabold text-white drop-shadow-[0_3px_0_rgba(0,0,0,0.6)] @md:text-8xl"
@@ -356,11 +399,12 @@ function TurfGame({
             />
             <MyStats
               painter={mine}
-              idx={meIdx}
+              idx={texOf(meIdx)}
+              team={myTeam >= 0 ? { t: myTeam, n: teamTiles[myTeam] } : null}
               color={colors[meIdx]}
               avatar={avatars[meIdx]}
-              place={place[meIdx]}
-              of={painters.length}
+              place={myTeam >= 0 ? (leadTeam === -1 ? 0 : leadTeam === myTeam ? 1 : 2) : place[meIdx]}
+              of={myTeam >= 0 ? 2 : painters.length}
               total={total}
               frozenFor={frozenFor}
               dashFor={dashFor}
@@ -368,18 +412,32 @@ function TurfGame({
             />
           </div>
         )}
-        <Standings
-          painters={painters}
-          colors={colors}
-          names={names}
-          avatars={avatars}
-          away={away}
-          me={meIdx}
-          total={total}
-          place={place}
-          final={view.phase === "over"}
-          winners={view.winners ?? null}
-        />
+        {sides ? (
+          <TeamStandings
+            painters={painters}
+            sides={sides}
+            names={names}
+            avatars={avatars}
+            away={away}
+            me={meIdx}
+            total={total}
+            final={view.phase === "over"}
+            winners={view.winners ?? null}
+          />
+        ) : (
+          <Standings
+            painters={painters}
+            colors={colors}
+            names={names}
+            avatars={avatars}
+            away={away}
+            me={meIdx}
+            total={total}
+            place={place}
+            final={view.phase === "over"}
+            winners={view.winners ?? null}
+          />
+        )}
       </div>
 
       {canSteer && (
@@ -472,6 +530,7 @@ function DPad({
 function MyStats({
   painter,
   idx,
+  team,
   color,
   avatar,
   place,
@@ -483,6 +542,8 @@ function MyStats({
 }: {
   painter: Painter;
   idx: number;
+  /** Red vs Blue: your team and its tiles (the big number is the team's share). */
+  team: { t: number; n: number } | null;
   color: string;
   avatar: string;
   place: number;
@@ -505,15 +566,20 @@ function MyStats({
         <div className="min-w-0">
           {/* Re-keyed per whole percent so the number pops as your turf grows or shrinks. */}
           <div
-            key={pctText(painter.n, total)}
+            key={pctText(team ? team.n : painter.n, total)}
             className="animate-pop font-display text-2xl leading-none font-extrabold tabular-nums"
             style={{ color }}
           >
-            {pctText(painter.n, total)}%
+            {pctText(team ? team.n : painter.n, total)}%
+            {team && <span className="ml-1.5 text-sm font-bold">{TEAMS[team.t].name}</span>}
           </div>
           <div className="mt-1 flex flex-wrap gap-x-1.5 text-xs leading-snug text-muted">
-            <span className="whitespace-nowrap">{place === 1 ? "🏆 1st" : `#${place} of ${of}`}</span>
-            <span className="whitespace-nowrap">{painter.n} tiles</span>
+            {team ? (
+              <span className="whitespace-nowrap">{place === 1 ? "🏆 Leading" : place === 0 ? "Level" : "Behind"}</span>
+            ) : (
+              <span className="whitespace-nowrap">{place === 1 ? "🏆 1st" : `#${place} of ${of}`}</span>
+            )}
+            <span className="whitespace-nowrap">{team ? `you: ${painter.n} tiles` : `${painter.n} tiles`}</span>
           </div>
         </div>
       </div>
@@ -635,6 +701,132 @@ function Standings({
           );
         })}
       </ol>
+    </section>
+  );
+}
+
+/** Countdown card in Red vs Blue: which team you're on and who's with you. */
+function TeamIntro({ team, mates }: { team: number; mates: string[] }) {
+  if (team < 0) {
+    return (
+      <div className="animate-pop rounded-xl bg-ink/85 px-4 py-2 text-center font-display text-xl font-extrabold @md:text-3xl">
+        <span style={{ color: TEAMS[0].color }}>Red</span> vs <span style={{ color: TEAMS[1].color }}>Blue</span>
+      </div>
+    );
+  }
+  const { name, color } = TEAMS[team];
+  return (
+    <div
+      className="animate-pop max-w-[90%] rounded-xl bg-ink/85 px-4 py-2 text-center"
+      style={{ boxShadow: `inset 0 0 0 2px ${color}` }}
+    >
+      <div className="font-display text-xl font-extrabold @md:text-3xl" style={{ color }}>
+        You&apos;re on {name}
+      </div>
+      <div className="mt-0.5 text-xs text-muted @md:text-sm">
+        {mates.length ? `with ${mates.join(", ")} · you share one turf` : "Paint for your team"}
+      </div>
+    </div>
+  );
+}
+
+/** Red vs Blue standings: each team's share, then its painters (tiles they painted that still stand). */
+function TeamStandings({
+  painters,
+  sides,
+  names,
+  avatars,
+  away,
+  me,
+  total,
+  final,
+  winners,
+}: {
+  painters: Painter[];
+  sides: number[];
+  names: string[];
+  avatars: string[];
+  away: boolean[];
+  me: number;
+  total: number;
+  final: boolean;
+  winners: string[] | null;
+}) {
+  const tiles = [0, 0];
+  painters.forEach((p, i) => (tiles[sides[i]] += p.n));
+  const claimed = tiles[0] + tiles[1];
+  return (
+    <section
+      className={`card min-w-0 flex-1 p-3 ${final ? "animate-rise" : ""}`}
+      aria-label={final ? "Final standings" : "Territory"}
+    >
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <h2 className="label">{final ? "Final standings" : "Red vs Blue"}</h2>
+        <span className="text-xs text-muted tabular-nums">{pctText(total - claimed, total)}% unclaimed</span>
+      </div>
+      <div className="mb-3 flex h-2.5 overflow-hidden rounded-full bg-panel-2" aria-hidden>
+        {[0, 1].map((t) => (
+          <div
+            key={t}
+            className="h-full transition-[width] duration-300 ease-out"
+            style={{ width: `${(100 * tiles[t]) / total}%`, background: TEAMS[t].color }}
+          />
+        ))}
+      </div>
+      <div className="grid gap-3 @md:grid-cols-2">
+        {[0, 1].map((t) => {
+          const members = painters
+            .map((_, i) => i)
+            .filter((i) => sides[i] === t)
+            .sort((a, b) => painters[b].n - painters[a].n || a - b);
+          const won = final && members.some((i) => winners?.includes(painters[i].id));
+          const { name, color } = TEAMS[t];
+          return (
+            <div
+              key={t}
+              className={`min-w-0 rounded-lg p-2 ${won ? "ring-2" : ""}`}
+              style={{ background: rgba(color, 0.08), ...(won ? { ["--tw-ring-color" as string]: color } : {}) }}
+            >
+              <div className="mb-1.5 flex items-baseline justify-between gap-2">
+                <span className="font-display text-base font-extrabold" style={{ color }}>
+                  {won && <span aria-hidden>🏆 </span>}
+                  {name}
+                  {won && <span className="sr-only"> (winners)</span>}
+                </span>
+                <span className="font-mono text-base font-bold tabular-nums" style={{ color }}>
+                  {pctText(tiles[t], total, final ? 1 : 0)}%
+                </span>
+              </div>
+              <ol className="grid gap-1">
+                {members.map((i) => (
+                  <li
+                    key={painters[i].id}
+                    className={`flex min-w-0 items-center gap-2 rounded-md px-1 py-0.5 ${i === me ? "bg-panel-2" : ""}`}
+                  >
+                    <span
+                      aria-hidden
+                      className="grid size-6 shrink-0 place-items-center rounded-md text-sm"
+                      style={{
+                        background: textureCss(t, color),
+                        opacity: away[i] ? 0.55 : 1,
+                        boxShadow: i === me ? "0 0 0 2px #fff" : undefined,
+                      }}
+                    >
+                      <Avatar id={away[i] ? "💤" : avatars[i]} />
+                    </span>
+                    <span className="min-w-0 flex-1 truncate text-sm font-semibold">
+                      {names[i]}
+                      {i === me && <span className="sr-only"> (you)</span>}
+                      {away[i] && <span className="sr-only"> (away)</span>}
+                    </span>
+                    <span className="shrink-0 text-xs text-muted tabular-nums">{painters[i].n} tiles</span>
+                  </li>
+                ))}
+              </ol>
+            </div>
+          );
+        })}
+      </div>
     </section>
   );
 }

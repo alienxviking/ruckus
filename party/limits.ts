@@ -6,7 +6,7 @@
 
 export const LIMITS_ROOM = "__limits";
 
-export type LimitKind = "create" | "connect";
+export type LimitKind = "create" | "connect" | "error";
 
 interface Rule {
   windowMs: number;
@@ -24,6 +24,11 @@ export const RULES: Record<LimitKind, Rule[]> = {
   connect: [
     { windowMs: 60_000, max: 40 },
     { windowMs: 10 * 60_000, max: 200 },
+  ],
+  // Crash reports from browsers: a broken page reports a few, a script gets nowhere.
+  error: [
+    { windowMs: 10 * 60_000, max: 20 },
+    { windowMs: 24 * 60 * 60_000, max: 100 },
   ],
 };
 
@@ -96,6 +101,8 @@ export interface DayStats {
   blocked: number;
   /** Requests handled by the limiter itself (it is a Durable Object too). */
   limiterRequests: number;
+  /** Crash reports received (see Stats.recordError). */
+  errors: number;
   /** HTTP requests rooms answered (create, "does it exist?"). */
   roomHttp: number;
   wsMessages: number;
@@ -119,6 +126,7 @@ const emptyDay = (day: string): DayStats => ({
   connects: 0,
   blocked: 0,
   limiterRequests: 0,
+  errors: 0,
   roomHttp: 0,
   wsMessages: 0,
   activeSeconds: 0,
@@ -132,8 +140,57 @@ export function usageOf(d: DayStats) {
   return { requests, gbSeconds, requestsPct: requests / FREE_TIER.requests, gbSecondsPct: gbSeconds / FREE_TIER.gbSeconds };
 }
 
+/** A crash seen in someone's browser (no personal data: message, code location, game, browser). */
+export interface ErrorReport {
+  msg: string;
+  stack: string;
+  where: string;
+  game: string;
+  browser: string;
+}
+
+export interface ErrorEntry extends ErrorReport {
+  count: number;
+  first: number;
+  last: number;
+}
+
+export const MAX_ERRORS = 40;
+
+/** Trims and checks a report sent by a browser; null if it's junk. */
+export function cleanErrorReport(raw: unknown): ErrorReport | null {
+  if (!raw || typeof raw !== "object") return null;
+  const r = raw as Record<string, unknown>;
+  const str = (v: unknown, n: number) => (typeof v === "string" ? v.replace(/[\u0000-\u001f\u007f]/g, " ").slice(0, n) : "");
+  const msg = str(r.msg, 300).trim();
+  if (!msg) return null;
+  return {
+    msg,
+    stack: (typeof r.stack === "string" ? r.stack : "").slice(0, 800),
+    where: str(r.where, 80),
+    game: /^[a-z]{1,20}$/.test(String(r.game)) ? String(r.game) : "",
+    browser: str(r.browser, 40),
+  };
+}
+
 export class Stats {
   days: DayStats[] = [];
+  /** Recent distinct crashes, newest first. */
+  errors: ErrorEntry[] = [];
+
+  recordError(e: ErrorReport, now: number) {
+    this.today(now).errors++;
+    const same = this.errors.find((x) => x.msg === e.msg && x.where === e.where && x.game === e.game);
+    if (same) {
+      same.count++;
+      same.last = now;
+      same.stack = e.stack || same.stack;
+      same.browser = e.browser || same.browser;
+      this.errors = [same, ...this.errors.filter((x) => x !== same)];
+      return;
+    }
+    this.errors = [{ ...e, count: 1, first: now, last: now }, ...this.errors].slice(0, MAX_ERRORS);
+  }
   /** Rooms currently awake (opened, no idle report yet), with when they opened. */
   open = new Map<string, number>();
 
@@ -171,6 +228,7 @@ export class Stats {
       openRooms: this.open.size,
       today: { ...todayLive, ...usageOf(todayLive) },
       days: this.days.map((d) => ({ ...d, ...usageOf(d) })),
+      errors: this.errors,
     };
   }
 }

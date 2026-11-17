@@ -196,6 +196,14 @@ export const ACCESSORY_LABEL: Record<AccessoryId, string> = {
   tophat: "Top hat",
   wizard: "Wizard hat",
   crown: "Crown",
+  laurel: "Laurel",
+  chef: "Chef hat",
+  astro: "Space helmet",
+  viking: "Viking helmet",
+  grad: "Grad cap",
+  bandana: "Bandana",
+  monocle: "Monocle",
+  eyepatch: "Eye patch",
 };
 
 /** Where things sit on each character: head top (t), eye line (e), half eye gap (g), half head width (w). */
@@ -219,7 +227,10 @@ const FIT: Record<AvatarId, { t: number; e: number; g: number; w: number }> = {
 };
 
 /** Hats sit above the head, so the character shrinks a little to make room. */
-const WORN_ON_TOP = new Set<AccessoryId>(["cap", "beanie", "party", "tophat", "wizard", "crown", "halo", "horns", "headphones", "bow", "flower"]);
+const WORN_ON_TOP = new Set<AccessoryId>([
+  "cap", "beanie", "party", "tophat", "wizard", "crown", "halo", "horns", "headphones", "bow", "flower",
+  "laurel", "chef", "astro", "viking", "grad",
+]);
 
 function accessory(acc: AccessoryId, f: { t: number; e: number; g: number; w: number }): string {
   const { t, e, g, w } = f;
@@ -297,6 +308,73 @@ function accessory(acc: AccessoryId, f: { t: number; e: number; g: number; w: nu
         `<path d="M${32 - g - lw / 2 + 2} ${e - 2} l3 -1.2 M${32 + g - lw / 2 + 2} ${e - 2} l3 -1.2" stroke="#fff" stroke-width="1.4" stroke-linecap="round" opacity=".6"/>`
       );
     }
+    case "laurel": {
+      // Two sprigs of leaves curving up around the head, tips meeting at the top.
+      const leaf = (x: number, y: number, rot: number) =>
+        `<ellipse cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" rx="4.2" ry="2.1" transform="rotate(${rot} ${x.toFixed(1)} ${y.toFixed(1)})" fill="#4ade80" stroke="#15803d" stroke-width=".8"/>`;
+      let out = "";
+      for (let i = 0; i < 5; i++) {
+        const a = Math.PI * (0.95 - i * 0.11);
+        const x = 32 + Math.cos(a) * (w - 2);
+        const y = t + 6 - Math.sin(a) * 13;
+        out += leaf(x, y, -40 + i * 12) + leaf(64 - x, y, 40 - i * 12);
+      }
+      return out + `<circle cx="32" cy="${t - 7}" r="1.8" fill="#ffd43b"/>`;
+    }
+    case "chef":
+      return (
+        `<rect x="21" y="${t - 9}" width="22" height="11" rx="2" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1.2"/>` +
+        `<circle cx="24" cy="${t - 13}" r="7" fill="#fff" stroke="#cbd5e1" stroke-width="1.2"/>` +
+        `<circle cx="40" cy="${t - 13}" r="7" fill="#fff" stroke="#cbd5e1" stroke-width="1.2"/>` +
+        `<circle cx="32" cy="${t - 17}" r="8.5" fill="#fff" stroke="#cbd5e1" stroke-width="1.2"/>` +
+        `<rect x="22.2" y="${t - 9}" width="19.6" height="5" fill="#fff"/>` +
+        `<path d="M26 ${t - 6} V${t + 1} M32 ${t - 6} V${t + 1} M38 ${t - 6} V${t + 1}" stroke="#e2e8f0" stroke-width="1.2"/>`
+      );
+    case "astro": {
+      const cy = e + 3;
+      const r = w + 6;
+      return (
+        `<circle cx="32" cy="${cy}" r="${r}" fill="#bfe9ff" fill-opacity=".16" stroke="#e0f4ff" stroke-width="2.4"/>` +
+        `<path d="M${32 - r * 0.62} ${cy - r * 0.45} Q${32 - r * 0.3} ${cy - r * 0.85} ${32 + r * 0.05} ${cy - r * 0.88}" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" opacity=".75"/>` +
+        `<rect x="${32 - r * 0.55}" y="${cy + r - 5}" width="${r * 1.1}" height="6" rx="3" fill="#94a3b8"/>`
+      );
+    }
+    case "viking":
+      return (
+        `<path d="M19 ${t - 1} Q9 ${t - 4} 10 ${t - 18} Q14 ${t - 9} 22 ${t - 7}Z" fill="#f5efe0" stroke="#c9bfa6" stroke-width="1"/>` +
+        `<path d="M45 ${t - 1} Q55 ${t - 4} 54 ${t - 18} Q50 ${t - 9} 42 ${t - 7}Z" fill="#f5efe0" stroke="#c9bfa6" stroke-width="1"/>` +
+        `<path d="M16 ${t + 4} Q16 ${t - 15} 32 ${t - 15} Q48 ${t - 15} 48 ${t + 4}Z" fill="#94a3b8"/>` +
+        `<path d="M16 ${t + 4} Q16 ${t - 15} 32 ${t - 15} Q23 ${t - 11} 21 ${t + 4}Z" fill="#fff" opacity=".2"/>` +
+        `<rect x="15" y="${t}" width="34" height="5" rx="2" fill="#64748b"/>` +
+        `<path d="M32 ${t - 15} V${t + 4}" stroke="#64748b" stroke-width="3"/>`
+      );
+    case "grad":
+      return (
+        `<path d="M22 ${t - 5} V${t + 3} Q32 ${t + 7} 42 ${t + 3} V${t - 5}Z" fill="#1f2937"/>` +
+        `<path d="M12 ${t - 8} L32 ${t - 16} L52 ${t - 8} L32 ${t}Z" fill="#273244" stroke="#4b5563" stroke-width="1"/>` +
+        `<circle cx="32" cy="${t - 8}" r="1.6" fill="#ffd43b"/>` +
+        `<path d="M32 ${t - 8} L47 ${t - 5} V${t + 5}" fill="none" stroke="#ffd43b" stroke-width="1.4"/>` +
+        `<rect x="45.2" y="${t + 4}" width="3.6" height="5" rx="1" fill="#ffd43b"/>`
+      );
+    case "bandana":
+      return (
+        `<path d="M${32 - w + 1} ${t + 7} Q32 ${t - 1} ${32 + w - 1} ${t + 7} L${32 + w - 1} ${t + 12} Q32 ${t + 5} ${32 - w + 1} ${t + 12}Z" fill="#ef4444"/>` +
+        `<circle cx="25" cy="${t + 7.5}" r="1" fill="#fff"/><circle cx="32" cy="${t + 5.5}" r="1" fill="#fff"/><circle cx="39" cy="${t + 7.5}" r="1" fill="#fff"/>` +
+        `<path d="M${32 + w - 1} ${t + 9} l6 -4 l-1 7Z M${32 + w - 1} ${t + 10} l5 6 l-6 -1Z" fill="#dc2626"/>`
+      );
+    case "monocle": {
+      const r = Math.min(7.5, g * 0.8 + 1.5);
+      return (
+        `<circle cx="${32 + g}" cy="${e}" r="${r}" fill="#dff4ff" fill-opacity=".25" stroke="#ffd43b" stroke-width="1.8"/>` +
+        `<path d="M${32 + g + r * 0.7} ${e + r * 0.7} Q${32 + g + r + 3} ${e + r + 8} ${32 + g + 2} ${e + r + 14}" fill="none" stroke="#ffd43b" stroke-width="1" stroke-dasharray="1.6 1.4"/>`
+      );
+    }
+    case "eyepatch":
+      return (
+        `<path d="M${32 - w + 1} ${e - 9} L${32 + w - 1} ${t + 4}" stroke="#111018" stroke-width="1.8" stroke-linecap="round"/>` +
+        `<ellipse cx="${32 - g}" cy="${e}" rx="${Math.min(7, g * 0.75 + 1.5)}" ry="5.5" fill="#111018"/>` +
+        `<path d="M${32 - g - 3} ${e - 2} l3 -1.4" stroke="#fff" stroke-width="1.1" stroke-linecap="round" opacity=".45"/>`
+      );
     case "headphones":
       return (
         `<path d="M${32 - w} ${e} Q${32 - w} ${t - 11} 32 ${t - 11} Q${32 + w} ${t - 11} ${32 + w} ${e}" fill="none" stroke="#6b6491" stroke-width="4" stroke-linecap="round"/>` +

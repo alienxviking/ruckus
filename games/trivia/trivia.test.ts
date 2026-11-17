@@ -1,6 +1,6 @@
 import { assert, makeTestCtx } from "../../shared/testing";
 import type { GameResult } from "../../shared/types";
-import game, { type Phase, type TriviaState, type TriviaView } from "./server";
+import game, { MEMORY_CAP, questionKey, teamScores, type Phase, type TriviaState, type TriviaView } from "./server";
 import { QUESTIONS } from "./data";
 import {
   ABANDON_MS,
@@ -524,3 +524,177 @@ function runWithBots(t: Harness, s: TriviaState, stepMs = 200, limitMs = 30 * 60
 }
 
 console.log("trivia: settings and bot tests passed");
+
+// ---------- room memory: no repeats until the bank runs out ----------
+
+/** Play a whole game (nobody answers), so every picked question gets asked. */
+function playThrough(t: Harness, s: TriviaState) {
+  for (let i = 0; !t.result && i < 200; i++) {
+    t.advance(Math.max(1, s.endsAt - t.ctx.now()));
+    game.tick!(s, t.ctx);
+  }
+  assert(t.result !== null, "game finished");
+}
+{
+  const memory: Record<string, unknown> = {};
+  const keys = QUESTIONS.map((q) => questionKey(q.q));
+  const distinct = new Set(keys).size;
+  const seen = new Set<string>();
+  let asked = 0;
+  let games = 0;
+  const started = Date.now();
+  // Play games of 15 until the whole bank has been asked: no question may come back before then.
+  while (seen.size < distinct) {
+    const t = makeTestCtx(2, 1000 + games, { questions: 15 }, 0, memory);
+    const s: TriviaState = game.setup(t.ctx);
+    const fresh = s.qs.filter((p) => !seen.has(keys[p.id])).length;
+    const left = distinct - seen.size;
+    assert(fresh === Math.min(s.qs.length, left), `game ${games}: ${s.qs.length - fresh} repeats with ${left} unseen left`);
+    for (const p of s.qs) assert(p.order.length === 4 && p.order[p.answer] === QUESTIONS[p.id].answer, "choices still shuffled");
+    playThrough(t, s);
+    for (const p of s.qs) seen.add(keys[p.id]);
+    asked += s.qs.length;
+    games++;
+    assert(games < 500, "bank exhausted in a sane number of games");
+  }
+  assert(asked < distinct + 15, `no repeats before the bank ran out (${asked} asked for ${distinct})`);
+  const list = memory.seen as string[];
+  assert(Array.isArray(list) && list.length === Math.min(distinct, MEMORY_CAP), "memory holds every asked key");
+  const bytes = JSON.stringify(memory).length;
+  assert(bytes < 20_000, `memory stays small (${bytes} bytes)`);
+
+  // Bank exhausted: the next game recycles the least recently asked questions first.
+  const oldest = new Set(list.slice(0, Math.ceil(list.length / 3)));
+  const t = makeTestCtx(2, 7, {}, 0, memory);
+  const s: TriviaState = game.setup(t.ctx);
+  assert(s.qs.length === TOTAL_QUESTIONS && new Set(s.qs.map((p) => p.id)).size === TOTAL_QUESTIONS, "recycled game is full");
+  assert(new Set(s.qs.map((p) => QUESTIONS[p.id].cat)).size === TOTAL_QUESTIONS, "recycled game keeps one per category");
+  assert(s.qs.every((p) => oldest.has(keys[p.id])), "recycles the least recently asked");
+  playThrough(t, s);
+  const newest = (memory.seen as string[]).slice(-TOTAL_QUESTIONS);
+  assert(s.qs.every((p) => newest.includes(keys[p.id])), "recycled questions move to the newest end");
+
+  // Selection stays fast even against a full memory.
+  const t0 = Date.now();
+  for (let i = 0; i < 200; i++) game.setup(makeTestCtx(4, i, {}, 0, memory).ctx);
+  const per = (Date.now() - t0) / 200;
+  assert(per < 5, `setup takes ${per.toFixed(2)} ms`);
+  console.log(
+    `trivia: memory ok (${distinct} questions in ${games} games, ${bytes} bytes, ${Date.now() - started} ms, setup ${per.toFixed(2)} ms)`,
+  );
+}
+{
+  // Plenty left unseen: a fresh room still gets one question per category and the difficulty ramp.
+  const memory: Record<string, unknown> = {};
+  for (let i = 0; i < 5; i++) {
+    const t = makeTestCtx(2, 50 + i, {}, 0, memory);
+    const s: TriviaState = game.setup(t.ctx);
+    assert(new Set(s.qs.map((p) => QUESTIONS[p.id].cat)).size === TOTAL_QUESTIONS, "category spread with memory");
+    assert(QUESTIONS[s.qs[0].id].diff === "easy" && QUESTIONS[s.qs[9].id].diff === "hard", "ramp with memory");
+    playThrough(t, s);
+  }
+}
+{
+  // Junk in memory is ignored; the list never grows past the cap.
+  const memory: Record<string, unknown> = { seen: [1, null, "zzz", { a: 1 }] };
+  const t = makeTestCtx(2, 3, {}, 0, memory);
+  const s: TriviaState = game.setup(t.ctx);
+  assert(s.qs.length === TOTAL_QUESTIONS, "junk memory still gives a full game");
+  playThrough(t, s);
+  assert((memory.seen as string[]).length === TOTAL_QUESTIONS, "junk dropped, asked kept");
+  const big: Record<string, unknown> = {
+    seen: Array.from({ length: MEMORY_CAP + 50 }, (_, i) => questionKey(QUESTIONS[i % QUESTIONS.length].q)),
+  };
+  const u = makeTestCtx(2, 4, {}, 0, big);
+  const s2: TriviaState = game.setup(u.ctx);
+  playThrough(u, s2);
+  assert((big.seen as string[]).length <= MEMORY_CAP, "memory capped");
+}
+
+// ---------- Red vs Blue ----------
+{
+  assert(game.setup(makeTestCtx(4, 1).ctx).teams === null, "solo by default");
+  assert(game.setup(makeTestCtx(1, 1, { mode: "teams" }).ctx).teams === null, "1 player: no teams");
+  for (const n of [2, 3, 4, 5, 8]) {
+    const t = makeTestCtx(n, n, { mode: "teams" });
+    const s: TriviaState = game.setup(t.ctx);
+    assert(s.teams !== null, `${n}: teams`);
+    const [a, b] = s.teams;
+    assert(a.length - b.length >= 0 && a.length - b.length <= 1, `${n}: even split`);
+    assert(new Set([...a, ...b]).size === n, `${n}: everyone on exactly one team`);
+    const v = game.view(s, t.ids[0], t.ctx) as TriviaView;
+    assert(v.teams !== null && v.teams[0].ids.length === a.length && v.teams[0].score === 0, `${n}: view shows teams`);
+    assertPlain(v);
+  }
+}
+/** Open the next question and have each team answer right or wrong after 1s. */
+function teamRound(t: Harness, s: TriviaState, redRight: boolean, blueRight: boolean) {
+  t.advance(Math.max(0, s.endsAt - t.ctx.now()));
+  game.tick!(s, t.ctx);
+  assert(s.phase === "question", "question open");
+  t.advance(1_000);
+  const right = s.qs[s.round].answer;
+  s.teams!.forEach((ids, team) => {
+    const ok = team === 0 ? redRight : blueRight;
+    for (const id of ids) game.action(s, id, { type: "answer", choice: ok ? right : (right + 1) % 4, q: s.round + 1 }, t.ctx);
+  });
+  assert((s.phase as Phase) === "reveal", "everyone in -> reveal");
+}
+{
+  // 2 vs 2: team score = members' points added up; the whole winning team wins.
+  const t = makeTestCtx(4, 9, { mode: "teams", questions: 5 });
+  const s: TriviaState = game.setup(t.ctx);
+  const [red, blue] = s.teams!;
+  teamRound(t, s, true, false);
+  let v = game.view(s, blue[0], t.ctx) as TriviaView;
+  const per = speedPoints(1_000, s.questionMs);
+  assert(v.teams![0].score === per * 2 && v.teams![0].gain === per * 2, "red total = both members");
+  assert(v.teams![1].score === 0 && v.teams![1].gain === 0 && v.teams![1].rank === 2, "blue behind");
+  teamRound(t, s, true, true);
+  teamRound(t, s, false, true);
+  teamRound(t, s, true, false);
+  teamRound(t, s, false, false);
+  v = game.view(s, red[0], t.ctx) as TriviaView;
+  const sum = (ids: string[]) => ids.reduce((acc, id) => acc + s.stats[s.ids.indexOf(id)].score, 0);
+  assert(v.teams![0].score === sum(red) && v.teams![1].score === sum(blue), "team score is the members' sum");
+  t.advance(REVEAL_MS);
+  game.tick!(s, t.ctx);
+  assert(t.result !== null, "game over");
+  assert(t.result.winners.length === red.length && red.every((id) => t.result!.winners.includes(id)), "whole red team wins");
+  assert(/^Red team wins! [\d,]+ to [\d,]+$/.test(t.result.headline), `headline: ${t.result.headline}`);
+  assert(Object.keys(t.result.scores!).length === 4, "per-player scores kept");
+}
+{
+  // Uneven teams (2 vs 1): the smaller team's total is scaled up, so a lone player who
+  // matches the pair answer for answer ties them.
+  const t = makeTestCtx(3, 5, { mode: "teams", questions: 5 });
+  const s: TriviaState = game.setup(t.ctx);
+  assert(s.teams![0].length === 2 && s.teams![1].length === 1, "2 vs 1");
+  for (let r = 0; r < 5; r++) teamRound(t, s, true, true);
+  const v = game.view(s, t.ids[0], t.ctx) as TriviaView;
+  assert(v.teams![0].score === v.teams![1].score, `scaled tie ${v.teams![0].score} vs ${v.teams![1].score}`);
+  t.advance(REVEAL_MS);
+  game.tick!(s, t.ctx);
+  assert(t.result!.winners.length === 3 && t.result!.headline.startsWith("Red and Blue tie"), `tie: ${t.result!.headline}`);
+}
+{
+  // Bots in team mode: a mixed game finishes and the winners are exactly the leading team.
+  for (const seed of [1, 2, 3]) {
+    const t = makeTestCtx(5, seed, { mode: "teams" }, 4);
+    const s: TriviaState = game.setup(t.ctx);
+    runWithBots(t, s);
+    assert(t.result !== null && s.history.length === 10, "bot team game ends");
+    const [a, b] = teamScores(s);
+    const w = t.result.winners.slice().sort().join();
+    if (a !== b) assert(w === s.teams![a > b ? 0 : 1].slice().sort().join(), "winners = leading team");
+    assert(/team wins|tie/.test(t.result.headline), `team headline: ${t.result.headline}`);
+    assertPlain(game.view(s, t.ids[0], t.ctx));
+  }
+  // Nobody scores: nobody wins.
+  const t = makeTestCtx(4, 2, { mode: "teams", questions: 5 });
+  const s: TriviaState = game.setup(t.ctx);
+  playThrough(t, s);
+  assert(t.result!.winners.length === 0, "0-0: no winners");
+}
+
+console.log("trivia: memory and team tests passed");

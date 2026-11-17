@@ -3,7 +3,7 @@
 import { Volume2, VolumeX } from "lucide-react";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { feedback, getFeedbackSettings, setFeedbackSettings, sfx, subscribeFeedback } from "@/lib/feedback";
-import { recordWin } from "@/lib/progress";
+import { recordResult } from "@/lib/progress";
 import type { AccessoryId, RoomView } from "@/shared/types";
 
 /**
@@ -26,8 +26,10 @@ export function useRoomFeedback(room: RoomView | null, me: string, serverNow: ()
     else if (room.result && !prev.result) {
       const won = room.result.winners.includes(me);
       feedback(won ? "win" : "end");
-      if (won && room.participants.includes(me)) {
-        const fresh = recordWin();
+      if (room.participants.includes(me)) {
+        // Only games with at least one other person count (practice bots don't).
+        const humans = room.participants.filter((id) => !room.players.find((p) => p.id === id)?.bot).length;
+        const fresh = recordResult({ gameId: room.gameId, won, humans });
         if (fresh.length) queueMicrotask(() => setUnlocked(fresh));
       }
     }

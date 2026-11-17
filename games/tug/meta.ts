@@ -4,7 +4,7 @@ import type { GameMeta } from "../catalog";
 export const meta: GameMeta = {
   "id": "tug",
   "name": "Tug of War",
-  "tagline": "Two teams. One rope. Pull!",
+  "tagline": "Two teams. One rope. Mash, type, solve: PULL!",
   "category": "arena",
   "minPlayers": 2,
   "maxPlayers": 12,
@@ -12,9 +12,9 @@ export const meta: GameMeta = {
   "emoji": "🪢",
   "accent": "#f97316",
   "how": [
-    "Split into two teams. Each round is a quick challenge: mash, type, or solve.",
-    "Every correct answer pulls the rope your way.",
-    "Drag the flag over your line to win the round. Best of five."
+    "Red vs Blue. Each round is a quick challenge: mash, type, sums, colours or rhythm.",
+    "Every right answer drags the flag your way. Last 8 seconds pull 1.6×.",
+    "Drag it over your line (or lead at the buzzer) to win the round. Best of five."
   ],
   "original": true,
   "isNew": true,

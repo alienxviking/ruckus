@@ -1,6 +1,7 @@
 import type { GameCtx, GameDef } from "../../shared/game";
 import { shuffle, topScorers } from "../../shared/game";
 import { readSettings } from "../../shared/settings";
+import { TEAMS, splitTeams, teamOf } from "../../shared/teams";
 import { pixelsBot } from "./bot";
 import { config } from "./config";
 import { EMBLEMS } from "./data";
@@ -102,6 +103,8 @@ export interface PixelsState {
   /** Host settings: rounds in the game and painting time per round. */
   rounds: number;
   paintMs: number;
+  /** Red vs Blue: player ids per team (null in solo play). Teammates share one emblem. */
+  teams: [string[], string[]] | null;
 }
 
 export type PixelsAction =
@@ -146,6 +149,8 @@ export interface PixelsView {
   abandonAt: number | null;
   winners: string[] | null;
   endReason: "done" | "abandoned" | null;
+  /** Red vs Blue: player ids per team (null in solo play). Teammates share one emblem and score. */
+  teams: [string[], string[]] | null;
 }
 
 // ---------- emblems ----------
@@ -242,13 +247,26 @@ export function flush(s: PixelsState, ctx: GameCtx) {
   s.lastFlush = ctx.now();
 }
 
+/** Team index per player (solo: -1 each). */
+function teamIdx(s: Pick<PixelsState, "ids" | "teams">): number[] {
+  return s.ids.map((id) => (s.teams ? teamOf(s.teams, id) : -1));
+}
+
+/** Team mode: one emblem per team, shared by its members (avoiding any a member has had). */
+function pickTeamEmblems(s: PixelsState, random: () => number): number[] {
+  const team = teamIdx(s);
+  const had = [0, 1].map((t) => [...new Set(s.ids.flatMap((_, p) => (team[p] === t ? s.had[p] : [])))]);
+  const two = pickEmblems({ ids: ["red", "blue"], had, history: s.history }, random);
+  return team.map((t) => two[t]);
+}
+
 function startRound(s: PixelsState, ctx: GameCtx) {
   s.round += 1;
   s.board.fill(0);
   s.encDirty = true;
   s.rev += 1;
   s.buf = [];
-  s.emblems = pickEmblems(s, ctx.random);
+  s.emblems = s.teams ? pickTeamEmblems(s, ctx.random) : pickEmblems(s, ctx.random);
   s.emblems.forEach((e, p) => s.had[p].push(e));
   s.spots = null;
   s.pts = null;
@@ -271,10 +289,38 @@ function scoresById(s: PixelsState): Record<string, number> {
   return Object.fromEntries(s.ids.map((id, i) => [id, s.totals[i]]));
 }
 
+/** Team totals (every member holds the team's score, so any member's total will do). */
+export function teamTotals(s: Pick<PixelsState, "ids" | "teams" | "totals">): [number, number] {
+  const team = teamIdx(s);
+  const total = (t: number) => {
+    const i = team.indexOf(t);
+    return i < 0 ? 0 : s.totals[i];
+  };
+  return [total(0), total(1)];
+}
+
+function finishTeams(s: PixelsState, ctx: GameCtx, teams: [string[], string[]]) {
+  const scores = scoresById(s);
+  const [a, b] = teamTotals(s);
+  let winners: string[];
+  let headline: string;
+  if (a === b) {
+    winners = a > 0 ? [...s.ids] : [];
+    headline = a > 0 ? `${TEAMS[0].name} and ${TEAMS[1].name} tie at ${a} points!` : "Canvas Clash ends on a blank canvas";
+  } else {
+    const w = a > b ? 0 : 1;
+    winners = [...teams[w]];
+    headline = `${TEAMS[w].name} team wins Canvas Clash, ${Math.max(a, b)} to ${Math.min(a, b)}!`;
+  }
+  s.winners = winners;
+  ctx.end({ winners, headline, scores });
+}
+
 function finish(s: PixelsState, ctx: GameCtx) {
   s.phase = "final";
   s.endsAt = ctx.now();
   s.endReason = "done";
+  if (s.teams) return finishTeams(s, ctx, s.teams);
   const scores = scoresById(s);
   const winners = topScorers(scores);
   s.winners = winners;
@@ -300,6 +346,14 @@ function abandon(s: PixelsState, ctx: GameCtx) {
   s.endReason = "abandoned";
   s.aloneSince = null;
   const here = s.ids.filter((id) => connected(ctx, id));
+  if (s.teams && here.length) {
+    // Whoever is left wins for their whole team.
+    const t = teamOf(s.teams, here[0]);
+    const winners = [...s.teams[t]];
+    s.winners = winners;
+    ctx.end({ winners, headline: `${TEAMS[t].name} team wins Canvas Clash — the others left`, scores: scoresById(s) });
+    return;
+  }
   s.winners = here;
   ctx.end({
     winners: here,
@@ -440,6 +494,7 @@ export const pixels: GameDef<PixelsState, PixelsAction> = {
       endReason: null,
       rounds: Number(set.rounds) || ROUNDS,
       paintMs: Number(set.paint) * 1000 || PAINT_MS,
+      teams: set.mode === "teams" && ids.length >= 2 ? splitTeams(ids, ctx.random) : null,
     };
     startRound(s, ctx);
     return s;
@@ -531,6 +586,7 @@ export const pixels: GameDef<PixelsState, PixelsAction> = {
       abandonAt: s.aloneSince === null ? null : s.aloneSince + ABANDON_MS,
       winners: s.winners,
       endReason: s.endReason,
+      teams: s.teams,
     };
   },
 };

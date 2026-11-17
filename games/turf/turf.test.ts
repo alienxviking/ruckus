@@ -1110,4 +1110,113 @@ for (const [n, bots, map] of [
   checkInvariants(s, "bot game");
 }
 
+// ---------- Red vs Blue ----------
+{
+  // Solo stays a free-for-all.
+  const g = newGame(4);
+  check(g.s.teams === null && g.s.side === null && view(g.s, g.t.ids[0], g.t).teams === undefined, "solo has no teams");
+  // One player can't make two teams.
+  const one = makeTestCtx(1, 3, { mode: "teams" });
+  check(game.setup(one.ctx).teams === null, "teams need two painters");
+
+  for (const n of [2, 3, 4, 5, 8]) {
+    const t = makeTestCtx(n, 40 + n, { mode: "teams" });
+    const s: TurfState = game.setup(t.ctx);
+    const [red, blue] = s.teams!;
+    check(red.length === Math.ceil(n / 2) && blue.length === Math.floor(n / 2), `teams split evenly for ${n}`);
+    check(new Set([...red, ...blue]).size === n, "everyone on exactly one team");
+    s.painters.forEach((p, i) => check(s.teams![s.side![i]].includes(p.id), "side matches teams"));
+    check(view(s, t.ids[0], t).teams?.[0].join() === red.join(), "view shows the teams");
+    checkInvariants(s, `team setup ${n}`);
+  }
+
+  // Teammates share turf: stepping onto a teammate's tile doesn't repaint it and closes your loop.
+  const t = makeTestCtx(4, 5, { mode: "teams" });
+  const s: TurfState = game.setup(t.ctx);
+  tick(t, s, COUNTDOWN_MS);
+  s.nextSpawnAt = FOREVER;
+  clearBoard(s);
+  const a = 0;
+  const mate = s.side!.findIndex((x, i) => i !== a && x === s.side![a]);
+  const foe = s.side!.findIndex((x) => x !== s.side![a]);
+  own(s, a, 10, 10, 12, 12);
+  own(s, mate, 13, 10, 20, 12); // teammate's strip to the right
+  own(s, foe, 15, 15, 16, 16);
+  place(s, a, 12, 11, "up");
+  solo(s, a);
+  // Up 3, right 6, down 3: lands on the teammate's strip, enclosing the box above it.
+  drive(t, s, a, "UUURRRRRRDDD");
+  check(at(s, 14, 10) === mate, "teammate's tile is not repainted");
+  check(s.painters[a].out === 0, "landing on a teammate's turf closes the loop");
+  check(at(s, 15, 8) === a, "the area walled off with a teammate's turf is filled");
+  check(at(s, 15, 15) === foe, "untouched rival turf stays");
+  checkInvariants(s, "team fill");
+  // Freeze only hits the other team.
+  collectFreeze(s, a, t);
+  check(s.painters[mate].frozenUntil <= t.ctx.now() && s.painters[foe].frozenUntil > t.ctx.now(), "freeze spares teammates");
+
+  // Result: the whole winning team wins.
+  const ends = countEnds(t);
+  s.painters.forEach((p) => (p.frozenUntil = 0));
+  clearBoard(s);
+  s.teams![1].forEach((id) => own(s, s.painters.findIndex((p) => p.id === id), 0, 0, 1, 1));
+  const ri = s.painters.findIndex((p) => p.id === s.teams![0][0]);
+  own(s, ri, 0, 5, 9, 9);
+  tick(t, s, s.endsAt - t.ctx.now());
+  check(ends.length === 1, "ends once");
+  check(t.result!.winners.slice().sort().join() === s.teams![0].slice().sort().join(), "every Red member wins");
+  check(/^Red team wins with \d+ tiles to \d+$/.test(t.result!.headline), `team headline: ${t.result!.headline}`);
+  check(Object.keys(t.result!.scores!).length === 4, "per-player scores still there");
+
+  // A tie: everyone shares it.
+  const t2 = makeTestCtx(2, 6, { mode: "teams" });
+  const s2: TurfState = game.setup(t2.ctx);
+  tick(t2, s2, COUNTDOWN_MS);
+  tick(t2, s2, s2.endsAt - t2.ctx.now() - 1);
+  s2.painters.forEach((p) => (p.frozenUntil = FOREVER));
+  clearBoard(s2);
+  own(s2, 0, 0, 0, 2, 2);
+  own(s2, 1, 5, 5, 7, 7);
+  tick(t2, s2, 5);
+  check(t2.result!.winners.length === 2 && t2.result!.headline.startsWith("Red and Blue tie!"), `tie: ${t2.result!.headline}`);
+}
+
+/** Painter `who` drives onto a freeze power-up placed right in front of it. */
+function collectFreeze(s: TurfState, who: number, t: Harness) {
+  const p = s.painters[who];
+  s.painters.forEach((q) => (q.frozenUntil = 0));
+  const step = [[0, -1], [1, 0], [0, 1], [-1, 0]][p.dir];
+  s.powers = [{ x: p.x + step[0], y: p.y + step[1], kind: "freeze" }];
+  tick(t, s);
+  check(s.powers.length === 0, "freeze collected");
+}
+
+// Bots in Red vs Blue: a full game, invariants hold, loops get closed, the winning team wins.
+for (const [n, bots] of [
+  [4, 4],
+  [5, 3],
+  [8, 8],
+] as const) {
+  const t = makeTestCtx(n, 70 + n, { mode: "teams" }, bots);
+  const s: TurfState = game.setup(t.ctx);
+  let captures = 0;
+  for (let ms = 0; ms < COUNTDOWN_MS + PLAY_MS + 2_000 && !t.result; ms += TICK_MS) {
+    t.advance(TICK_MS);
+    game.tick!(s, t.ctx);
+    for (const id of t.ids) {
+      if (!t.ctx.player(id)?.bot) continue;
+      const a = game.bot!(s, id, t.ctx);
+      if (a) game.action(s, id, a, t.ctx);
+    }
+    checkInvariants(s, "team bot game");
+  }
+  captures = events(t, "capture").length;
+  check(t.result, `team bot game (${n}) ends`);
+  check(captures >= bots, `team bots close loops (${captures})`);
+  const totals = [0, 0];
+  s.painters.forEach((p, i) => (totals[s.side![i]] += p.count));
+  const win: number = totals[0] === totals[1] ? -1 : totals[0] > totals[1] ? 0 : 1;
+  if (win >= 0) check(t.result!.winners.slice().sort().join() === s.teams![win].slice().sort().join(), "winning team = winners");
+}
+
 console.log("turf: all tests passed");

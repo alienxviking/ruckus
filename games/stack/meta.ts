@@ -12,9 +12,9 @@ export const meta: GameMeta = {
   "emoji": "🧱",
   "accent": "#fbbf24",
   "how": [
-    "A block slides back and forth. Tap to drop it on the tower.",
-    "Whatever hangs over the edge is sliced off, so the tower narrows.",
-    "Tallest tower wins. Play solo or stack side by side with friends."
+    "A block slides back and forth. Tap or press Space to drop it.",
+    "Whatever hangs over the edge is sliced off. Perfect drops score a bonus.",
+    "Best tower wins. Play solo or stack side by side with friends."
   ],
   "original": true,
   "isNew": true

@@ -8,6 +8,7 @@ export const rules: GameRules = {
     "Head out from your turf and come back to it: every tile you have closed off from the map edge becomes yours, including rivals' paint.",
     "Power-ups appear on the map every 5-7 seconds (up to 3 at a time). Drive over one to use it.",
     "When time is up the map is frozen and tiles are counted. The host can also pick a smaller or larger map.",
+    "Red vs Blue (host setting): players are split into two random teams. Teammates paint in their team colour and share one turf, so you can close a loop on a teammate's paint and never paint over it.",
   ],
   controls: {
     desktop: [
@@ -22,6 +23,7 @@ export const rules: GameRules = {
   },
   scoring: [
     "Your score is the number of tiles you own at the end. Most tiles wins; tied players share the win.",
+    "In Red vs Blue the team that owns more of the map wins, and every member of that team shares the win. Freeze only stops the other team.",
     "⚡ Dash: you move twice as fast for 3 seconds.",
     "💣 Paint bomb: paints every tile within 2 steps of you, and can close off an area for you.",
     "🧊 Freeze: every other player stops moving for 1.5 seconds.",

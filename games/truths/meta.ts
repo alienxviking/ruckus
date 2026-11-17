@@ -8,13 +8,13 @@ export const meta: GameMeta = {
   "category": "party",
   "minPlayers": 3,
   "maxPlayers": 10,
-  "minutes": 10,
+  "minutes": 15,
   "emoji": "💣",
   "accent": "#22d3ee",
   "how": [
     "Everyone writes three things about themselves: two true, one made up.",
-    "Take turns reading yours out loud on the call while everyone votes on the lie.",
-    "Score for spotting lies, and for every friend your lie fools."
+    "Take turns reading yours out loud on the call while everyone grills you and votes on the lie.",
+    "Spot a lie for 100. Score 50 for every friend your lie fools."
   ],
   "original": true,
   "isNew": true,

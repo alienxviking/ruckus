@@ -14,6 +14,7 @@ import { Confetti } from "../Confetti";
 import { Component, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ReactionBar, ReactionLayer } from "./Reactions";
 import { PauseOverlay } from "./PauseOverlay";
+import { reportError, setReportGame } from "@/lib/report-error";
 import dynamic from "next/dynamic";
 
 // The animated confirm dialog is fetched on first hover/focus of "End game".
@@ -85,6 +86,11 @@ export function GameStage({
         ? "The game is paused."
         : "You've used your pauses for this game, so it keeps going while you read.";
 
+  useEffect(() => {
+    setReportGame(room.gameId);
+    return () => setReportGame(null);
+  }, [room.gameId]);
+
   // Finishing a game counts as having learnt it (no more glowing rules button).
   const finished = !!room.result;
   useEffect(() => {
@@ -141,7 +147,7 @@ export function GameStage({
           <PauseOverlay pause={room.pause} byId={byId} me={me} isHost={isHost} serverNow={serverNow} send={send} />
         )}
         {GameClient ? (
-          <GameErrorBoundary key={room.gameSeq}>
+          <GameErrorBoundary key={room.gameSeq} game={room.gameId}>
             <GameClient
               view={view}
               me={me}
@@ -297,10 +303,13 @@ function SpectatorNote({ full, max }: { full: boolean; max?: number }) {
   );
 }
 
-class GameErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
+class GameErrorBoundary extends Component<{ children: ReactNode; game: string }, { error: Error | null }> {
   state = { error: null as Error | null };
   static getDerivedStateFromError(error: Error) {
     return { error };
+  }
+  componentDidCatch(error: Error) {
+    reportError(error, { game: this.props.game });
   }
   render() {
     if (this.state.error) {

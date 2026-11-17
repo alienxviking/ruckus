@@ -3,6 +3,7 @@
 import { useMemo, useState, useEffect, useRef, useSyncExternalStore, type ReactNode } from "react";
 import type { GameClientProps } from "@/shared/client-game";
 import { PLAYER_COLORS, type Player } from "@/shared/types";
+import { TEAMS } from "@/shared/teams";
 import { Note, StatusBanner, TimerBar, useSecondsLeft } from "@/components/game-ui";
 import type { OutRec, SnowAction, SnowView } from "./server";
 import {
@@ -119,6 +120,11 @@ function isView(v: unknown): v is SnowView {
 
 // ---------- component ----------
 
+/** "Red 2 · Blue 1" style count of kids still standing per team. */
+function teamStanding(team: number[], outSet: Set<number>, countdown: boolean) {
+  return TEAMS.map((t, i) => `${t.name} ${team.filter((x, slot) => x === i && (countdown || !outSet.has(slot))).length}`).join(" · ");
+}
+
 export default function SnowballShowdown(props: Props) {
   // Also guards against a stale view from another game arriving before ours.
   if (!isView(props.view)) {
@@ -139,11 +145,22 @@ function Game({ view, me, players, byId, isPlayer, act, serverNow, onEvent, acce
   const field = FIELDS[view.field] ?? FIELDS[0];
 
   const colorKey = ids.map((id) => byId[id]?.color ?? "").join("\n");
-  const colors = useMemo(() => displayColors(colorKey), [colorKey]);
+  const teams = view.teams;
+  const teamKey = teams ? teams.map((t) => t.join(",")).join("|") : "";
+  /** Team per slot (-1 in solo mode). */
+  const team = useMemo(
+    () => ids.map((id) => (teamKey ? teamKey.split("|").findIndex((t) => t.split(",").includes(id)) : -1)),
+    [ids, teamKey],
+  );
+  const solo = useMemo(() => displayColors(colorKey), [colorKey]);
+  // Red vs Blue: every coat (and snowball, and name) is in its team's colour, so friend and foe
+  // are obvious at a glance.
+  const colors = useMemo(() => (teamKey ? team.map((t, i) => TEAMS[t]?.color ?? solo[i]) : solo), [teamKey, team, solo]);
   const names = ids.map((id) => byId[id]?.name ?? "Someone");
   const avatars = ids.map((id) => byId[id]?.avatar ?? "🙂");
   const offline = ids.map((id) => byId[id]?.connected === false);
   const mySlot = isPlayer ? ids.indexOf(me) : -1;
+  const myTeam = mySlot >= 0 ? team[mySlot] : -1;
   const outSet = new Set(view.outs.map((o) => o.s));
   const standing = ids.length - (phase === "countdown" ? 0 : outSet.size);
   const imAlive = mySlot >= 0 && (phase === "countdown" || !outSet.has(mySlot));
@@ -171,23 +188,36 @@ function Game({ view, me, players, byId, isPlayer, act, serverNow, onEvent, acce
   const winner = view.lastWinner;
   let head: ReactNode;
   let sub: ReactNode;
+  const left = teams ? teamStanding(team, outSet, phase === "countdown") + " standing" : `${standing} still standing`;
   if (phase === "countdown") {
     head = `Round ${round} · ${field.name}`;
-    sub = mySlot >= 0 ? "You're the one with the white ring. Find cover!" : `${ids.length} kids about to get snowy`;
+    sub = teams
+      ? myTeam >= 0
+        ? `You're on ${TEAMS[myTeam].name} (white ring). No friendly fire!`
+        : `${TEAMS[0].name} vs ${TEAMS[1].name}`
+      : mySlot >= 0
+        ? "You're the one with the white ring. Find cover!"
+        : `${ids.length} kids about to get snowy`;
   } else if (phase === "fight") {
     if (mySlot >= 0 && !imAlive) {
       head = "💫 You got snowed!";
-      sub = `${standing} still standing · you're back next round`;
+      sub = `${left} · you're back next round`;
     } else {
       head = view.sudden ? "🌨️ Blizzard! One hit and you're out" : "❄️ Snowball fight!";
-      sub = `${standing} still standing` + (fightMs < 12_000 && !view.sudden ? ` · grab ${POWER_INFO.big.icon} ${POWER_INFO.triple.icon} power-ups and ❄ piles` : "");
+      sub = left + (fightMs < 12_000 && !view.sudden ? ` · grab ${POWER_INFO.big.icon} ${POWER_INFO.triple.icon} power-ups and ❄ piles` : "");
     }
   } else if (phase === "roundOver") {
-    head = winner ? `🏆 ${winner === me ? "You take" : `${name(winner)} takes`} round ${round}!` : "🤝 Draw: nobody left standing";
+    head = teams
+      ? view.lastTeam !== null
+        ? `🏆 ${TEAMS[view.lastTeam].name} team takes round ${round}!`
+        : "🤝 Draw: nobody left standing"
+      : winner
+        ? `🏆 ${winner === me ? "You take" : `${name(winner)} takes`} round ${round}!`
+        : "🤝 Draw: nobody left standing";
     sub = `Next round in ${secs}s · first to ${view.winsNeeded} wins`;
   } else {
-    head = "🏁 Match over";
-    sub = "Final standings below";
+    head = teams && view.champTeam !== null ? `🏁 ${TEAMS[view.champTeam].name} team wins!` : "🏁 Match over";
+    sub = teams ? `${TEAMS[0].name} ${view.teamWins[0]} – ${view.teamWins[1]} ${TEAMS[1].name} · final standings below` : "Final standings below";
   }
   if (abandonIn !== null && phase !== "final") {
     const gone = players.filter((p) => !p.connected).map((p) => p.name);
@@ -222,15 +252,18 @@ function Game({ view, me, players, byId, isPlayer, act, serverNow, onEvent, acce
     clock = `${view.history.length} round${view.history.length === 1 ? "" : "s"} played`;
   }
 
+  const wonTeam = phase === "final" ? view.champTeam : view.lastTeam;
   const ring = view.sudden && phase === "fight"
     ? "#f87171"
     : phase === "countdown" && mySlot >= 0
       ? colors[mySlot]
-      : (phase === "roundOver" || phase === "final") && winner
-        ? (colors[ids.indexOf(winner)] ?? accent)
-        : accent + "88";
+      : (phase === "roundOver" || phase === "final") && teams && wonTeam !== null
+        ? TEAMS[wonTeam].color
+        : (phase === "roundOver" || phase === "final") && winner
+          ? (colors[ids.indexOf(winner)] ?? accent)
+          : accent + "88";
 
-  const data: ArenaData = { view, mySlot, colors, names, avatars, reduced, accent, offline };
+  const data: ArenaData = { view, mySlot, colors, names, avatars, reduced, accent, offline, team };
   const label =
     `Snowy field "${field.name}", round ${round}. ${standing} of ${ids.length} kids standing.` +
     (mySlot >= 0 ? (imAlive ? " You're still in." : " You're out this round.") : "");
@@ -284,13 +317,15 @@ function Game({ view, me, players, byId, isPlayer, act, serverNow, onEvent, acce
           </>
         }
       >
-        <Overlay view={view} me={me} secs={secs} fightMs={fightMs} byId={byId} colors={colors} />
+        <Overlay view={view} me={me} secs={secs} fightMs={fightMs} byId={byId} colors={colors} team={team} />
       </Arena>
 
       {!isPlayer && <Note>👀 You&apos;re spectating. Every snowball is thrown by a real player.</Note>}
 
-      {phase !== "final" && <ScoreRow view={view} players={players} me={me} colors={colors} outSet={outSet} />}
+      {phase !== "final" && teams && <TeamScore view={view} players={players} me={me} team={team} outSet={outSet} />}
+      {phase !== "final" && !teams && <ScoreRow view={view} players={players} me={me} colors={colors} outSet={outSet} />}
       {phase !== "final" && <Feed outs={view.outs} ids={ids} byId={byId} colors={colors} />}
+      {phase === "final" && teams && <TeamResult view={view} me={me} />}
       {phase === "final" && <FinalStandings view={view} byId={byId} me={me} colors={colors} />}
     </div>
   );
@@ -307,6 +342,7 @@ function Overlay({
   fightMs,
   byId,
   colors,
+  team,
 }: {
   view: SnowView;
   me: string;
@@ -314,11 +350,15 @@ function Overlay({
   fightMs: number;
   byId: Record<string, Player>;
   colors: string[];
+  team: number[];
 }) {
   if (view.phase === "countdown") {
+    const mine = view.ids.indexOf(me);
+    const myTeam = mine >= 0 ? team[mine] : -1;
     return (
       <div className="pointer-events-none absolute inset-0 grid place-items-center">
         <div className="flex flex-col items-center">
+          {view.teams && <TeamIntro view={view} me={me} myTeam={myTeam} byId={byId} />}
           <span className="rounded-full bg-ink/70 px-3 py-0.5 text-xs font-semibold tracking-wide text-white uppercase">
             Round {view.round} · {(FIELDS[view.field] ?? FIELDS[0]).name}
           </span>
@@ -353,6 +393,31 @@ function Overlay({
     }
     return null;
   }
+  if (view.phase === "roundOver" && view.teams) {
+    const t = view.lastTeam;
+    const color = t !== null ? TEAMS[t].color : undefined;
+    const mine = view.ids.indexOf(me);
+    return (
+      <div className="pointer-events-none absolute inset-x-0 top-[9%] grid place-items-center">
+        <div
+          className="sb-late card flex max-w-[85%] flex-col items-center px-4 py-2.5 text-center shadow-xl shadow-black/40 @xl:px-6 @xl:py-4"
+          style={{ borderColor: color, background: "color-mix(in oklab, var(--color-panel) 90%, transparent)" }}
+        >
+          <span className="max-w-full truncate font-display text-lg font-extrabold @xl:text-3xl" style={{ color }}>
+            {t !== null ? `${TEAMS[t].name} team${mine >= 0 && team[mine] === t ? " (you!)" : ""}` : "Draw"}
+          </span>
+          <span className="text-xs text-muted @xl:text-sm">
+            {t !== null ? `last team standing · round ${view.round}` : "nobody left standing"}
+          </span>
+          <span className="mt-1 font-mono text-sm font-bold tabular-nums">
+            <span style={{ color: TEAMS[0].color }}>{view.teamWins[0]}</span>
+            <span className="text-muted"> – </span>
+            <span style={{ color: TEAMS[1].color }}>{view.teamWins[1]}</span>
+          </span>
+        </div>
+      </div>
+    );
+  }
   if (view.phase === "roundOver") {
     const w = view.lastWinner;
     const p = w ? byId[w] : undefined;
@@ -377,6 +442,121 @@ function Overlay({
     );
   }
   return null;
+}
+
+/** Countdown card: which team you're on and who's with you. */
+function TeamIntro({ view, me, myTeam, byId }: { view: SnowView; me: string; myTeam: number; byId: Record<string, Player> }) {
+  const teams = view.teams;
+  if (!teams) return null;
+  if (myTeam < 0) {
+    return (
+      <span className="mb-2 rounded-full bg-ink/75 px-4 py-1 font-display text-lg font-black text-white">
+        <span style={{ color: TEAMS[0].color }}>{TEAMS[0].name}</span> vs <span style={{ color: TEAMS[1].color }}>{TEAMS[1].name}</span>
+      </span>
+    );
+  }
+  const t = TEAMS[myTeam];
+  const mates = teams[myTeam].filter((id) => id !== me).map((id) => byId[id]?.name ?? "Someone");
+  return (
+    <div
+      className="mb-2 flex max-w-[90%] flex-col items-center rounded-2xl border-2 bg-ink/80 px-4 py-1.5 text-center shadow-lg shadow-black/40"
+      style={{ borderColor: t.color }}
+    >
+      <span className="font-display text-xl font-black whitespace-nowrap @xl:text-3xl" style={{ color: t.color }}>
+        You&apos;re on {t.name}
+      </span>
+      <span className="max-w-full truncate text-xs text-white/85 @xl:text-sm">
+        {mates.length ? `with ${mates.join(", ")}` : "on your own: good luck!"}
+      </span>
+    </div>
+  );
+}
+
+/** Team mode scoreboard: each team's round wins, then its kids. */
+function TeamScore({
+  view,
+  players,
+  me,
+  team,
+  outSet,
+}: {
+  view: SnowView;
+  players: Player[];
+  me: string;
+  team: number[];
+  outSet: Set<number>;
+}) {
+  return (
+    <div className="grid grid-cols-2 gap-2" aria-label="Teams">
+      {TEAMS.map((t, ti) => (
+        <section
+          key={t.name}
+          className="flex min-w-0 flex-col gap-1.5 rounded-xl border px-2 py-1.5"
+          style={{ borderColor: t.color + "88", background: t.color + "14" }}
+          aria-label={`${t.name} team, ${view.teamWins[ti]} round wins`}
+        >
+          <div className="flex items-center justify-between gap-2">
+            <span className="font-display font-black" style={{ color: t.color }}>
+              {t.name}
+            </span>
+            <span className="flex items-center gap-1.5">
+              <Pips wins={view.teamWins[ti]} color={t.color} need={view.winsNeeded} />
+              <span className="font-mono font-bold tabular-nums">{view.teamWins[ti]}</span>
+            </span>
+          </div>
+          <ul className="flex flex-wrap gap-1">
+            {view.ids.map((id, slot) => {
+              if (team[slot] !== ti) return null;
+              const p = players.find((x) => x.id === id);
+              const on = view.phase === "countdown" || !outSet.has(slot);
+              const offline = p?.connected === false;
+              const hits = view.hits[slot] ?? 0;
+              return (
+                <li
+                  key={id}
+                  className={`flex min-h-8 max-w-full items-center gap-1 rounded-full border px-2 py-0.5 text-sm ${on ? "" : "opacity-55"} ${id === me ? "ring-2 ring-white/60" : ""}`}
+                  style={{ borderColor: t.color + "88" }}
+                >
+                  <span aria-hidden><Avatar id={p?.avatar ?? "🙂"} /></span>
+                  <span className="max-w-[6.5rem] truncate font-semibold">{p?.name ?? "Someone"}</span>
+                  {id === me && <span className="text-[10px] font-bold tracking-wide text-text/80 uppercase">you</span>}
+                  <span className="font-mono text-xs text-muted tabular-nums" aria-hidden>
+                    {offline ? "🔌" : on ? "⛄" : "💫"}
+                    {hits > 0 ? ` 🎯${hits}` : ""}
+                  </span>
+                  <span className="sr-only">, {offline ? "offline" : on ? "standing" : "snowed out"}</span>
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      ))}
+    </div>
+  );
+}
+
+/** Team mode: the big "Red team wins!" card above the standings. */
+function TeamResult({ view, me }: { view: SnowView; me: string }) {
+  const t = view.champTeam;
+  const color = t !== null ? TEAMS[t].color : undefined;
+  const mine = view.teams ? view.teams.findIndex((ids) => ids.includes(me)) : -1;
+  return (
+    <section
+      className="card animate-rise flex flex-col items-center gap-1 px-4 py-3 text-center"
+      style={color ? { borderColor: color, background: `linear-gradient(180deg, ${color}26, transparent 80%), var(--color-panel)` } : undefined}
+      aria-label="Team result"
+    >
+      <span className="font-display text-2xl font-black @xl:text-4xl" style={{ color }}>
+        {t !== null ? `${TEAMS[t].name} team wins!` : "It's a draw!"}
+      </span>
+      <span className="font-mono text-lg font-bold tabular-nums">
+        <span style={{ color: TEAMS[0].color }}>{TEAMS[0].name} {view.teamWins[0]}</span>
+        <span className="text-muted"> – </span>
+        <span style={{ color: TEAMS[1].color }}>{view.teamWins[1]} {TEAMS[1].name}</span>
+      </span>
+      {mine >= 0 && t !== null && <span className="text-sm text-muted">{mine === t ? "🎉 Your team won!" : "Your team will get them next time."}</span>}
+    </section>
+  );
 }
 
 function Pips({ wins, color, need }: { wins: number; color: string; need: number }) {
@@ -538,7 +718,13 @@ function FinalStandings({ view, byId, me, colors }: { view: SnowView; byId: Reco
                 <li key={i} className="flex min-w-0 items-baseline gap-2">
                   <span className="w-7 shrink-0 font-mono text-xs text-muted">R{i + 1}</span>
                   <span className="min-w-0 break-words">
-                    {r.winner ? (
+                    {r.team !== undefined ? (
+                      r.team >= 0 ? (
+                        <b style={{ color: TEAMS[r.team]?.color }}>{TEAMS[r.team]?.name ?? "?"} team</b>
+                      ) : (
+                        "🤝 Draw"
+                      )
+                    ) : r.winner ? (
                       <>
                         <span aria-hidden><Avatar id={byId[r.winner]?.avatar ?? "🏆"} /></span>{" "}
                         <b style={{ color: colors[slot] }}>{byId[r.winner]?.name ?? "Someone"}</b>

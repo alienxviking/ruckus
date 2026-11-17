@@ -13,7 +13,7 @@ export const meta: GameMeta = {
   "accent": "#34d399",
   "how": [
     "Flip two cards a turn. Find a matching pair and you keep it.",
-    "Solo: clear the board in as few flips as you can.",
+    "Solo: clear the board with as few misses, as fast as you can.",
     "With friends: take turns, and a match earns another go. Most pairs wins."
   ],
   "original": true,

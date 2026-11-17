@@ -4,17 +4,17 @@ import type { GameMeta } from "../catalog";
 export const meta: GameMeta = {
   "id": "flags",
   "name": "Flag Raid",
-  "tagline": "Capture their flag. Guard your own.",
+  "tagline": "Steal their flag. Guard your own. Pure chaos.",
   "category": "arena",
   "minPlayers": 2,
   "maxPlayers": 12,
-  "minutes": 6,
+  "minutes": 5,
   "emoji": "🚩",
   "accent": "#ef4444",
   "how": [
-    "Two teams, two bases. Sneak into enemy ground and grab their flag.",
-    "Get tagged on their side and you're sent home. Tag raiders on your side.",
-    "Carry the flag home to score. First to 3 captures wins."
+    "Two teams, two halves. Run into enemy ground and grab their flag.",
+    "Touched on their side? You're sent home. On your side, you do the tagging.",
+    "Carry the flag into your base to score. First to 3 captures wins."
   ],
   "original": true,
   "isNew": true,

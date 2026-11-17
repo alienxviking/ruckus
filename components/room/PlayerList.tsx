@@ -1,6 +1,6 @@
 "use client";
 
-import { Bot, Crown, Lock, LockOpen, Minus, MoreHorizontal, Plus } from "lucide-react";
+import { Bot, ChevronDown, Crown, Lock, LockOpen, Minus, Plus } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { MAX_PLAYERS, type ClientMsg, type RoomView } from "@/shared/types";
 import { GAME_CONFIG } from "@/games/config";
@@ -119,11 +119,34 @@ export function PlayerList({
                   }`}
                 />
               </span>
-              <span className="min-w-0 flex-1">
-                <span className="block truncate font-semibold" style={{ color: p.color }}>
-                  {p.name}
-                  {p.id === me && <span className="ml-1 text-xs font-normal text-muted">(you)</span>}
-                </span>
+              <span className="relative min-w-0 flex-1" data-menu={menu === p.id ? "" : undefined}>
+                {canManage ? (
+                  // Host: the name opens this player's menu (keeps the wins column lined up).
+                  <button
+                    type="button"
+                    className="-mx-1 flex max-w-full items-center gap-1 rounded px-1 text-left font-semibold transition-colors hover:bg-panel-2"
+                    style={{ color: p.color }}
+                    aria-haspopup="menu"
+                    aria-expanded={menu === p.id}
+                    title={`Manage ${p.name}`}
+                    onClick={() => {
+                      setConfirmKick(false);
+                      setMenu(menu === p.id ? null : p.id);
+                    }}
+                  >
+                    <span className="truncate">{p.name}</span>
+                    <ChevronDown
+                      aria-hidden
+                      className={`size-3.5 shrink-0 text-muted transition-transform ${menu === p.id ? "rotate-180" : ""}`}
+                      strokeWidth={2.4}
+                    />
+                  </button>
+                ) : (
+                  <span className="block truncate font-semibold" style={{ color: p.color }}>
+                    {p.name}
+                    {p.id === me && <span className="ml-1 text-xs font-normal text-muted">(you)</span>}
+                  </span>
+                )}
                 <span className="flex items-center gap-1 font-mono text-[10px] tracking-wide text-muted uppercase">
                   {p.id === room.hostId && (
                     <>
@@ -133,56 +156,39 @@ export function PlayerList({
                   )}
                   {p.bot && <Bot aria-hidden className="size-3" strokeWidth={2} />} {status}
                 </span>
-              </span>
-              <RollingNumber value={room.wins[p.id] ?? 0} className="font-mono text-sm font-bold" />
-              {canManage && (
-                <span className="relative" data-menu={menu === p.id ? "" : undefined}>
-                  <button
-                    type="button"
-                    className="grid size-7 place-items-center rounded-md text-muted transition-colors hover:bg-panel-2 hover:text-text"
-                    aria-label={`Manage ${p.name}`}
-                    aria-haspopup="menu"
-                    aria-expanded={menu === p.id}
-                    onClick={() => {
-                      setConfirmKick(false);
-                      setMenu(menu === p.id ? null : p.id);
-                    }}
+                {menu === p.id && (
+                  <span
+                    role="menu"
+                    className="absolute top-6 left-0 z-30 flex w-48 flex-col overflow-hidden rounded-lg border border-line bg-panel shadow-lg shadow-black/50"
                   >
-                    <MoreHorizontal aria-hidden className="size-4" strokeWidth={2} />
-                  </button>
-                  {menu === p.id && (
-                    <span
-                      role="menu"
-                      className="absolute top-full right-0 z-30 mt-1 flex w-44 flex-col overflow-hidden rounded-lg border border-line bg-panel shadow-lg shadow-black/50"
-                    >
-                      {!p.bot && p.connected && (
-                        <button
-                          role="menuitem"
-                          className="flex items-center gap-2 px-3 py-2 text-left text-sm hover:bg-panel-2"
-                          onClick={() => {
-                            send({ t: "host", id: p.id });
-                            setMenu(null);
-                          }}
-                        >
-                          <Crown aria-hidden className="size-3.5 text-brand-2" strokeWidth={2} /> Make host
-                        </button>
-                      )}
+                    {!p.bot && p.connected && (
                       <button
                         role="menuitem"
-                        className={`px-3 py-2 text-left text-sm hover:bg-panel-2 ${confirmKick ? "font-semibold text-brand" : "text-brand"}`}
+                        className="flex items-center gap-2 px-3 py-2 text-left text-sm hover:bg-panel-2"
                         onClick={() => {
-                          if (!p.bot && !confirmKick) return setConfirmKick(true);
-                          send({ t: "kick", id: p.id });
+                          send({ t: "host", id: p.id });
                           setMenu(null);
-                          setConfirmKick(false);
                         }}
                       >
-                        {p.bot ? "Remove bot" : confirmKick ? `Remove ${p.name}? Tap again` : "Remove from room"}
+                        <Crown aria-hidden className="size-3.5 text-brand-2" strokeWidth={2} /> Make host
                       </button>
-                    </span>
-                  )}
-                </span>
-              )}
+                    )}
+                    <button
+                      role="menuitem"
+                      className={`px-3 py-2 text-left text-sm hover:bg-panel-2 ${confirmKick ? "font-semibold text-brand" : "text-brand"}`}
+                      onClick={() => {
+                        if (!p.bot && !confirmKick) return setConfirmKick(true);
+                        send({ t: "kick", id: p.id });
+                        setMenu(null);
+                        setConfirmKick(false);
+                      }}
+                    >
+                      {p.bot ? "Remove bot" : confirmKick ? `Remove ${p.name}? Tap again` : "Remove from room"}
+                    </button>
+                  </span>
+                )}
+              </span>
+              <RollingNumber value={room.wins[p.id] ?? 0} className="w-6 text-right font-mono text-sm font-bold" />
             </li>
           );
         })}

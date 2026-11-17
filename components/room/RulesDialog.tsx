@@ -10,10 +10,13 @@ import {
   DialogPortal,
   DialogTitle,
 } from "@animate-ui/react/primitives/radix-ui/dialog";
-import { Keyboard, Smartphone, X } from "lucide-react";
+import { ExternalLink, Gamepad2, Keyboard, Smartphone, X } from "lucide-react";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
 import { CATALOG_BY_ID } from "@/games/catalog";
 import { RULES, type GameRules } from "@/games/rules";
+import { canPlayLocal, hasBots } from "@/lib/local-games";
 import { GameBadge } from "../GameBadge";
 
 export default function RulesDialog({
@@ -126,10 +129,42 @@ export default function RulesDialog({
                 ) : null}
               </>
             )}
+            <TrySolo gameId={gameId} accent={accent} />
           </div>
         </DialogContent>
       </DialogPortal>
     </DialogRoot>
+  );
+}
+
+/**
+ * "Try it solo": practise this game alone or against bots. In a room it opens a new tab so
+ * you don't leave your friends; it's hidden where you're already playing locally.
+ */
+function TrySolo({ gameId, accent }: { gameId: string; accent: string }) {
+  const path = usePathname() ?? "";
+  if (!canPlayLocal(gameId) || path.startsWith("/play/") || path.startsWith("/daily")) return null;
+  const inRoom = path.startsWith("/r/") || path.startsWith("/room");
+  const bots = hasBots(gameId) && (CATALOG_BY_ID[gameId]?.maxPlayers ?? 1) > 1;
+  return (
+    <div
+      className="mt-6 flex flex-wrap items-center gap-3 rounded-lg border px-4 py-3"
+      style={{ borderColor: accent + "44", background: accent + "0d" }}
+    >
+      <Gamepad2 aria-hidden className="size-5 shrink-0" style={{ color: accent }} strokeWidth={1.75} />
+      <p className="min-w-0 flex-1 text-sm text-muted">
+        {bots ? "Practise against bots first, no room needed." : "Have a go on your own, no room needed."}
+      </p>
+      <Link
+        href={`/play/${gameId}`}
+        className="btn px-3 py-1.5 text-sm"
+        {...(inRoom ? { target: "_blank", rel: "noopener" } : {})}
+      >
+        Try it solo
+        {inRoom && <ExternalLink aria-hidden className="size-3.5" strokeWidth={2} />}
+        {inRoom && <span className="sr-only">(opens in a new tab)</span>}
+      </Link>
+    </div>
   );
 }
 

@@ -1,5 +1,6 @@
 import { pick, shuffle, topScorers, type GameCtx, type GameDef } from "../../shared/game";
 import { readSettings } from "../../shared/settings";
+import { TEAMS, splitTeams } from "../../shared/teams";
 import { config } from "./config";
 import { QUESTIONS } from "./data";
 import {
@@ -67,6 +68,10 @@ export interface TriviaState {
   history: number[][];
   /** When the last participant disconnected (null while anyone is connected). */
   emptySince: number | null;
+  /** Red vs Blue (host setting, 2+ players): the ids on each team. Null in solo mode. */
+  teams: [string[], string[]] | null;
+  /** Team scores before the current reveal (for the "+gain" animation). */
+  prevTeamScores: [number, number];
 }
 
 export type TriviaAction = { type: "answer"; choice: number; q: number };
@@ -100,6 +105,16 @@ export interface RecapItem {
   correct: string[];
 }
 
+export interface TeamLine {
+  ids: string[];
+  /** Team score: members' points added up (scaled up for the smaller team when sizes differ). */
+  score: number;
+  /** Gained this question (reveal only, else 0). */
+  gain: number;
+  /** 1 = leading or level, 2 = behind. */
+  rank: number;
+}
+
 export interface TriviaView {
   phase: Phase;
   /** 1-based number of the current (or upcoming) question. */
@@ -119,6 +134,8 @@ export interface TriviaView {
   asked: number;
   recap: RecapItem[] | null;
   you: boolean;
+  /** Red vs Blue (index = TEAMS index), or null in solo mode. */
+  teams: [TeamLine, TeamLine] | null;
 }
 
 const PHASE_MS: Record<Exclude<Phase, "question">, number> = { intro: INTRO_MS, reveal: REVEAL_MS, final: 0 };
@@ -129,22 +146,76 @@ const RAMP: Difficulty[] = ["easy", "easy", "easy", "medium", "medium", "medium"
 const BY_CAT: Record<string, number[]> = {};
 QUESTIONS.forEach((qq, i) => (BY_CAT[qq.cat] ??= []).push(i));
 
-function pickQuestions(random: () => number, total: number): Picked[] {
-  // One question per category, so a game spans 10 different categories.
-  const cats = shuffle([...CATEGORIES], random).filter((c) => BY_CAT[c]?.length);
+/** Short stable id of a question (FNV-1a of its text, base 36), kept in the room's memory. */
+export function questionKey(text: string): string {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < text.length; i++) h = Math.imul(h ^ text.charCodeAt(i), 0x01000193);
+  return (h >>> 0).toString(36);
+}
+const KEYS = QUESTIONS.map((qq) => questionKey(qq.q));
+const KNOWN = new Set(KEYS);
+/**
+ * How many recently asked questions a room remembers (~9 bytes each as JSON, well under the
+ * room's memory budget). Bigger than the bank, so a room never sees a repeat until it has
+ * been through every question; after that the least recently asked come back first.
+ */
+export const MEMORY_CAP = 1500;
+
+/** The room's asked question keys, oldest first (junk and retired questions dropped). */
+function seenList(memory: Record<string, unknown>): string[] {
+  const raw = memory.seen;
+  return Array.isArray(raw) ? raw.filter((k): k is string => typeof k === "string" && KNOWN.has(k)) : [];
+}
+
+/** Remember that a question was asked: it moves to the newest end of the list. */
+function remember(memory: Record<string, unknown>, id: number) {
+  const key = KEYS[id];
+  const list = seenList(memory).filter((k) => k !== key);
+  list.push(key);
+  memory.seen = list.slice(-MEMORY_CAP);
+}
+
+function pickQuestions(random: () => number, total: number, memory: Record<string, unknown>): Picked[] {
+  // age[id]: -1 = never asked in this room, else its place in the memory (0 = longest ago).
+  const seenAt = new Map<string, number>();
+  seenList(memory).forEach((k, i) => seenAt.set(k, i));
+  const age = KEYS.map((k) => seenAt.get(k) ?? -1);
   const used = new Set<number>();
+  const hasFresh = (c: string) => (BY_CAT[c] ?? []).some((id) => age[id] === -1 && !used.has(id));
+
+  // One question per category (shuffled), so a game spans as many categories as possible.
+  // A category with nothing new left steps aside for one that still has unseen questions.
+  const order = shuffle([...CATEGORIES], random).filter((c) => BY_CAT[c]?.length);
+  const usedCats = new Set<string>();
   const out: Picked[] = [];
   for (let i = 0; i < total; i++) {
-    const pool = BY_CAT[cats[i % cats.length]] ?? [];
-    const fresh = pool.filter((id) => !used.has(id));
-    const wanted = fresh.filter((id) => QUESTIONS[id].diff === RAMP[Math.floor((i * RAMP.length) / total)]);
-    const any = QUESTIONS.map((_, id) => id).filter((id) => !used.has(id));
-    const choices = wanted.length ? wanted : fresh.length ? fresh : any;
-    if (!choices.length) break;
+    if (usedCats.size >= order.length) usedCats.clear(); // more questions than categories: go round again
+    const open = order.filter((c) => !usedCats.has(c));
+    const cat = open.find(hasFresh) ?? order.find(hasFresh) ?? open[0];
+    if (cat === undefined) break;
+    usedCats.add(cat);
+    const want = RAMP[Math.floor((i * RAMP.length) / total)];
+    const pool = (BY_CAT[cat] ?? []).filter((id) => !used.has(id));
+    const unseen = pool.filter((id) => age[id] === -1);
+    let choices: number[];
+    if (unseen.length) {
+      const right = unseen.filter((id) => QUESTIONS[id].diff === want);
+      choices = right.length ? right : unseen;
+    } else {
+      // Everything here was asked before: recycle the least recently asked, keeping to the
+      // wanted difficulty when one of the oldest few matches.
+      const oldest = pool.sort((x, y) => age[x] - age[y]).slice(0, 6);
+      const right = oldest.filter((id) => QUESTIONS[id].diff === want);
+      choices = right.length ? right : oldest.slice(0, 3);
+    }
+    if (!choices.length) {
+      choices = QUESTIONS.map((_, id) => id).filter((id) => !used.has(id));
+      if (!choices.length) break;
+    }
     const id = pick(choices, random);
     used.add(id);
-    const order = shuffle([0, 1, 2, 3], random);
-    out.push({ id, order, answer: order.indexOf(QUESTIONS[id].answer) });
+    const shown = shuffle([0, 1, 2, 3], random);
+    out.push({ id, order: shown, answer: shown.indexOf(QUESTIONS[id].answer) });
   }
   return out;
 }
@@ -171,9 +242,25 @@ function startQuestion(s: TriviaState, ctx: GameCtx, round: number) {
   s.outcomes = null;
   s.startedAt = ctx.now();
   s.endsAt = s.startedAt + s.questionMs;
+  if (s.qs[round]) remember(ctx.memory, s.qs[round].id);
+}
+
+/**
+ * Team scores: each team's points added up. When one team has more players, the smaller team's
+ * total is scaled up to the bigger team's size (2 vs 3: the pair's total x1.5), so an extra
+ * player is no advantage. Equal teams simply add up.
+ */
+export function teamScores(s: TriviaState): [number, number] {
+  if (!s.teams) return [0, 0];
+  const size = Math.max(s.teams[0].length, s.teams[1].length);
+  return s.teams.map((t) => {
+    const sum = t.reduce((acc, id) => acc + (s.stats[s.ids.indexOf(id)]?.score ?? 0), 0);
+    return t.length ? Math.round((sum * size) / t.length) : 0;
+  }) as [number, number];
 }
 
 function reveal(s: TriviaState, ctx: GameCtx) {
+  s.prevTeamScores = teamScores(s);
   const correctAt = s.qs[s.round].answer;
   s.prevRank = ranks(s.stats.map((st) => st.score));
   s.outcomes = s.stats.map((st, i): Outcome => {
@@ -217,12 +304,30 @@ function headline(s: TriviaState, ctx: GameCtx, winners: string[], abandoned: bo
   return `${prefix}${winners.length}-way tie for the win on ${pts}`;
 }
 
+function teamResult(s: TriviaState, teams: [string[], string[]], abandoned: boolean): { winners: string[]; headline: string } {
+  const [a, b] = teamScores(s);
+  const prefix = abandoned ? "Everyone left. " : "";
+  if (a === 0 && b === 0) {
+    return { winners: [], headline: abandoned ? "Trivia Rush ended: everyone left" : "Nobody scored. The questions win this time!" };
+  }
+  if (a === b) return { winners: s.ids.slice(), headline: `${prefix}Red and Blue tie on ${fmt(a)} points!` };
+  const w = a > b ? 0 : 1;
+  return {
+    winners: teams[w].slice(),
+    headline: `${prefix}${TEAMS[w].name} team wins! ${fmt(Math.max(a, b))} to ${fmt(Math.min(a, b))}`,
+  };
+}
+
 function finish(s: TriviaState, ctx: GameCtx, abandoned = false) {
   if (s.phase === "final") return;
   s.phase = "final";
   s.endsAt = 0;
   s.outcomes = null;
   const scores: Record<string, number> = Object.fromEntries(s.ids.map((id, i) => [id, s.stats[i].score]));
+  if (s.teams) {
+    ctx.end({ ...teamResult(s, s.teams, abandoned), scores });
+    return;
+  }
   const winners = topScorers(scores);
   ctx.end({ winners, headline: headline(s, ctx, winners, abandoned), scores });
 }
@@ -242,6 +347,16 @@ function publicQuestion(p: Picked): PublicQuestion {
   return { text: src.q, choices: p.order.map((i) => src.choices[i]), cat: src.cat, diff: src.diff };
 }
 
+function teamLines(s: TriviaState, teams: [string[], string[]], revealing: boolean): [TeamLine, TeamLine] {
+  const now = teamScores(s);
+  return [0, 1].map((t) => ({
+    ids: teams[t].slice(),
+    score: now[t],
+    gain: revealing ? Math.max(0, now[t] - s.prevTeamScores[t]) : 0,
+    rank: now[t] < now[1 - t] ? 2 : 1,
+  })) as [TeamLine, TeamLine];
+}
+
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 
 export const trivia: GameDef<TriviaState, unknown> = {
@@ -251,10 +366,11 @@ export const trivia: GameDef<TriviaState, unknown> = {
     const ids = ctx.players.map((p) => p.id);
     const now = ctx.now();
     const set = readSettings(config.settings, ctx.settings);
+    const qs = pickQuestions(ctx.random, Number(set.questions), ctx.memory);
     return {
       phase: "intro",
       ids,
-      qs: pickQuestions(ctx.random, Number(set.questions)),
+      qs,
       questionMs: Number(set.seconds) * 1000,
       round: 0,
       startedAt: now,
@@ -266,6 +382,8 @@ export const trivia: GameDef<TriviaState, unknown> = {
       prevRank: ids.map(() => 1),
       history: [],
       emptySince: null,
+      teams: set.mode === "teams" && ids.length >= 2 ? splitTeams(ids, ctx.random) : null,
+      prevTeamScores: [0, 0],
     };
   },
 
@@ -358,6 +476,7 @@ export const trivia: GameDef<TriviaState, unknown> = {
             })
           : null,
       you: seat !== -1,
+      teams: s.teams ? teamLines(s, s.teams, revealing) : null,
     };
   },
 };

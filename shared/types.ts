@@ -167,6 +167,8 @@ const LEGACY_AVATAR: Record<string, AvatarId> = {
 export const ACCESSORIES = [
   "cap", "beanie", "shades", "bow", "flower", "headphones",
   "party", "horns", "halo", "tophat", "wizard", "crown",
+  // Earned with achievements (see lib/progress.ts).
+  "laurel", "chef", "astro", "viking", "grad", "bandana", "monocle", "eyepatch",
 ] as const;
 export type AccessoryId = (typeof ACCESSORIES)[number];
 

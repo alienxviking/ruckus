@@ -1,6 +1,8 @@
 // Practice bot for Canvas Clash. It works from its own view only: the public board and its own
 // secret emblem. It paints its emblem a little slower than a keen human, patches it when it gets
 // defaced, moves to a better copy if one turns up, and now and then scribbles over rival paint.
+// In Red vs Blue it shares its emblem with teammates: it joins the team's best copy instead of
+// starting a second one, and never scribbles over that copy (only elsewhere, i.e. the rivals').
 
 import type { GameCtx } from "../../shared/game";
 import { EMBLEM, EMBLEM_CELLS, PAINTS, bestMatch, digits } from "./shared";
@@ -75,6 +77,15 @@ export function pixelsBot(s: PixelsState, v: PixelsView, ctx: GameCtx): PixelsAc
 
   const board = digits(v.board);
   const art = digits(v.mine.art);
+  const team = !!v.teams;
+  if (m.x < 0 && team) {
+    // A teammate already started a copy? Help with that one.
+    const b = bestMatch(board, v.w, v.h, art);
+    if (b.n >= 4) {
+      m.x = b.x;
+      m.y = b.y;
+    }
+  }
   if (m.x < 0) {
     const q = quietSpot(board, v.w, v.h, ctx.random);
     m.x = q.x;
@@ -82,8 +93,10 @@ export function pixelsBot(s: PixelsState, v: PixelsView, ctx: GameCtx): PixelsAc
   }
   let todo = mismatches(board, v.w, m.x, m.y, art);
   // Someone wrecked our copy but a better one exists (maybe a rival's accidental help): move there.
-  if (todo.length > 6) {
-    const b = bestMatch(board, v.w, v.h, art);
+  // With teammates painting the same emblem, always rally to the team's best copy.
+  const best = team || todo.length > 6 ? bestMatch(board, v.w, v.h, art) : null;
+  if (best) {
+    const b = best;
     if (EMBLEM_CELLS - b.n < todo.length) {
       m.x = b.x;
       m.y = b.y;
@@ -104,6 +117,8 @@ export function pixelsBot(s: PixelsState, v: PixelsView, ctx: GameCtx): PixelsAc
     const cx = cell % v.w;
     const cy = Math.floor(cell / v.w);
     if (cx >= m.x - 1 && cx <= m.x + EMBLEM && cy >= m.y - 1 && cy <= m.y + EMBLEM) continue;
+    // Never touch the team's best copy (outside it, nothing can lower the team's score).
+    if (team && best && cx >= best.x && cx < best.x + EMBLEM && cy >= best.y && cy < best.y + EMBLEM) continue;
     const color = 1 + ((board[cell] + Math.floor(ctx.random() * (PAINTS - 1))) % PAINTS);
     return { type: "paint", px: [cell, color] };
   }

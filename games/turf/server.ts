@@ -1,6 +1,7 @@
 import type { GameCtx, GameDef } from "../../shared/game";
 import { shuffle, topScorers } from "../../shared/game";
 import { readSettings } from "../../shared/settings";
+import { TEAMS, splitTeams } from "../../shared/teams";
 import { config } from "./config";
 import {
   BOMB_RADIUS,
@@ -119,6 +120,10 @@ export interface TurfState {
   fullAt: number;
   winners: string[] | null;
   endReason: EndReason | null;
+  /** Red vs Blue (host setting "mode"): the two teams' ids. Null in a free-for-all. */
+  teams: [string[], string[]] | null;
+  /** Team (0 = Red, 1 = Blue) of each painter index, or null in a free-for-all. */
+  side: number[] | null;
 }
 
 /**
@@ -207,6 +212,8 @@ export interface TurfView {
   /** Set once the game is over. */
   winners?: string[] | null;
   endReason?: EndReason | null;
+  /** Red vs Blue: the two teams' ids (omitted in a free-for-all). Teammates share their turf. */
+  teams?: [string[], string[]];
   /**
    * The viewer's own input status (painters only, until the end):
    * [last applied input, last received input, ms it arrived before its tick].
@@ -231,6 +238,25 @@ export function paint(s: TurfState, i: number, owner: number): boolean {
   s.encDirty = true;
   changedTiles(s).add(i);
   return true;
+}
+
+/**
+ * Does tile owner `o` count as painter `me`'s own turf? In a free-for-all only their own tiles do;
+ * in Red vs Blue every teammate's tile does too (teammates share one territory).
+ */
+export function friendly(s: TurfState, o: number, me: number): boolean {
+  if (o === me) return true;
+  return !!s.side && o >= 0 && s.side[o] === s.side[me];
+}
+
+/** Tiles owned by painter `me` plus (in Red vs Blue) all their teammates. */
+function turfCount(s: TurfState, me: number): number {
+  if (!s.side) return s.painters[me].count;
+  let n = 0;
+  s.painters.forEach((p, i) => {
+    if (s.side![i] === s.side![me]) n += p.count;
+  });
+  return n;
 }
 
 /** Tiles repainted since the last delta (bookkeeping for the wire, so kept out of TurfState). */
@@ -320,7 +346,7 @@ export function fillEnclosed(s: TurfState, me: number): { n: number; x: number; 
   const stack: number[] = [];
   let reachable = 0;
   const visit = (i: number) => {
-    if (open[i] === 0 && tiles[i] !== me) {
+    if (open[i] === 0 && !friendly(s, tiles[i], me)) {
       open[i] = 1;
       reachable += 1;
       stack.push(i);
@@ -343,13 +369,13 @@ export function fillEnclosed(s: TurfState, me: number): { n: number; x: number; 
     if (i < size - w) visit(i + w);
   }
   // Everything not mine was reachable: nothing enclosed.
-  if (reachable === size - s.painters[me].count) return null;
+  if (reachable === size - turfCount(s, me)) return null;
 
   let n = 0;
   let sx = 0;
   let sy = 0;
   for (let i = 0; i < size; i++) {
-    if (open[i] === 0 && tiles[i] !== me) {
+    if (open[i] === 0 && !friendly(s, tiles[i], me)) {
       paint(s, i, me);
       n += 1;
       sx += i % w;
@@ -442,7 +468,7 @@ function collect(s: TurfState, idx: number, pw: PowerUp, ctx: GameCtx, now: numb
     p.dashUntil = Math.max(p.dashUntil, now) + DASH_MS;
   } else if (pw.kind === "freeze") {
     s.painters.forEach((q, j) => {
-      if (j !== idx) q.frozenUntil = Math.max(q.frozenUntil, now + FREEZE_MS);
+      if (j !== idx && !friendly(s, j, idx)) q.frozenUntil = Math.max(q.frozenUntil, now + FREEZE_MS);
     });
   } else {
     for (let dy = -BOMB_RADIUS; dy <= BOMB_RADIUS; dy++) {
@@ -451,7 +477,9 @@ function collect(s: TurfState, idx: number, pw: PowerUp, ctx: GameCtx, now: numb
         const x = p.x + dx;
         const y = p.y + dy;
         if (x < 0 || y < 0 || x >= s.w || y >= s.h) continue;
-        if (paint(s, y * s.w + x, idx)) n += 1;
+        const i = y * s.w + x;
+        // Teammates' turf is already ours: leave it as it is.
+        if (!friendly(s, s.tiles[i], idx) && paint(s, i, idx)) n += 1;
       }
     }
     // The blast may have closed a loop; either way the painter now stands on its turf.
@@ -470,7 +498,7 @@ function step(s: TurfState, idx: number, ctx: GameCtx, now: number): boolean {
   p.x = nx;
   p.y = ny;
   const i = ny * s.w + nx;
-  const fresh = s.tiles[i] !== idx;
+  const fresh = !friendly(s, s.tiles[i], idx);
   if (!fresh) {
     if (p.out > 0) {
       p.out = 0;
@@ -561,7 +589,20 @@ function finish(s: TurfState, ctx: GameCtx, reason: EndReason) {
   let winners: string[];
   let headline: string;
   const stayed = online(s, ctx);
-  if (reason === "abandoned" && stayed.length === 1) {
+  if (s.teams && s.side) {
+    // Red vs Blue: the team with more ground wins, and every member shares the win.
+    const totals = [0, 0];
+    s.painters.forEach((p, i) => (totals[s.side![i]] += p.count));
+    const left = reason === "abandoned" ? ", the other team left" : "";
+    if (totals[0] === totals[1]) {
+      winners = totals[0] > 0 ? s.painters.map((p) => p.id) : [];
+      headline = totals[0] > 0 ? `Red and Blue tie! ${totals[0]} tiles each` : "Turf War ends with a blank map";
+    } else {
+      const t = totals[0] > totals[1] ? 0 : 1;
+      winners = s.teams[t].slice();
+      headline = `${TEAMS[t].name} team wins with ${totals[t]} tiles to ${totals[1 - t]}${left}`;
+    }
+  } else if (reason === "abandoned" && stayed.length === 1) {
     winners = [stayed[0].id];
     headline = `${nameOf(ctx, stayed[0].id)} wins Turf War, everyone else left`;
   } else {
@@ -662,7 +703,7 @@ function homePlan(s: TurfState, me: number, p: Painter): Leg[] | null {
   let best = -1;
   let bestD = Infinity;
   for (let i = 0; i < s.tiles.length; i++) {
-    if (s.tiles[i] !== me) continue;
+    if (!friendly(s, s.tiles[i], me)) continue;
     const d = Math.abs((i % s.w) - p.x) + Math.abs(Math.floor(i / s.w) - p.y);
     if (d > 0 && d < bestD) {
       bestD = d;
@@ -712,7 +753,7 @@ function botSteer(s: TurfState, botId: string, ctx: GameCtx): TurfAction | null 
   }
   if (done) m.legs.shift();
   if (!m.legs.length || blocked || stuck) {
-    const onTurf = s.tiles[p.y * s.w + p.x] === me;
+    const onTurf = friendly(s, s.tiles[p.y * s.w + p.x], me);
     m.legs = (onTurf || p.out === 0 ? loopPlan(s, p, ctx) : homePlan(s, me, p)) ?? homePlan(s, me, p) ?? [];
     if (!m.legs.length) {
       // Nowhere sensible: any open direction.
@@ -739,7 +780,18 @@ export const turf: GameDef<TurfState, TurfAction> = {
     const roster = ctx.players.slice(0, MAX_PAINTERS);
     const set = readSettings(config.settings, ctx.settings);
     const { w, h } = boardSize(roster.length, String(set.map));
-    const spots = shuffle(homeSpots(roster.length, w, h), ctx.random);
+    const ids = roster.map((p) => p.id);
+    const teams = set.mode === "teams" && ids.length >= 2 ? splitTeams(ids, ctx.random) : null;
+    const side = teams ? ids.map((id) => (teams[0].includes(id) ? 0 : 1)) : null;
+    let spots = shuffle(homeSpots(roster.length, w, h), ctx.random);
+    if (side) {
+      // Teammates start side by side: Red on one arc of the ring, Blue on the other.
+      const ring = homeSpots(roster.length, w, h);
+      const turn = Math.floor(ctx.random() * ring.length);
+      const order = ring.map((_, k) => ring[(k + turn) % ring.length]);
+      const next = [0, teams![0].length];
+      spots = side.map((t) => order[next[t]++]);
+    }
     const s: TurfState = {
       playMs: Number(set.seconds) * 1000 || PLAY_MS,
       w,
@@ -773,6 +825,8 @@ export const turf: GameDef<TurfState, TurfAction> = {
       fullAt: 0,
       winners: null,
       endReason: null,
+      teams,
+      side,
     };
     // 3x3 home patch for everyone.
     s.painters.forEach((p, i) => {
@@ -882,6 +936,7 @@ export const turf: GameDef<TurfState, TurfAction> = {
     if (s.aloneSince !== null) v.abandonAt = s.aloneSince + ABANDON_MS;
     if (s.winners) v.winners = s.winners;
     if (s.endReason) v.endReason = s.endReason;
+    if (s.teams) v.teams = s.teams;
     if (you >= 0 && s.phase !== "over") {
       const p = s.painters[you];
       v.me = [p.applied, p.rx, p.slack];

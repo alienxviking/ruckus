@@ -25,6 +25,17 @@ export const config: GameConfig = {
       default: "normal",
       hint: "Normal grows with the player count.",
     },
+    {
+      kind: "choice",
+      key: "mode",
+      label: "Mode",
+      options: [
+        { value: "solo", label: "Solo" },
+        { value: "teams", label: "Red vs Blue" },
+      ],
+      default: "solo",
+      hint: "Red vs Blue: random teams",
+    },
   ],
   bots: true,
 };
