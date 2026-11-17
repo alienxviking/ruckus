@@ -4,6 +4,7 @@ import { memo, useEffect, useLayoutEffect, useRef, useState, type CSSProperties,
 import { SCAN_RADIUS } from "./shared";
 import { BOOM, HIDDEN, ITEM_OF, MINE, type MineStore } from "./store";
 import { ITEMS } from "./shared";
+import { buzz } from "@/lib/feedback";
 
 export type Mode = "dig" | "flag";
 
@@ -265,7 +266,7 @@ export function Board(props: BoardProps) {
     const g: Gesture = { id: e.pointerId, x: e.clientX, y: e.clientY, cell, timer: 0, done: false };
     g.timer = window.setTimeout(() => {
       g.done = true;
-      navigator.vibrate?.(14);
+      buzz("pop");
       secondary(cell);
     }, LONG_PRESS_MS);
     gesture.current = g;

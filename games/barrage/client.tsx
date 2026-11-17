@@ -27,6 +27,7 @@ import {
 import { buildReplay, tankAlive, tankHp, type Replay } from "./replay";
 import { Field } from "./field";
 import { Avatar } from "@/components/Avatar";
+import { feedback, sfx } from "@/lib/feedback";
 
 type Props = GameClientProps<BarrageView, BarrageAction>;
 
@@ -183,7 +184,16 @@ function Game({ view, me, players, byId, isPlayer, act, serverNow, accent }: Omi
     box.timer = null;
     box.pending = null;
     act({ type: "fire", ...aim });
+    sfx("pop");
   };
+
+  // A fresh aiming turn for your (living) tank: "your turn" (turn 1 is covered by the room's start cue).
+  const turnKey = shooting && view.turn > 1 ? view.turn : 0;
+  const lastTurn = useRef(0);
+  useEffect(() => {
+    if (turnKey && turnKey !== lastTurn.current) feedback("turn");
+    lastTurn.current = turnKey;
+  }, [turnKey]);
 
   const onKey = useEffectEvent((ev: KeyboardEvent) => {
     if (ev.defaultPrevented || ev.ctrlKey || ev.metaKey || ev.altKey || isTyping(ev.target)) return;

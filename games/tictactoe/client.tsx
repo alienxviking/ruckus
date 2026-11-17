@@ -6,6 +6,7 @@ import type { Player } from "@/shared/types";
 import { Note, StatusBanner, TimerBar, useSecondsLeft } from "@/components/game-ui";
 import type { TttAction, TttView } from "./server";
 import { Avatar } from "@/components/Avatar";
+import { feedback } from "@/lib/feedback";
 
 type Mark = 0 | 1;
 const NAME = ["X", "O"];
@@ -89,6 +90,11 @@ export default function TicTacToe({ view, byId, act, serverNow }: GameClientProp
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [myTurn, view, act]);
+
+  // Chime once each time the move passes to us.
+  useEffect(() => {
+    if (myTurn) feedback("turn");
+  }, [myTurn]);
 
   if (!view) return <Note>Drawing the grid…</Note>;
 

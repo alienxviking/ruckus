@@ -3,6 +3,7 @@
 import { useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from "react";
 import type { GameClientProps } from "@/shared/client-game";
 import { Note, StatusBanner, TimerBar, useSecondsLeft } from "@/components/game-ui";
+import { feedback } from "@/lib/feedback";
 import type { FibAction, FibErrorEvent, FibView, RoundSummary } from "./server";
 import { HOLD_MS, MAX_LIE, PICK_MS, POINTS, REVEAL_CAP_MS, WRITE_MS, cleanLie, lieProblem } from "./shared";
 import {
@@ -30,6 +31,13 @@ function isFibError(e: unknown): e is FibErrorEvent {
 }
 
 export default function FibFinder({ view, me, players, byId, isPlayer, act, serverNow, onEvent, accent }: Props) {
+  // Everyone writes, then everyone picks: each of those phases is your turn.
+  const task = isPlayer && view && (view.phase === "write" || view.phase === "pick") ? `${view.phase}:${view.round}` : "";
+  const lastTask = useRef("");
+  useEffect(() => {
+    if (task && task !== lastTask.current) feedback("turn");
+    lastTask.current = task;
+  }, [task]);
   if (!view) return <Note>Digging up some strange facts…</Note>;
 
   const last = view.history.length ? view.history[view.history.length - 1] : null;
@@ -223,6 +231,7 @@ function WritePanel({
         setPending(null);
         setEditing(true);
         setShakes((k) => k + 1);
+        feedback("error");
       }),
     [onEvent],
   );
@@ -252,6 +261,7 @@ function WritePanel({
     if (issue) {
       setError({ message: issue, truth: false });
       setShakes((k) => k + 1);
+      feedback("error");
       return;
     }
     const clean = cleanLie(draft);

@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState, type CSSProperties } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { feedback } from "@/lib/feedback";
 import type { GameClientProps } from "@/shared/client-game";
 import type { GarbleAction, GarbleEvent, GarbleView } from "./server";
 import { DrawingCache } from "./drawing";
@@ -49,6 +50,14 @@ export default function Garble({
   }, [cache, stageKey, onStage]);
 
   const vars = { "--gb-accent": accent } as CSSProperties;
+
+  // Each new page handed to you (a fresh step of the play phase) is your turn.
+  const myStep = view?.phase === "play" && isPlayer ? view.step : -1;
+  const lastStep = useRef(-1);
+  useEffect(() => {
+    if (myStep > lastStep.current) feedback("turn");
+    lastStep.current = myStep;
+  }, [myStep]);
 
   if (!view) {
     return (

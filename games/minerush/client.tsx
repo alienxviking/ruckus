@@ -20,6 +20,7 @@ import {
 import { HIDDEN, MineStore } from "./store";
 import { Board, FIELD_CSS, type Mode } from "./field";
 import { Avatar } from "@/components/Avatar";
+import { feedback, sfx } from "@/lib/feedback";
 
 type Props = GameClientProps<MrView, MrAction>;
 
@@ -146,11 +147,17 @@ function Game({ view, byId, isPlayer, act, serverNow, onEvent, accent }: Props &
             for (const [, k] of e.k) text += ` ${ITEMS[k].label}!`;
             if (e.sm) text += ` Scan flagged ${e.sm.length} mine${e.sm.length === 1 ? "" : "s"}.`;
             setNews((p) => ({ text, n: p.n + 1 }));
-            if (e.x.length) navigator.vibrate?.([60, 40, 120]);
+            if (e.x.length) feedback("hit");
+            else if (e.k.length) feedback("score");
+            else if (e.o.length) sfx("pop");
           } else if (e.fz && store.me >= 0) {
             setNews((p) => ({ text: "Frozen!", n: p.n + 1 }));
-          }
-        } else if (e.t === "no") store.nack(e);
+            feedback("bump");
+          } else if (e.x.length) sfx("bump"); // someone else hit a mine
+        } else if (e.t === "no") {
+          store.nack(e);
+          sfx("error");
+        }
         else if (e.t === "full" && e.v) store.applyView(e.v, performance.now());
       }),
     [onEvent, store, act],
@@ -227,6 +234,20 @@ function Game({ view, byId, isPlayer, act, serverNow, onEvent, accent }: Props &
     if (leader < 0 || r.score > store.ps[leader].score) leader = i;
   });
   const startsIn = view.startsAt - now;
+
+  // Countdown ticks for the last 3 seconds, then "go" as the field opens.
+  const count = view.phase === "ready" ? Math.max(1, Math.ceil(startsIn / 1000)) : view.phase === "play" ? 0 : -1;
+  const lastCount = useRef(count);
+  useEffect(() => {
+    const prev = lastCount.current;
+    lastCount.current = count;
+    if (count === prev) return;
+    if (count >= 1 && count <= 3) sfx("tick");
+    else if (count === 0 && prev > 0) {
+      if (isPlayer) feedback("go");
+      else sfx("go");
+    }
+  }, [count, isPlayer]);
   let status: ReactNode;
   if (view.phase === "ready") status = <>Get ready… the field opens in {Math.max(1, Math.ceil(startsIn / 1000))}</>;
   else if (view.phase === "over")

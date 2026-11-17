@@ -19,6 +19,7 @@ import {
 import { Arena, type ArenaData, type InputState } from "./arena";
 import { LavaPredictor } from "./predict";
 import { Avatar } from "@/components/Avatar";
+import { feedback, sfx } from "@/lib/feedback";
 
 /** Stick changes go out at once; only a burst of them (a thumb sweeping the stick) is spaced out. */
 const SEND_BURST = 3;
@@ -200,6 +201,20 @@ function Game({
   const collapsing = phase === "fight" && fightMs >= COLLAPSE_START_MS;
   const abandonIn = view.abandonAt ? Math.max(0, Math.ceil((view.abandonAt - now) / 1000)) : null;
   const name = (id: string | null | undefined) => (id ? (byId[id]?.name ?? "Someone") : "Someone");
+
+  // Countdown ticks for the last three seconds, then "go" (a buzz too if you're playing).
+  useEffect(() => {
+    if (phase === "countdown" && secs > 0 && secs <= 3) sfx("tick");
+  }, [phase, secs]);
+  const lastPhase = useRef(phase);
+  useEffect(() => {
+    const was = lastPhase.current;
+    lastPhase.current = phase;
+    if (was === "countdown" && phase === "fight") {
+      if (mySlot >= 0) feedback("go");
+      else sfx("go");
+    }
+  }, [phase, mySlot]);
 
   // ----- input: keys + touch stick, sent the moment they change (bursts spaced to 20/s) -----
   const input = useRef<InputState>({ x: 0, y: 0 });

@@ -57,6 +57,7 @@ import {
 } from "./shared";
 import { Timeline, Trail, debugFrame, reconcile } from "../snakes/netsmooth";
 import { drawAvatar } from "@/lib/avatar-art";
+import { feedback, sfx } from "@/lib/feedback";
 
 const TAU = Math.PI * 2;
 /** Playback sits this far behind the newest frame the network could have delivered. */
@@ -902,6 +903,7 @@ function impact(
   big: boolean,
   dir: [number, number],
   now: number,
+  thrower: number,
 ) {
   const x = toSX(S, wx, wy);
   const y = toSY(S, wx, wy) - h * S.s;
@@ -920,6 +922,9 @@ function impact(
       k.hitY = dir[1];
     }
     sc.pops.push({ x, y: y - 10 * dpr, text: big ? "SPLAT!!" : "SPLAT!", color: d.colors[which] ?? "#fff", t0: now, big });
+    // You got hit, or your throw landed: a thud and a buzz. Others' hits: just a soft sound.
+    if (which === d.mySlot || (thrower === d.mySlot && d.mySlot >= 0)) feedback("hit");
+    else sfx("bump");
     if (which === d.mySlot) {
       sc.shakeAt = now;
       // The server already pushed you back; push your predicted kid the same way.
@@ -930,6 +935,7 @@ function impact(
       p.vy += (dir[1] / m) * push;
     }
   }
+  if (what === END_FORT && thrower === d.mySlot && d.mySlot >= 0) sfx("bump");
   if (what === END_FORT && !d.reduced) burst(sc, x, y, 6, now, "#a9c4e0", 70 * dpr, 3 * dpr);
 }
 
@@ -984,23 +990,29 @@ function drawScene(g: CanvasRenderingContext2D, sc: Scene, S: Surface, d: ArenaD
           k.outAt = now;
           k.wasOut = true;
         }
+        if (e[1] === d.mySlot) feedback("out");
+        else sfx("out");
       } else if (e[0] === FX_PICK && typeof e[1] === "number") {
         const x = toSX(S, f.xy[e[1] * 2], f.xy[e[1] * 2 + 1]);
         const y = toSY(S, f.xy[e[1] * 2], f.xy[e[1] * 2 + 1]);
         const kind = POWER_KINDS[e[2]] ?? "big";
         burst(sc, x, y, reduced ? 6 : 18, now, "#7dd3fc", 110 * dpr, 2.6 * dpr);
         sc.pops.push({ x, y: y - u * 2.4, text: `${POWER_INFO[kind].icon} ${POWER_INFO[kind].label}!`, color: "#7dd3fc", t0: now, big: false });
+        if (e[1] === d.mySlot) feedback("score");
+        else sfx("pop");
       } else if (e[0] === FX_PILE && typeof e[1] === "number") {
         const x = toSX(S, f.xy[e[1] * 2], f.xy[e[1] * 2 + 1]);
         const y = toSY(S, f.xy[e[1] * 2], f.xy[e[1] * 2 + 1]);
         burst(sc, x, y, reduced ? 4 : 12, now, "#e0f2fe", 80 * dpr, 2.6 * dpr);
         sc.pops.push({ x, y: y - u * 2.4, text: `+${AMMO_PILE} ❄`, color: "#e0f2fe", t0: now, big: false });
+        if (e[1] === d.mySlot) feedback("pop");
       } else if (e[0] === FX_FORT && typeof e[1] === "number") {
         const fd = field.forts[e[1]];
         if (fd) {
           const cx = (fd.x1 + fd.x2) / 2;
           const cy = (fd.y1 + fd.y2) / 2;
           burst(sc, toSX(S, cx, cy), toSY(S, cx, cy), reduced ? 6 : 26, now, "#bcd4ec", 150 * dpr, 3.5 * dpr);
+          sfx("hit");
         }
       }
     }
@@ -1237,7 +1249,7 @@ function drawScene(g: CanvasRenderingContext2D, sc: Scene, S: Surface, d: ArenaD
         flightAt(rb.f, endT, o);
         const what = rb.end?.what ?? END_GROUND;
         if (what === END_FORT && rb.end) fortHits[rb.end.which] = now;
-        impact(sc, S, d, o.x, o.y, o.h, what, rb.end?.which ?? -1, rb.big, [rb.f.tx - rb.f.x0, rb.f.ty - rb.f.y0], now);
+        impact(sc, S, d, o.x, o.y, o.h, what, rb.end?.which ?? -1, rb.big, [rb.f.tx - rb.f.x0, rb.f.ty - rb.f.y0], now, rb.slot);
         rb.done = true;
         continue;
       }
@@ -1268,7 +1280,7 @@ function drawScene(g: CanvasRenderingContext2D, sc: Scene, S: Surface, d: ArenaD
         flightAt(f, f.t0 + f.T * Math.min(stop, 1), o);
         const what = known ? lt.what[i] : END_GROUND;
         if (what === END_FORT) fortHits[lt.which[i]] = now;
-        impact(sc, S, d, o.x, o.y, o.h, what, known ? lt.which[i] : -1, lt.big, [f.tx - f.x0, f.ty - f.y0], now);
+        impact(sc, S, d, o.x, o.y, o.h, what, known ? lt.which[i] : -1, lt.big, [f.tx - f.x0, f.ty - f.y0], now, mine);
         lt.done[i] = true;
         return;
       }

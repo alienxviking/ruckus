@@ -36,6 +36,7 @@ import {
 } from "./shared";
 import { ballAt, DROP_MS, strokesAt, type BallPose, type Replay } from "./replay";
 import { drawAvatar } from "@/lib/avatar-art";
+import { buzz, feedback, sfx } from "@/lib/feedback";
 
 const TAU = Math.PI * 2;
 const SANS = "ui-sans-serif, system-ui, sans-serif";
@@ -630,6 +631,9 @@ interface Drag {
 interface Scene {
   fxKey: string;
   fx: Fx[];
+  /** Roll events already turned into sound/haptics (index into rp.fx) for `cueKey`. */
+  cueKey: string;
+  cueAt: number;
   segs: number[][];
   segsKey: string;
   rayKey: string;
@@ -646,6 +650,8 @@ function newScene(): Scene {
   return {
     fxKey: "",
     fx: [],
+    cueKey: "",
+    cueAt: 0,
     segs: [],
     segsKey: "",
     rayKey: "",
@@ -852,6 +858,7 @@ function draw(g: CanvasRenderingContext2D, s: Surface, sc: Scene, p: CourseProps
     sc.fx = effectsFor(rp, hole, view, colors);
     sc.fxKey = `${rp.key}|${hole.id}`;
   }
+  if (rp) rollFeedback(sc, rp, view.balls.findIndex((b) => b.id === me), e);
   worldT(g, s);
   g.drawImage(s.base, 0, 0);
 
@@ -1246,6 +1253,45 @@ function draw(g: CanvasRenderingContext2D, s: Surface, sc: Scene, p: CourseProps
     g.textAlign = "center";
     g.textBaseline = "middle";
     g.fillText(text, x, y + 0.5);
+  }
+}
+
+/** Edge-triggered sound/haptics for the roll's events as they play out; buzz only for your ball. */
+function rollFeedback(sc: Scene, rp: Replay, mySlot: number, e: number) {
+  if (sc.cueKey !== rp.key) {
+    // A new roll (or joining mid-roll): skip whatever already happened.
+    sc.cueKey = rp.key;
+    let i = 0;
+    while (i < rp.fx.length && rp.fx[i].ms <= e) i++;
+    sc.cueAt = i;
+    return;
+  }
+  while (sc.cueAt < rp.fx.length && rp.fx[sc.cueAt].ms <= e) {
+    const ev = rp.fx[sc.cueAt++].e;
+    const t = ev[0];
+    if (t === "knock") {
+      const hard = (Number(ev[6]) || 0) >= 220;
+      if (mySlot >= 0 && (Number(ev[4]) === mySlot || Number(ev[5]) === mySlot)) feedback(hard ? "hit" : "bump");
+      else sfx("bump");
+    } else if (t === "bump") {
+      sfx("bump");
+    } else {
+      const me = mySlot >= 0 && Number(ev[t === "boost" ? 3 : 2]) === mySlot;
+      if (t === "sink") {
+        if (me) feedback("score");
+        else sfx("pop");
+      } else if (t === "water") {
+        if (me) {
+          sfx("out");
+          buzz("hit");
+        }
+      } else if (t === "whack") {
+        if (me) feedback("hit");
+        else sfx("bump");
+      } else if (me && (t === "lip" || t === "portal" || t === "boost")) {
+        sfx(t === "lip" ? "bump" : "pop");
+      }
+    }
   }
 }
 

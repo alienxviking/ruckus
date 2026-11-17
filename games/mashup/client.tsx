@@ -4,6 +4,7 @@ import { useCallback, useEffect, useId, useRef, useState, useSyncExternalStore, 
 import type { GameClientProps } from "@/shared/client-game";
 import type { Player } from "@/shared/types";
 import { Note, StatusBanner } from "@/components/game-ui";
+import { feedback } from "@/lib/feedback";
 import type { DrawHold, MashupAction, MashupEvent, MashupView, NameTask } from "./server";
 import { GuideStrip, MonsterArt, MonsterCache, useFetchMonsters, useMonster } from "./art";
 import { InkStore, PartCanvas } from "./canvas";
@@ -20,6 +21,17 @@ export default function Mashup({ view, me, players, byId, isPlayer, act, serverN
   useEffect(() => onEvent((e) => cache.handle(e)), [onEvent, cache]);
 
   const vars = { "--mm-accent": accent } as CSSProperties;
+
+  // Each new task for you (a draw stage, naming, voting) is your turn: chime once as it lands.
+  const task =
+    isPlayer && view && (view.phase === "draw" || view.phase === "name" || view.phase === "vote")
+      ? `${view.phase}:${view.round}:${view.stage}`
+      : "";
+  const lastTask = useRef("");
+  useEffect(() => {
+    if (task && task !== lastTask.current) feedback("turn");
+    lastTask.current = task;
+  }, [task]);
 
   if (!view) {
     return (

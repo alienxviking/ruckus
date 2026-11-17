@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useState, type CSSProperties } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import type { GameClientProps } from "@/shared/client-game";
 import { Note } from "@/components/game-ui";
+import { feedback } from "@/lib/feedback";
 import type { SketchAction, SketchView } from "./server";
 import { SketchCanvas, StrokeStore, isTypingTarget, useStrokeSync } from "./canvas";
 import { CanvasOverlay, Feed, Final, GotItNote, GuessBox, Header, Scores, TurnResults } from "./panels";
@@ -65,6 +66,20 @@ export default function SketchStorm({
   useStrokeSync(store, view, true, act, onEvent);
   usePickKeys(view, act);
   const vars = { "--sk-accent": accent } as CSSProperties;
+
+  // Your turn to pick + draw: chime once as it starts. Guessing the word: a score blip.
+  const myTurn = !!view && view.role === "artist" && (view.phase === "choose" || view.phase === "draw");
+  const wasMyTurn = useRef(false);
+  useEffect(() => {
+    if (myTurn && !wasMyTurn.current) feedback("turn");
+    wasMyTurn.current = myTurn;
+  }, [myTurn]);
+  const gotIt = !!view && view.role === "guesser" && view.guessed;
+  const hadIt = useRef(false);
+  useEffect(() => {
+    if (gotIt && !hadIt.current) feedback("score");
+    hadIt.current = gotIt;
+  }, [gotIt]);
 
   if (!view) {
     return (

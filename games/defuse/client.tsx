@@ -10,6 +10,7 @@ import { Bomb } from "./bomb";
 import { Manual } from "./manual";
 import { Talk } from "./talk";
 import { Clock, Name, StrikeLeds, Styles, fmtClock } from "./ui";
+import { feedback, sfx } from "@/lib/feedback";
 
 type Props = GameClientProps<DefuseView, DefuseAction>;
 
@@ -32,6 +33,7 @@ function Game({ view, me, byId, isPlayer, act, serverNow, onEvent, accent }: Pro
   const [held, setHeld] = useState<{ no: number; on: Record<number, boolean> }>({ no: -1, on: {} });
   const [readied, setReadied] = useState(-1);
   const bombNo = view.bombNo;
+  const amDefuser = view.defuser === me;
   useEffect(
     () =>
       onEvent((raw) => {
@@ -39,9 +41,29 @@ function Game({ view, me, byId, isPlayer, act, serverNow, onEvent, accent }: Pro
         if (!e) return;
         if (e.k === "say") setExtra((x) => (x.some((m) => m.i === e.m.i) ? x : [...x, e.m].slice(-40)));
         else if (e.k === "hold") setHeld((h) => ({ no: bombNo, on: { ...(h.no === bombNo ? h.on : {}), [e.m]: e.on } }));
+        else if (e.k === "strike") {
+          // A wrong move: the defuser feels it, the squad hears it.
+          if (amDefuser) feedback("hit");
+          else sfx("error");
+        }
       }),
-    [onEvent, bombNo],
+    [onEvent, bombNo, amDefuser],
   );
+  // Cues: you're up as defuser, each module solved, and the bomb's fate.
+  const briefMine = view.phase === "brief" && amDefuser;
+  const solvedCount = view.phase === "live" ? view.checklist.filter((c) => c.done).length : 0;
+  const resultKey = view.phase === "result" ? `${bombNo}-${view.outcome}` : "";
+  useEffect(() => {
+    if (briefMine) feedback("turn");
+  }, [briefMine]);
+  useEffect(() => {
+    if (solvedCount > 0) feedback("score");
+  }, [solvedCount, bombNo]);
+  useEffect(() => {
+    if (!resultKey) return;
+    if (resultKey.endsWith("defused")) sfx("score");
+    else feedback("out");
+  }, [resultKey]);
   const remoteHeld = held.no === bombNo && view.phase === "live" ? held.on : {};
   const who = (id: string): Player | undefined => byId[id];
   const defuser = who(view.defuser);

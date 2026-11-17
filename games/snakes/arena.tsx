@@ -24,6 +24,7 @@ import { LUNGE, emptyShape, type Shape, type SnakePredictor } from "./predict";
 import { SnakePlayback as Playback, type SnakeSnap as Snap } from "./playback";
 import { debugFrame } from "./netsmooth";
 import { drawAvatar } from "@/lib/avatar-art";
+import { feedback, sfx } from "@/lib/feedback";
 
 const TAU = Math.PI * 2;
 const POP_MS = 850;
@@ -588,7 +589,9 @@ function crashFx(sc: Scene, sn: SnakeView["snakes"][number], oldBody: number[], 
   if (sn.id === p.me) {
     sc.myDeathAt = now;
     sc.myCrashRound = view.round;
-    if (window.matchMedia("(pointer: coarse)").matches) navigator.vibrate?.(90);
+    feedback("out");
+  } else if (crashed) {
+    sfx("out");
   }
 }
 
@@ -689,6 +692,8 @@ function drawScene(g: CanvasRenderingContext2D, sc: Scene, s: Surface, p: Props,
       const n = gold ? GOLDEN_VALUE : 1;
       sc.fx.push({ kind: "ring", x, y, text: "", color, big: gold, at: now });
       sc.fx.push({ kind: "pop", x, y, text: `+${n}`, color, big: gold, at: now });
+      if (gold) feedback("score");
+      else sfx("pop");
     }
     sc.eatStep = Math.max(sc.eatStep, reached);
   }

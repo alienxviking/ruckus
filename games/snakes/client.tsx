@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useEffectEvent, useMemo, useState, useSyncExternalStore, type ReactNode } from "react";
+import { useEffect, useEffectEvent, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import type { GameClientProps } from "@/shared/client-game";
 import { PLAYER_COLORS, type Player } from "@/shared/types";
 import { Note, StatusBanner, TimerBar, useSecondsLeft } from "@/components/game-ui";
@@ -21,6 +21,7 @@ import { Arena } from "./arena";
 import { SnakePredictor } from "./predict";
 import { hear, isSnakeEvent, nothingHeard, rebuild, type Heard } from "./delta";
 import { Avatar } from "@/components/Avatar";
+import { feedback, sfx } from "@/lib/feedback";
 
 type Props = GameClientProps<SnakeView, SnakeAction>;
 
@@ -209,6 +210,21 @@ function Brawl({
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
   }, []);
+
+  // Countdown beeps, then "go" as the round starts (buzz only if you have a snake in it).
+  const inRound = isPlayer && !!mine?.alive;
+  useEffect(() => {
+    if (phase === "countdown" && secs > 0 && secs <= 3) sfx("tick");
+  }, [phase, secs]);
+  const lastPhase = useRef(phase);
+  useEffect(() => {
+    const was = lastPhase.current;
+    lastPhase.current = phase;
+    if (was === "countdown" && phase === "play") {
+      if (inRound) feedback("go");
+      else sfx("go");
+    }
+  }, [phase, inRound]);
 
   // ----- status copy -----
   let head: ReactNode;

@@ -13,6 +13,7 @@ import {
 } from "react";
 import type { GameClientProps } from "@/shared/client-game";
 import type { Player } from "@/shared/types";
+import { feedback } from "@/lib/feedback";
 import { Note, PlayerChip, Scoreboard, StatusBanner, TimerBar, useSecondsLeft } from "@/components/game-ui";
 import type { DialAction, DialRecap, DialReveal, DialRow, DialSeat, DialTeam, DialView } from "./server";
 import { CLUE_MAX, DIAL_START, cleanClue, clueProblem, isDialEvent, teamVerdict } from "./shared";
@@ -128,6 +129,14 @@ function Board({ view, me, byId, isPlayer, act, serverNow, onEvent, accent }: Pr
   const live = useLiveNeedles(view, onEvent);
   const mySeat = view.seats.find((s) => s.id === me) ?? null;
   const canDrag = isPlayer && view.phase === "guess" && view.role === "guesser" && !!mySeat && !mySeat.locked;
+
+  // Your turn: giving the clue, or (for guessers) the dial opening up. Chime once per start.
+  const myTurn = isPlayer && ((view.phase === "clue" && view.role === "giver") || canDrag);
+  const wasMyTurn = useRef(false);
+  useEffect(() => {
+    if (myTurn && !wasMyTurn.current) feedback("turn");
+    wasMyTurn.current = myTurn;
+  }, [myTurn]);
 
   // My needle: what I'm dragging this round, else the server's copy. Keyed by game
   // and round, because the component stays mounted across "Play again".
@@ -704,6 +713,7 @@ function ClueForm({ view, act, accent }: { view: DialView; act: Props["act"]; ac
     const problem = clueProblem(clean);
     if (problem) {
       setError(problem);
+      feedback("error");
       return;
     }
     act({ type: "clue", text: clean });

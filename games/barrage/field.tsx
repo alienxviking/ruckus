@@ -45,6 +45,7 @@ import {
   type Replay,
 } from "./replay";
 import { avatarText } from "@/shared/types";
+import { buzz, feedback, sfx } from "@/lib/feedback";
 
 const TAU = Math.PI * 2;
 const DEG = Math.PI / 180;
@@ -630,6 +631,10 @@ interface Scene {
   trail: number[];
   /** Your tank on screen (css px), for grabbing the slingshot. */
   my: { x: number; y: number } | null;
+  /** Sound/haptics already played for this volley: booms heard so far, and a bitmask of deaths. */
+  fxKey: string;
+  fxBooms: number;
+  fxDead: number;
 }
 
 function newScene(): Scene {
@@ -648,6 +653,9 @@ function newScene(): Scene {
     preview: [],
     trail: new Array<number>(1024).fill(0),
     my: null,
+    fxKey: "",
+    fxBooms: 0,
+    fxDead: 0,
   };
 }
 
@@ -838,6 +846,41 @@ export function Field(props: FieldProps) {
 
 // ---------- drawing a frame ----------
 
+/** Edge-triggered sound/haptics as the volley plays out: each boom and death fires once. */
+function volleyFeedback(sc: Scene, rp: Replay, mySlot: number, e: number) {
+  if (sc.fxKey !== rp.key) {
+    // Joining mid-volley (or a reload): don't replay what already happened.
+    sc.fxKey = rp.key;
+    sc.fxBooms = boomsBy(rp, e);
+    sc.fxDead = 0;
+    for (let i = 0; i < rp.death.length; i++) if ((rp.death[i]?.ms ?? Infinity) <= e) sc.fxDead |= 1 << i;
+    return;
+  }
+  const booms = rp.r.booms;
+  while (sc.fxBooms < booms.length && rp.boomMs[sc.fxBooms] <= e) {
+    const b = booms[sc.fxBooms++];
+    let mine = false;
+    if (mySlot >= 0) {
+      for (let k = 0; k + 1 < b.d.length; k += 2) {
+        // You took damage, or your shell dealt it.
+        if (b.d[k] === mySlot || b.s === mySlot) mine = true;
+      }
+    }
+    if (mine) feedback("hit");
+    else {
+      sfx("bump");
+      if (b.s === mySlot) buzz("bump");
+    }
+  }
+  for (let i = 0; i < rp.death.length; i++) {
+    const d = rp.death[i];
+    if (!d || d.ms > e || sc.fxDead & (1 << i)) continue;
+    sc.fxDead |= 1 << i;
+    if (i === mySlot) feedback("out");
+    else sfx("out");
+  }
+}
+
 function draw(g: CanvasRenderingContext2D, s: Surface, sc: Scene, p: FieldProps, now: number) {
   const { view, rp, me, colors, byId, aim, aiming, reduced } = p;
   const { u, dpr } = s;
@@ -873,6 +916,7 @@ function draw(g: CanvasRenderingContext2D, s: Surface, sc: Scene, p: FieldProps,
     sc.blastKey = rp.key;
     sc.blasts = blastsFor(rp);
   }
+  if (rp) volleyFeedback(sc, rp, view.tanks.findIndex((t) => t.id === me), e);
 
   // ----- camera shake -----
   let ox = 0;

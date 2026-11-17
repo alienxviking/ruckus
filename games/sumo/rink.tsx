@@ -53,6 +53,7 @@ import {
 import { Spring2D, Timeline, debugFrame } from "../snakes/netsmooth";
 import { avatarImage, drawAvatar } from "@/lib/avatar-art";
 import { isAvatarId } from "@/shared/types";
+import { feedback, sfx } from "@/lib/feedback";
 
 const TAU = Math.PI * 2;
 /** Playback starts this far behind the newest frame the network could have delivered (then adapts). */
@@ -861,6 +862,8 @@ function applyFx(sc: Scene, f: Frame, d: RinkData, at = f.t) {
       const info = POWER_INFO[kind];
       if (kind === "heavy") sc.heavyAt[slot] = at;
       else sc.turboAt[slot] = at;
+      if (slot === d.mySlot) feedback("score");
+      else sfx("pop");
       if (sampleAt(sc, slot, at, tmp)) {
         sc.rings.push({ x: tmp.x, y: tmp.y, t0: at, dur: 520, r0: 30, r1: 120, w: 8, color: info.color });
         sc.pops.push({
@@ -934,6 +937,9 @@ function hitFx(sc: Scene, d: RinkData, x: number, y: number, j: number, a: numbe
   }
   if (j > 760)
     sc.pops.push({ slot: -1, x, y, t0: at, text: j > 1100 ? "💥 WHAM!" : "💥", color: "#fde047", big: j > 1100 });
+  // Sound for every real collision; a buzz only when it's your disc (hard = hit, glancing = bump).
+  if (mine) feedback(j > 500 ? "hit" : "bump");
+  else if (j > 300) sfx("bump");
 }
 
 /** A disc slides into the water: ghost, splash rings, ice chips, and a red flash if it's you. */
@@ -948,12 +954,8 @@ function fallFx(sc: Scene, slot: number, x: number, y: number, vx: number, vy: n
   if (!d.reduced) spark(sc, ex, ey, 14, 260, "#cff6ff", 1, 1.6, (x - CENTER) / len, (y - CENTER) / len);
   if (slot === d.mySlot) {
     sc.hurtAt = t0;
-    try {
-      if (window.matchMedia("(pointer: coarse)").matches) navigator.vibrate?.(120);
-    } catch {
-      /* no vibration */
-    }
-  }
+    feedback("out");
+  } else sfx("out");
 }
 
 function drawRoundedRect(g: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {

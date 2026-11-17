@@ -25,6 +25,7 @@ import {
 } from "./shared";
 import { ParkView, type ParkData } from "./park";
 import { Avatar } from "@/components/Avatar";
+import { buzz, feedback, sfx } from "@/lib/feedback";
 
 type Props = GameClientProps<IncView, IncAction>;
 
@@ -175,9 +176,11 @@ function Game({ view, me, players, byId, isPlayer, act, serverNow, onEvent, acce
     const ev = e as { k?: unknown; n?: unknown; l?: unknown; m?: unknown; w?: unknown; why?: unknown };
     if (ev.k === "lit" && typeof ev.m === "number" && typeof ev.n === "number" && typeof ev.l === "number") {
       setLitEv({ n: ev.n, m: ev.m });
+      feedback("score");
       setLitPop((p) => ({ l: ev.l as number, key: p.key + 1 }));
     } else if (ev.k === "no" && typeof ev.why === "string") {
       setToast((t) => ({ text: ev.why as string, key: (t?.key ?? 0) + 1 }));
+      feedback("error");
       setFired((f) => ({ ...f, c: Math.max(0, f.c - 1) }));
     }
   });
@@ -193,6 +196,48 @@ function Game({ view, me, players, byId, isPlayer, act, serverNow, onEvent, acce
   const humansLeft = ids.length - outSet.size;
   const lastMiss = [...view.snipes].reverse().find((r) => r.hit < 0);
   const exposedNow = lastMiss && now - lastMiss.at > 0 && now - lastMiss.at < DART_MS + EXPOSE_MS + 300 ? lastMiss : null;
+
+  // ----- sounds: the countdown, then each dart as it lands (once per snipe record) -----
+  useEffect(() => {
+    if (phase === "intro" && secs > 0 && secs <= 3) sfx("tick");
+  }, [phase, secs]);
+  const onGo = useEffectEvent(() => (mySlot >= 0 ? feedback("go") : sfx("go")));
+  useEffect(() => {
+    if (phase === "play") onGo();
+  }, [phase, round]);
+  const seenSnipes = useRef({ round: -1, n: 0 });
+  const snipeTimers = useRef(new Set<ReturnType<typeof setTimeout>>());
+  const onSnipes = useEffectEvent(() => {
+    const seen = seenSnipes.current;
+    const fresh = seen.round === round ? view.snipes.slice(seen.n) : view.snipes;
+    seenSnipes.current = { round, n: view.snipes.length };
+    // First sight of the game (e.g. a reconnect) stays quiet about darts that already landed.
+    if (seen.round === -1 || !fresh.length) return;
+    const cues = fresh.map((r) => {
+      if (r.hit >= 0 && r.hit === mySlot) return () => feedback("out");
+      if (mySlot >= 0 && r.by === mySlot) {
+        if (r.hit >= 0) return () => feedback("hit");
+        return () => {
+          sfx("bump");
+          buzz("error");
+        };
+      }
+      return () => sfx(r.hit >= 0 ? "out" : "bump");
+    });
+    const t = setTimeout(() => {
+      snipeTimers.current.delete(t);
+      for (const c of cues) c();
+    }, DART_MS);
+    snipeTimers.current.add(t);
+  });
+  useEffect(() => onSnipes(), [view.snipes.length, round]);
+  useEffect(() => {
+    const set = snipeTimers.current;
+    return () => {
+      for (const t of set) clearTimeout(t);
+      set.clear();
+    };
+  }, []);
 
   // ----- steering: on change, at most every 50ms, re-sent now and then while held -----
   const ctl = useRef<Ctl>({ want: [0, 0, 0], sent: "0,0,0", sentAt: 0, timer: null });
@@ -237,6 +282,7 @@ function Game({ view, me, players, byId, isPlayer, act, serverNow, onEvent, acce
   const onFire = (w: number) => {
     if (!armed) return;
     act({ type: "snipe", w });
+    sfx("pop");
     setFired((f) => (f.n === round ? { n: round, c: f.c + 1 } : { n: round, c: 1 }));
     setReloading(true);
     if (reloadTimer.current) clearTimeout(reloadTimer.current);

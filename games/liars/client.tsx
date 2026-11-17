@@ -8,6 +8,7 @@ import type { Bid, LiarsAction, LiarsView, PlayerStats, Showdown, ShowdownSummar
 import { AWAY_MS, FACES, MAX_FACE, MIN_FACE, isLegalBid, matches, minQtyFor, minRaise, revealTiming } from "./shared";
 import { Cup, DICE_CSS, Die, FACE_NAME, FACE_PLURAL } from "./dice";
 import { Avatar } from "@/components/Avatar";
+import { feedback, sfx } from "@/lib/feedback";
 
 type Props = GameClientProps<LiarsView, LiarsAction>;
 type Lookup = (id: string) => Player;
@@ -125,6 +126,28 @@ function Table({ view, byId, isPlayer, act, serverNow, accent }: Props & { view:
   const over = view.phase === "over";
   // Knocked out at this showdown: keep your hand on screen until the next round.
   const outNow = you !== null && (view.counts[you] ?? 0) === 0 && mine.length === 0;
+
+  // Chime once each time the bid passes to us.
+  useEffect(() => {
+    if (myTurn) feedback("turn");
+  }, [myTurn]);
+  // When a showdown's verdict lands: buzz if it cost us a die (or knocked us out).
+  const verdictAt = stage?.verdict ? stage.sd.at : 0;
+  const verdictCue = !stage?.verdict
+    ? null
+    : you !== null && stage.sd.out === you
+      ? "mine-out"
+      : you !== null && stage.sd.loser === you
+        ? "mine-lost"
+        : stage.sd.out
+          ? "other-out"
+          : null;
+  useEffect(() => {
+    if (!verdictAt) return;
+    if (verdictCue === "mine-out") feedback("out");
+    else if (verdictCue === "mine-lost") feedback("hit");
+    else if (verdictCue === "other-out") sfx("out");
+  }, [verdictAt, verdictCue]);
 
   return (
     <div className="@container mx-auto flex w-full max-w-[56rem] flex-col gap-3 pb-16 @2xl:pb-2">

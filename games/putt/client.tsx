@@ -19,6 +19,7 @@ import { MAX_POWER, MAX_STROKES, PICKUP_SCORE, clamp, scoreName, type Hole } fro
 import { buildReplay, strokesAt, sunkBy, type Replay } from "./replay";
 import { Course, courseMaxWidth } from "./course";
 import { Avatar } from "@/components/Avatar";
+import { feedback, sfx } from "@/lib/feedback";
 
 type Props = GameClientProps<PuttView, PuttAction>;
 
@@ -232,7 +233,16 @@ function Game({ view: raw, me, players, byId, isPlayer, act, serverNow, onEvent,
     box.pending = null;
     act({ type: "lock", a: aim.a, p: aim.p });
     setLockedKey(turnKey);
+    sfx("pop");
   };
+
+  // Your ball is up for a new shot: "your turn" (the very first tee shot is covered by the room's start cue).
+  const myShotKey = canShoot && turnKey !== "0:1" ? turnKey : "";
+  const lastShotKey = useRef("");
+  useEffect(() => {
+    if (myShotKey && myShotKey !== lastShotKey.current) feedback("turn");
+    lastShotKey.current = myShotKey;
+  }, [myShotKey]);
   const goNext = () => {
     if (view.phase !== "card" || ready || !isPlayer) return;
     act({ type: "ready" });

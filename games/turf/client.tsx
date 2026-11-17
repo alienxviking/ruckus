@@ -11,6 +11,7 @@ import { TurfPredictor } from "./predict";
 import { hear, isTurfWire, nothingHeard, rebuild, type Heard } from "./delta";
 import { avatarText } from "@/shared/types";
 import { Avatar } from "@/components/Avatar";
+import { feedback, sfx } from "@/lib/feedback";
 
 type Props = GameClientProps<TurfView, TurfAction>;
 
@@ -198,10 +199,28 @@ function TurfGame({
         if (e.type === "capture" && e.by === mi) text = `You filled a loop: +${e.n} tiles!`;
         else if (e.type === "power" && e.by === mi) text = `${POWER_INFO[e.kind]?.label ?? "Power-up"}!`;
         else if (e.type === "power" && e.kind === "freeze" && mi >= 0) text = `Frozen by ${nm[e.by] ?? "someone"}!`;
+        if (e.type === "capture" && e.by === mi) feedback("score");
+        else if (e.type === "power" && e.by === mi) feedback("pop");
+        else if (e.type === "power" && e.kind === "freeze" && mi >= 0) feedback("hit");
         if (text) setNews((prev) => ({ text, n: prev.n + 1 }));
       }),
     [onEvent],
   );
+
+  // ----- countdown beeps, then "go" -----
+  const phase = view.phase;
+  useEffect(() => {
+    if (phase === "countdown" && secsLeft > 0 && secsLeft <= 3) sfx("tick");
+  }, [phase, secsLeft]);
+  const lastPhase = useRef(phase);
+  useEffect(() => {
+    const was = lastPhase.current;
+    lastPhase.current = phase;
+    if (was === "countdown" && phase === "play") {
+      if (meIdx >= 0 && isPlayer) feedback("go");
+      else sfx("go");
+    }
+  }, [phase, meIdx, isPlayer]);
 
   // ----- derived status -----
   const frozenFor = mine && view.phase === "play" ? Math.min(FREEZE_MS, Math.max(0, mine.frozen - now)) : 0;

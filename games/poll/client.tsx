@@ -4,6 +4,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type 
 import type { GameClientProps } from "@/shared/client-game";
 import type { Player } from "@/shared/types";
 import { Note, PlayerChip, Scoreboard, StatusBanner, TimerBar, useSecondsLeft } from "@/components/game-ui";
+import { feedback } from "@/lib/feedback";
 import type { PollAction, PollAward, PollRecap, PollReveal, PollSeat, PollView } from "./server";
 import {
   MAJORITY_MULT,
@@ -155,6 +156,14 @@ function Board({ view, me, byId, isPlayer, act, serverNow, accent }: Props & { v
   const myRead = local?.read ?? view.mine?.read ?? null;
   const iLocked = !!(view.mine?.locked || (view.phase === "predict" && local?.locked));
   const amSpot = view.spot === me;
+
+  // Voting, then predicting: each opens as your turn. Chime once per phase.
+  const task = playing && (view.phase === "vote" || view.phase === "predict") ? `${roundKey}:${view.phase}` : "";
+  const lastTask = useRef("");
+  useEffect(() => {
+    if (task && task !== lastTask.current) feedback("turn");
+    lastTask.current = task;
+  }, [task]);
 
   const vote = (o: number) => {
     if (!playing || view.phase !== "vote" || myVote === o) return;

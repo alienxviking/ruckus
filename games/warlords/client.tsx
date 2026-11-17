@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect } from "react";
 import type { GameClientProps } from "@/shared/client-game";
 import { Note, StatusBanner, TimerBar, useSecondsLeft } from "@/components/game-ui";
 import type { WlAction, WlView } from "./server";
@@ -8,6 +9,7 @@ import { Battle } from "./battle";
 import { CastleRow, LockRow, Planner } from "./plan";
 import { Final, WarRecords } from "./records";
 import { Pts, WlStyles, joinNames, type Who } from "./ui";
+import { feedback, sfx } from "@/lib/feedback";
 
 type Props = GameClientProps<WlView, WlAction>;
 
@@ -28,6 +30,20 @@ function Game({ view, players, byId, isPlayer, act, serverNow, accent }: Props &
   const summary = !!r && r.step > CASTLES;
   const me = view.me?.seat ?? -1;
   const bannerKey = `${view.phase}-${view.round}-${r?.step ?? 0}-${view.me?.locked ?? false}`;
+
+  // Cues: a new planning round, and each castle as it falls (a chime when it's ours).
+  const planRound = view.phase === "plan" && view.me ? view.round : 0;
+  const shown = r && r.step >= 1 && r.step <= CASTLES ? r.castles.length : 0;
+  const castleKey = shown ? `${view.round}-${shown}` : "";
+  const castleMine = shown > 0 && me >= 0 && r!.castles[shown - 1].winners.includes(me);
+  useEffect(() => {
+    if (planRound > 1) feedback("go");
+  }, [planRound]);
+  useEffect(() => {
+    if (!castleKey) return;
+    if (castleMine) feedback("score");
+    else sfx("bump");
+  }, [castleKey, castleMine]);
 
   return (
     <div className="@container mx-auto flex w-full max-w-4xl flex-col gap-3 pb-20 sm:pb-2">

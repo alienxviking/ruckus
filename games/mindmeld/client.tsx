@@ -4,6 +4,7 @@ import { useEffect, useId, useRef, useState, type FormEvent, type ReactNode } fr
 import type { GameClientProps } from "@/shared/client-game";
 import type { Player } from "@/shared/types";
 import { Note, PlayerChip, StatusBanner, TimerBar, useSecondsLeft } from "@/components/game-ui";
+import { feedback } from "@/lib/feedback";
 import type { LockState, MmAction, MmView } from "./server";
 import { MAX_WORD, bestRound, checkWord, isMmEvent, meldWord, rating, type RoundRecord } from "./shared";
 import {
@@ -42,6 +43,14 @@ function Game({ view, players, byId, isPlayer, act, serverNow, onEvent, accent }
   const over = view.phase === "melded" || view.phase === "failed";
   const paused = view.phase === "writing" && view.pausedLeft !== null;
   const meLocked = !!view.me?.locked;
+
+  // Every writing round is everyone's turn: chime once as a new one opens.
+  const task = isPlayer && view.phase === "writing" ? view.round : -1;
+  const lastTask = useRef(-1);
+  useEffect(() => {
+    if (task >= 0 && task !== lastTask.current) feedback("turn");
+    lastTask.current = task;
+  }, [task]);
 
   return (
     <div className="@container relative mx-auto flex w-full max-w-2xl flex-col gap-3 pb-20 lg:pb-2">
@@ -436,6 +445,7 @@ function WordForm({
     const c = checkWord(draft, history);
     if (!c.ok) {
       setServerError(c.msg);
+      feedback("error");
       return;
     }
     setServerError(null);

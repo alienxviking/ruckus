@@ -22,6 +22,7 @@ import {
 } from "./shared";
 import { ArenaView, type ArenaData, type UseButton } from "./arena";
 import { Avatar } from "@/components/Avatar";
+import { feedback, sfx } from "@/lib/feedback";
 
 type Props = GameClientProps<OBView, OBAction>;
 
@@ -161,6 +162,20 @@ function Game({ view, me, players, byId, isPlayer, act, serverNow, onEvent, acce
   }, []);
   // A key held across a round change: tell the server again (it reset everyone's input).
   useEffect(() => onResend(), [round, phase]);
+
+  // Beeps as the zombies are about to wake, then "go" when they do.
+  useEffect(() => {
+    if (phase === "intro" && secs > 0 && secs <= 3) sfx("tick");
+  }, [phase, secs]);
+  const lastPhase = useRef(phase);
+  useEffect(() => {
+    const was = lastPhase.current;
+    lastPhase.current = phase;
+    if (was === "intro" && phase === "play") {
+      if (mySlot >= 0) feedback("go");
+      else sfx("go");
+    }
+  }, [phase, mySlot]);
 
   const onUse = () => {
     if (mySlot >= 0) act({ type: "use" });

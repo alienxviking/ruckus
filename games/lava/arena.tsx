@@ -56,6 +56,7 @@ import {
 import { Spring2D, Timeline, debugFrame } from "../snakes/netsmooth";
 import { avatarImage, drawAvatar } from "@/lib/avatar-art";
 import { isAvatarId } from "@/shared/types";
+import { buzz, feedback, sfx } from "@/lib/feedback";
 
 const TAU = Math.PI * 2;
 const DELAY_MS = 100;
@@ -956,6 +957,8 @@ function applyFrame(sc: Scene, f: Frame, d: ArenaData, fresh: boolean, at = f.t)
       sc.rings.push({ x: px, y: py, t0: at, dur: 520, r0: 20, r1: kind === "rebuild" ? 160 : 90, w: 7, color: info.color });
       sc.pops.push({ slot, x: px, y: py, t0: at, text: `${info.icon} ${info.label.toUpperCase()}!`, color: info.color });
       if (!reduced) spark(sc, px, py, 10, 220, info.color, 2, TAU);
+      if (slot === d.mySlot) feedback("score");
+      else sfx("pop");
     } else if (type === FX_JUMP) {
       const [, slot] = e;
       if (slot === d.mySlot) continue; // yours showed when you pressed
@@ -972,8 +975,10 @@ function applyFrame(sc: Scene, f: Frame, d: ArenaData, fresh: boolean, at = f.t)
         if (s2 === d.mySlot) {
           sc.shakeAt = at + 200;
           sc.shakeAmp = 0.8;
+          buzz("hit");
         }
       }
+      sfx("hit");
       sc.shakeAt = Math.max(sc.shakeAt, at);
       sc.shakeAmp = Math.max(sc.shakeAmp, 0.5);
     } else if (type === FX_SINK) {
@@ -1001,6 +1006,9 @@ function hitFx(sc: Scene, d: ArenaData, x: number, y: number, j: number, a: numb
     sc.shakeAmp = amp;
   }
   if (j > 320) sc.pops.push({ slot: -1, x, y, t0: at, text: j > 480 ? "💥 BONK!" : "💥", color: "#fde047" });
+  // Sound for every real bump; a buzz only when it's you (hard = hit, glancing = bump).
+  if (mine) feedback(j > 320 ? "hit" : "bump");
+  else if (j > 200) sfx("bump");
 }
 
 /** A player drops into the lava: sinking ghost, splash, smoke, and a red flash if it's you. */
@@ -1014,12 +1022,8 @@ function fallFx(sc: Scene, slot: number, x: number, y: number, t0: number, d: Ar
   }
   if (slot === d.mySlot) {
     sc.hurtAt = t0;
-    try {
-      if (window.matchMedia("(pointer: coarse)").matches) navigator.vibrate?.(140);
-    } catch {
-      /* no vibration */
-    }
-  }
+    feedback("out");
+  } else sfx("out");
 }
 
 function drawRoundedRect(g: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {

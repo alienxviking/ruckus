@@ -13,6 +13,7 @@
 
 import { useEffect, useEffectEvent, useRef, useState, type PointerEvent, type ReactNode } from "react";
 import type { OBView } from "./server";
+import { feedback, sfx } from "@/lib/feedback";
 import {
   FLASH_R,
   FX_BITE,
@@ -668,18 +669,24 @@ function playFx(sc: Scene, S: Surface, d: ArenaData, fx: number[], now: number) 
     if (victim === d.mySlot) {
       sc.flash = { color: "#4d7c0f", t0: now, text: "🧟 You've been bitten!" };
       if (!reduced) sc.shake = { t0: now, amp: 9 * dpr };
+      feedback("out");
     } else if (biter === d.mySlot) {
       sc.flash = { color: "#365314", t0: now, text: "" };
       if (!reduced) sc.shake = { t0: now, amp: 4 * dpr };
+      feedback("hit");
+    } else {
+      sfx("out");
     }
   } else if (kind === FX_CURE && fx.length >= 5) {
-    const [, cured, , x, y] = fx;
+    const [, cured, curer, x, y] = fx;
     const sx = toSX(S, x, y);
     const sy = toSY(S, x, y);
     sc.rings.push({ x: sx, y: sy, r: 70 * S.s + 20 * dpr, t0: now, life: 700, color: CURE_COLOR });
     if (!reduced) burst(sc, sx, sy, CURE_COLOR, 24, 150, now, dpr);
     sc.floaters.push({ x: sx, y: sy, text: "CURED! 💉", color: CURE_COLOR, t0: now });
     if (cured === d.mySlot) sc.flash = { color: "#0e7490", t0: now, text: "💉 You're human again!" };
+    if (cured === d.mySlot || curer === d.mySlot) feedback("score");
+    else sfx("pop");
   } else if (kind === FX_FLASH && fx.length >= 4) {
     const [, slot, x, y] = fx;
     if (slot === d.mySlot && now - sc.localFlashAt < 1_500) return; // already shown when you pressed it
@@ -690,7 +697,10 @@ function playFx(sc: Scene, S: Surface, d: ArenaData, fx: number[], now: number) 
     if (me & F_ZOMBIE) {
       const mx = sc.pos[d.mySlot * 2];
       const my = sc.pos[d.mySlot * 2 + 1];
-      if (mx !== undefined && Math.hypot(mx - x, my - y) < FLASH_R) sc.flash = { color: "#fffbe6", t0: now, text: "😵 Blinded!" };
+      if (mx !== undefined && Math.hypot(mx - x, my - y) < FLASH_R) {
+        sc.flash = { color: "#fffbe6", t0: now, text: "😵 Blinded!" };
+        feedback("hit");
+      }
     }
   } else if (kind === FX_PICK && fx.length >= 3) {
     const [, slot, item] = fx;
@@ -701,6 +711,7 @@ function playFx(sc: Scene, S: Surface, d: ArenaData, fx: number[], now: number) 
     const sy = toSY(S, x, y);
     if (!reduced) burst(sc, sx, sy, item === ITEM_CURE ? CURE_COLOR : "#fde047", 12, 90, now, dpr);
     sc.floaters.push({ x: sx, y: sy, text: item === ITEM_CURE ? "+💉" : "+🔦", color: item === ITEM_CURE ? CURE_COLOR : "#fde047", t0: now });
+    if (slot === d.mySlot) feedback("pop");
   } else if (kind === FX_LUNGE && fx.length >= 2) {
     sc.lunges[fx[1]] = now;
   }

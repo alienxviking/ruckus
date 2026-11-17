@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
 import type { GameClientProps } from "@/shared/client-game";
 import { Note } from "@/components/game-ui";
+import { feedback } from "@/lib/feedback";
 import type { CharadesAction, CharadesView } from "./server";
 import type { CharadesEvent } from "./shared";
 import { EmojiPicker } from "./picker";
@@ -120,6 +121,20 @@ export default function EmojiCharades({ view, me, byId, isPlayer, act, serverNow
   );
 
   const vars = { "--ec-accent": accent } as CSSProperties;
+
+  // Your turn to pick + clue: chime once as it starts. Guessing the phrase: a score blip.
+  const myTurn = !!view && view.role === "giver" && (view.phase === "choose" || view.phase === "clue");
+  const wasMyTurn = useRef(false);
+  useEffect(() => {
+    if (myTurn && !wasMyTurn.current) feedback("turn");
+    wasMyTurn.current = myTurn;
+  }, [myTurn]);
+  const gotIt = !!view && view.role === "guesser" && view.guessed;
+  const hadIt = useRef(false);
+  useEffect(() => {
+    if (gotIt && !hadIt.current) feedback("score");
+    hadIt.current = gotIt;
+  }, [gotIt]);
 
   if (!view) {
     return (

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useReducer, useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useReducer, useRef, useState, type FormEvent, type ReactNode } from "react";
 import type { GameClientProps } from "@/shared/client-game";
 import type { Player } from "@/shared/types";
 import { Note, StatusBanner, TimerBar, useSecondsLeft } from "@/components/game-ui";
@@ -10,6 +10,7 @@ import { AuStyles, GAIN, GOLD, LOSS, Name, kindColor, makeWho, pnlColor, useLate
 import { CrateArt, Burst, Contents, Rays, RevealBack, RevealFront, Smoke, Stamp } from "./crate";
 import { FinalStandings, Leaderboard, LotsStrip, PeekGrid, Recap, giftOf, standings } from "./panels";
 import { Avatar } from "@/components/Avatar";
+import { feedback, sfx } from "@/lib/feedback";
 
 type Props = GameClientProps<AuView, AuAction>;
 
@@ -57,8 +58,12 @@ function useBidding(view: AuView, onEvent: Props["onEvent"], act: Props["act"]) 
         if (e.k === "bid") {
           const b: Bid = { n: e.n, p: e.p, a: e.a, at: e.at };
           setFeed((f) => (f.lot === e.lot ? { lot: e.lot, bids: [...f.bids, b].slice(-HIST - 2) } : { lot: e.lot, bids: [b] }));
-          if (e.p !== me) setBumps((x) => x + 1);
+          if (e.p !== me) {
+            setBumps((x) => x + 1);
+            sfx("bump");
+          }
         } else {
+          feedback("error"); // the server turned our bid down
           setPending((p) => (p && p.lot === e.lot && p.a === e.a ? null : p));
           setNotice((n) => ({ id: (n?.id ?? 0) + 1, text: e.m }));
         }
@@ -107,6 +112,24 @@ function Game({ view, byId, isPlayer, act, serverNow, onEvent, accent }: Props &
   const bidding = useBidding(view, onEvent, act);
   const open = usePassed(view.openAt, serverNow);
   const { lead } = bidding;
+
+  // Cues: bidding opens, someone outbids us, a crate is sold to us.
+  const lot = view.lot;
+  const bidOpen = view.phase === "lot" && open;
+  const iLead = view.phase === "lot" && !!lead && lead.p === me && me >= 0;
+  const wonLot = view.phase === "sold" && view.crates[lot]?.status === "sold" && view.crates[lot].buyer === me && me >= 0 ? lot : -1;
+  const ledRef = useRef({ lot: -1, lead: false });
+  useEffect(() => {
+    if (bidOpen) sfx("go");
+  }, [bidOpen, lot]);
+  useEffect(() => {
+    const was = ledRef.current;
+    if (was.lot === lot && was.lead && !iLead && view.phase === "lot") feedback("bump"); // outbid
+    ledRef.current = { lot, lead: iLead };
+  }, [iLead, lot, view.phase]);
+  useEffect(() => {
+    if (wonLot >= 0) feedback("score");
+  }, [wonLot]);
 
   if (view.phase === "peek") {
     return (

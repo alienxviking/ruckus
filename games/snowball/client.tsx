@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useEffect, useSyncExternalStore, type ReactNode } from "react";
+import { useMemo, useState, useEffect, useRef, useSyncExternalStore, type ReactNode } from "react";
 import type { GameClientProps } from "@/shared/client-game";
 import { PLAYER_COLORS, type Player } from "@/shared/types";
 import { Note, StatusBanner, TimerBar, useSecondsLeft } from "@/components/game-ui";
@@ -19,6 +19,7 @@ import {
 } from "./shared";
 import { Arena, type ArenaData } from "./arena";
 import { Avatar } from "@/components/Avatar";
+import { feedback, sfx } from "@/lib/feedback";
 
 type Props = GameClientProps<SnowView, SnowAction>;
 
@@ -153,6 +154,20 @@ function Game({ view, me, players, byId, isPlayer, act, serverNow, onEvent, acce
   const fightMs = phase === "fight" && view.fightAt ? Math.max(0, now - view.fightAt) : 0;
   const abandonIn = view.abandonAt ? Math.max(0, Math.ceil((view.abandonAt - now) / 1000)) : null;
   const name = (id: string | null | undefined) => (id ? (byId[id]?.name ?? "Someone") : "Someone");
+
+  // Countdown ticks for the last three seconds, then "go" (a buzz too if you're playing).
+  useEffect(() => {
+    if (phase === "countdown" && secs > 0 && secs <= 3) sfx("tick");
+  }, [phase, secs]);
+  const lastPhase = useRef(phase);
+  useEffect(() => {
+    const was = lastPhase.current;
+    lastPhase.current = phase;
+    if (was === "countdown" && phase === "fight") {
+      if (mySlot >= 0) feedback("go");
+      else sfx("go");
+    }
+  }, [phase, mySlot]);
 
   // ----- status copy -----
   const winner = view.lastWinner;

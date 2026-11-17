@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { GameClientProps } from "@/shared/client-game";
 import type { Player } from "@/shared/types";
 import { Note, StatusBanner, TimerBar, useSecondsLeft } from "@/components/game-ui";
+import { buzz, feedback, sfx } from "@/lib/feedback";
 import type { BookRow, MkAction, MkView, RoundRecord } from "./server";
 import {
   CARD_MEAN,
@@ -127,6 +128,18 @@ function Floor({ view, byId, isPlayer, act, serverNow, onEvent, accent }: Props 
   const [size, setSize] = useState(2);
   const [editor, setEditor] = useState<Editor | null>(null);
   const [formErr, setFormErr] = useState<string | null>(null);
+  const formError = (msg: string) => {
+    feedback("error");
+    setFormErr(msg);
+  };
+
+  // The bell for a new trading round: your turn to quote.
+  const bell = canTrade ? view.round : -1;
+  const lastBell = useRef(-1);
+  useEffect(() => {
+    if (bell >= 0 && bell !== lastBell.current) feedback("turn");
+    lastBell.current = bell;
+  }, [bell]);
 
   // Quote editor: until you touch it this round, it sits 3 either side of your estimate.
   const ed = editor && editor.round === view.round ? editor : null;
@@ -149,16 +162,16 @@ function Floor({ view, byId, isPlayer, act, serverNow, onEvent, accent }: Props 
   const postSide = (side: "bid" | "ask") => {
     if (!canTrade) return;
     const px = side === "bid" ? bidPx : askPx;
-    if (!validPx(px)) return setFormErr(`Prices go from 1 to ${view.maxPrice}.`);
-    if (side === "bid" && d.myAsk && px >= d.myAsk[1]) return setFormErr(`Your bid must be below your ask (${d.myAsk[1]}).`);
-    if (side === "ask" && d.myBid && px <= d.myBid[1]) return setFormErr(`Your ask must be above your bid (${d.myBid[1]}).`);
+    if (!validPx(px)) return formError(`Prices go from 1 to ${view.maxPrice}.`);
+    if (side === "bid" && d.myAsk && px >= d.myAsk[1]) return formError(`Your bid must be below your ask (${d.myAsk[1]}).`);
+    if (side === "ask" && d.myBid && px <= d.myBid[1]) return formError(`Your ask must be above your bid (${d.myBid[1]}).`);
     setFormErr(null);
     send({ type: "quote", side, price: px, size });
   };
   const postBoth = () => {
     if (!canTrade) return;
-    if (!validPx(bidPx) || !validPx(askPx)) return setFormErr(`Prices go from 1 to ${view.maxPrice}.`);
-    if (bidPx >= askPx) return setFormErr("Your bid has to be below your ask.");
+    if (!validPx(bidPx) || !validPx(askPx)) return formError(`Prices go from 1 to ${view.maxPrice}.`);
+    if (bidPx >= askPx) return formError("Your bid has to be below your ask.");
     setFormErr(null);
     const bid: MkAction = { type: "quote", side: "bid", price: bidPx, size };
     const ask: MkAction = { type: "quote", side: "ask", price: askPx, size };
@@ -448,6 +461,11 @@ function useNews(
       if (e.k === "t") {
         const [b, s, price, qty] = e.tr;
         const mine = e.a === view.me;
+        // Your own fills pop; a resting quote of yours getting hit also buzzes.
+        if (b === view.me || s === view.me) {
+          sfx("pop");
+          if (!mine) buzz("pop");
+        }
         if (b === view.me) {
           item = {
             tone: "buy",
@@ -476,6 +494,7 @@ function useNews(
           };
         }
       } else if (e.k === "flip") {
+        sfx("tick");
         const v = cardValue(e.c);
         const before = d.fair;
         const after = before - CARD_MEAN + v;
@@ -489,6 +508,7 @@ function useNews(
         };
       } else if (e.k === "msg") {
         item = { tone: "warn", text: <>⚠️ {e.m}</> };
+        feedback("error");
       }
       if (item) setNews({ id: ++id, at: newsKey(view), ...item });
     });

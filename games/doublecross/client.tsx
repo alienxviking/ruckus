@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { GameClientProps } from "@/shared/client-game";
 import { Note, StatusBanner, TimerBar, useSecondsLeft } from "@/components/game-ui";
 import type { DcAction, DcView } from "./server";
@@ -10,6 +10,7 @@ import { ChoicePad, HeistHeader, ReadyBar, TableHeader, TablesOverview, seatStat
 import { OUTCOME_META, RevealStage, verdictAt } from "./reveal";
 import { Final, Ledger, RoundTrack } from "./ledger";
 import { DcStyles, Name, useReached, vars, type Who } from "./ui";
+import { feedback } from "@/lib/feedback";
 
 type Props = GameClientProps<DcView, DcAction>;
 
@@ -122,6 +123,19 @@ function Round({ view, who, act, onEvent, serverNow, accent }: Props & { view: D
 
   const outcome = verdict && cur ? (table ? cur.tables[tableIdx]?.out : null) : null;
   const bannerAccent = outcome ? OUTCOME_META[outcome].color : accent;
+
+  // Cues: our "split or steal?" moment, then the verdict at our table (paid, or robbed/bust).
+  const myChoice = choose && !!table;
+  const myRow = verdict && cur && table ? cur.tables[tableIdx] : undefined;
+  const myGain = myRow ? (myRow.gain[myRow.seats.indexOf(mySeat)] ?? 0) : -1;
+  const verdictKey = myRow ? view.round : -1;
+  useEffect(() => {
+    if (myChoice) feedback("turn");
+  }, [myChoice]);
+  useEffect(() => {
+    if (verdictKey < 0) return;
+    feedback(myGain > 0 ? "score" : "hit");
+  }, [verdictKey, myGain]);
   const nextLabel = view.heist ? "Final standings in" : view.round + 1 === ROUNDS ? "The Heist in" : `Round ${view.round + 1} in`;
 
   return (

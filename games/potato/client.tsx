@@ -9,6 +9,7 @@ import { Arena, CSS, type Floater, type SeatInfo } from "./arena";
 import { NopeCard, PuzzleCard } from "./puzzle";
 import { FLIGHT_MS, HECKLES, checkAnswer } from "./shared";
 import { Avatar } from "@/components/Avatar";
+import { feedback, sfx } from "@/lib/feedback";
 
 type Props = GameClientProps<PotatoView, PotatoAction>;
 
@@ -124,8 +125,29 @@ function Game({ view, me, byId, isPlayer, act, serverNow, onEvent, accent }: Pro
     return () => clearTimeout(id);
   }, [thr]);
 
+  // Getting the potato: once per catch, not per render.
+  useEffect(() => {
+    if (iHold) feedback("turn");
+  }, [iHold]);
+  // Round start and explosions.
+  const boomKey = view.phase === "boom" && view.boom ? `${view.round}:${view.boom.at}` : null;
+  const onCue = useEffectEvent((what: "go" | "boom") => {
+    if (what === "go") return sfx("go");
+    const b = view.boom;
+    if (!b) return;
+    if (b.victim === me) feedback(b.out ? "out" : "hit");
+    else sfx(b.out ? "out" : "hit");
+  });
+  useEffect(() => {
+    if (live) onCue("go");
+  }, [live, view.round]);
+  useEffect(() => {
+    if (boomKey) onCue("boom");
+  }, [boomKey]);
+
   const grade = (n: number, ok: boolean, a: number | number[]) => {
     setAns({ n, ok });
+    feedback(ok ? "score" : "error");
     if (ok) armedAt.current = performance.now();
     act({ type: "solve", n, a });
   };
@@ -145,6 +167,7 @@ function Game({ view, me, byId, isPlayer, act, serverNow, onEvent, accent }: Pro
     if (!canThrow || !targets.has(to)) return;
     if (performance.now() - armedAt.current < GUARD_MS) return;
     setThr({ round: view.round, pass: view.passes + 1, to, at: serverNow() });
+    sfx("pop");
     act({ type: "throw", to });
   };
 
@@ -427,6 +450,9 @@ function Pill({ children, hot, late }: { children: ReactNode; hot?: boolean; lat
 function ReadyPill({ view, me, holder, serverNow }: { view: PotatoView; me: string; holder: Player | null; serverNow: () => number }) {
   const secs = useSecondsLeft(view.endsAt, serverNow);
   const mine = view.holder === me;
+  useEffect(() => {
+    if (secs > 0 && secs <= 3) sfx("tick");
+  }, [secs]);
   return (
     <Pill key={`ready-${view.round}`} hot={mine}>
       <span className="label block">Round {view.round}</span>

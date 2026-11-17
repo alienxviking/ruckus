@@ -4,6 +4,7 @@ import { useEffect, useId, useRef, useState, type FormEvent, type ReactNode } fr
 import type { GameClientProps } from "@/shared/client-game";
 import type { Player } from "@/shared/types";
 import { Note, StatusBanner, TimerBar, useSecondsLeft } from "@/components/game-ui";
+import { feedback } from "@/lib/feedback";
 import type { ImpostorAction, ImpostorErrorEvent, ImpostorView } from "./server";
 import {
   CLUE_MS,
@@ -53,6 +54,20 @@ export default function OddOneOut({ view, me, byId, isPlayer, act, serverNow, on
   const plan = view?.phase === "reveal" && last ? revealPlan(last) : null;
   const revealStart = view && plan ? view.endsAt - REVEAL_MS : 0;
   const outcomeShown = usePast(plan ? revealStart + plan.outcomeAt : null, serverNow);
+  // Your clue turn (keyed by turn so back-to-back laps still chime), or your last guess once caught.
+  const turnKey =
+    !view || !isPlayer
+      ? ""
+      : view.phase === "clues" && view.currentId === me
+        ? `clue:${view.turn}`
+        : view.phase === "lastGuess" && view.caughtId === me
+          ? `guess:${view.round}`
+          : "";
+  const lastTurnKey = useRef("");
+  useEffect(() => {
+    if (turnKey && turnKey !== lastTurnKey.current) feedback("turn");
+    lastTurnKey.current = turnKey;
+  }, [turnKey]);
   if (!view) return <Note>Dealing out the secret words…</Note>;
 
   const toggleWord = () => setHidden((h) => !h);
@@ -409,6 +424,7 @@ function WordForm({
         setServerError(e.message);
         setSent(false);
         setShakes((k) => k + 1);
+        feedback("error");
       }),
     [onEvent],
   );
@@ -429,6 +445,7 @@ function WordForm({
     if (sent) return;
     if (!ready) {
       setShakes((k) => k + 1);
+      feedback("error");
       return;
     }
     setSent(true);

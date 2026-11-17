@@ -17,6 +17,7 @@ import type { Player } from "@/shared/types";
 import type { FoulKind, Phase, ReflexAction, ReflexView, RoundEntry, RoundSummary } from "./server";
 import { timeTap, type Painted } from "./timing";
 import { Avatar } from "@/components/Avatar";
+import { feedback, sfx } from "@/lib/feedback";
 
 type Props = GameClientProps<ReflexView, ReflexAction>;
 type SignalPhase = Extract<Phase, "ready" | "wait" | "fake" | "go">;
@@ -118,6 +119,20 @@ export default function QuickDraw({ view, me, byId, isPlayer, act, serverNow, ac
     return () => cancelAnimationFrame(raf);
   }, [phase, roundKey]);
 
+  // Signal cues: once per phase change, never per render.
+  const onPhase = useEffectEvent((p: Phase | null) => {
+    if (!view) return;
+    if (p === "go") {
+      if (isPlayer && view.you?.status === "none") feedback("go");
+      else sfx("go");
+    } else if (p === "fake") sfx("bump");
+    else if (p === "ready") sfx("tick");
+    else if (p === "result" && isPlayer && view.last?.winners.includes(me)) feedback("score");
+  });
+  useEffect(() => {
+    onPhase(phase);
+  }, [phase, roundKey]);
+
   /** Handle a tap at `at` (event timestamp). Returns true when the game used it. */
   function trigger(at: number): boolean {
     if (!view || !isPlayer) return false;
@@ -132,15 +147,16 @@ export default function QuickDraw({ view, me, byId, isPlayer, act, serverNow, ac
       case "go": {
         if (sentKey.current === k || view.you?.status !== "none") return true;
         sentKey.current = k;
-        buzz();
         // Timed from the frame that painted DRAW! to the tap's own timestamp (see timing.ts).
         const tap = timeTap(view.phase, k, painted.current, at);
         if (tap.kind === "drew") {
           setMine({ key: k, kind: "drew", rt: tap.rt, during: "wait" });
+          feedback("hit");
           act({ type: "tap", round: r, rt: tap.rt });
         } else {
           // Tapped before this screen showed the signal: honest clients own up.
           setMine({ key: k, kind: "early", rt: null, during: view.phase === "fake" ? "fake" : "wait" });
+          feedback("out");
           act({ type: "tap", round: r, rt: null });
         }
         return true;
@@ -1171,13 +1187,5 @@ function announce(
       return view.pauseReason === "idle" ? "Paused. Tap to keep playing." : "Paused. Waiting for players to come back.";
     default:
       return "Game over. Final standings.";
-  }
-}
-
-function buzz() {
-  try {
-    if (typeof navigator !== "undefined" && typeof navigator.vibrate === "function") navigator.vibrate(40);
-  } catch {
-    // Some browsers refuse vibration without a user gesture; it's only a nicety.
   }
 }

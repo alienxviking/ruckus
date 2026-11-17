@@ -1,9 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useId, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from "react";
 import type { GameClientProps } from "@/shared/client-game";
 import type { Player } from "@/shared/types";
 import { Note, StatusBanner, TimerBar, useSecondsLeft } from "@/components/game-ui";
+import { feedback, sfx } from "@/lib/feedback";
 import type { PlayerLine, TriviaAction, TriviaView } from "./server";
 import { LETTERS, QUESTION_MS, STREAK_CAP, fmt } from "./shared";
 import { FinalScreen } from "./final";
@@ -68,6 +69,24 @@ export default function TriviaRush({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [canAnswer, answer, me]);
+
+  // A new question pops in; at the reveal, your own answer scores or misses.
+  const asking = phase === "question" ? qNum : -1;
+  const lastAsked = useRef(-1);
+  useEffect(() => {
+    if (asking > 0 && asking !== lastAsked.current) sfx("pop");
+    lastAsked.current = asking;
+  }, [asking]);
+  const myOutcome = isPlayer && phase === "reveal" ? view?.players.find((l) => l.id === me)?.outcome : null;
+  const verdict = myOutcome ? `${qNum}:${myOutcome.correct ? "y" : "n"}` : "";
+  const lastVerdict = useRef("");
+  useEffect(() => {
+    if (verdict && verdict !== lastVerdict.current) {
+      if (verdict.endsWith("y")) feedback("score");
+      else sfx("error");
+    }
+    lastVerdict.current = verdict;
+  }, [verdict]);
 
   const claimKeyboard = () => {
     keyboard.owner = me;

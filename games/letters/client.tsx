@@ -15,6 +15,7 @@ import {
 } from "./shared";
 import { Board } from "./board";
 import { FinalStandings, RoundResults } from "./standings";
+import { feedback } from "@/lib/feedback";
 import { LETTERS_CSS, LetterTile, clock, playerOf, useNow, waitList } from "./ui";
 
 type Props = GameClientProps<LettersView, LettersAction>;
@@ -195,6 +196,12 @@ function AnswerPhase(props: PhaseProps) {
     }, 200);
     return () => clearInterval(id);
   }, [view.endsAt, serverNow, flushAll]);
+
+  // A fresh letter after the first round: "go" (the room already announces the game start).
+  const round = view.round;
+  useEffect(() => {
+    if (playing && round > 0) feedback("go");
+  }, [playing, round]);
 
   useEffect(() => {
     const pending = timers.current;

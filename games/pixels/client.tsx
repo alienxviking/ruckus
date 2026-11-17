@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import type { GameClientProps } from "@/shared/client-game";
 import type { Player } from "@/shared/types";
 import { Note, PlayerChip, StatusBanner, TimerBar, useSecondsLeft } from "@/components/game-ui";
+import { feedback } from "@/lib/feedback";
 import type { PixelsAction, PixelsView } from "./server";
 import { COLORS, EMBLEM, EMBLEM_CELLS, PERFECT_BONUS, digits, type PixelsEvent } from "./shared";
 import { Board, CanvasStore } from "./board";
@@ -112,6 +113,14 @@ export default function CanvasClash({ view, byId, act, serverNow, onEvent, accen
   const mineArt = view?.mine?.art ?? null;
   const color = picked ?? (mineArt ? mineArt.charCodeAt(0) - 48 : 1);
   const live = useLiveMatch(store, mineArt, phase === "paint" && you >= 0);
+
+  // Brushes up: the paint phase opening is everyone's go.
+  const painting = phase === "paint" && you >= 0 ? (view?.round ?? 0) : -1;
+  const lastPaint = useRef(-1);
+  useEffect(() => {
+    if (painting >= 0 && painting !== lastPaint.current) feedback("go");
+    lastPaint.current = painting;
+  }, [painting]);
 
   // Keys 1-8 pick a colour.
   useEffect(() => {

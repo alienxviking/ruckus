@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type KeyboardEvent, type ReactNode } from "react";
+import { useEffect, useState, type KeyboardEvent, type ReactNode } from "react";
 import type { GameClientProps } from "@/shared/client-game";
 import { Note, PlayerChip, StatusBanner, TimerBar, useSecondsLeft } from "@/components/game-ui";
 import { PLAYER_COLORS, type Player } from "@/shared/types";
@@ -15,6 +15,7 @@ import {
   type LineRef,
 } from "./shared";
 import { Avatar, SvgAvatar } from "@/components/Avatar";
+import { feedback } from "@/lib/feedback";
 
 // ---------- board geometry (SVG user units) ----------
 
@@ -118,11 +119,20 @@ export default function DotsAndBoxes({
   serverNow,
   accent,
 }: GameClientProps<DotsView, DotsAction>) {
+  const you = view && isPlayer ? view.you : -1;
+  const myTurn = !!view && !view.over && you >= 0 && view.turn === you;
+  // The move number of a line we drew that closed a box (-1 otherwise), so the cue fires once per box.
+  const myBoxAt = view?.lastLine && you >= 0 && view.lastLine.seat === you && view.lastLine.claimed.length > 0 ? view.moves : -1;
+  useEffect(() => {
+    if (myTurn) feedback("turn");
+  }, [myTurn]);
+  useEffect(() => {
+    if (myBoxAt >= 0) feedback("score");
+  }, [myBoxAt]);
+
   if (!view) return <Note>Setting up the board…</Note>;
 
   const seats = seatPlayers(view, byId);
-  const you = isPlayer ? view.you : -1;
-  const myTurn = !view.over && you >= 0 && view.turn === you;
   const mover = view.turn >= 0 ? seats[view.turn] : undefined;
   const moverAway = !!mover && (!mover.connected || view.idle[view.turn]);
   const total = view.rows * view.cols;

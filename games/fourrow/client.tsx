@@ -8,6 +8,7 @@ import type { FourAction, FourView, HoverEvent, Seat } from "./server";
 import { COLS } from "./shared";
 import { BOARD_CSS, Board, DiscSwatch, discPalette, type BoardPreview } from "./board";
 import { Avatar } from "@/components/Avatar";
+import { feedback, sfx } from "@/lib/feedback";
 
 type Props = GameClientProps<FourView, FourAction>;
 
@@ -105,6 +106,11 @@ function Match({ view, byId, isPlayer, act, serverNow, onEvent, accent }: Props 
     [onEvent],
   );
 
+  // Chime once each time the move passes to us.
+  useEffect(() => {
+    if (myTurn) feedback("turn");
+  }, [myTurn]);
+
   // Share where we're pointing so the opponent and spectators see our disc hover.
   useEffect(() => {
     if (myTurn) act({ type: "hover", col: hoverCol });
@@ -144,7 +150,11 @@ function Match({ view, byId, isPlayer, act, serverNow, onEvent, accent }: Props 
 
   const onHover = (col: number | null) => setHover(col);
   const onDrop = (col: number) => {
-    if (!canDrop || board[0][col] !== null) return;
+    if (!canDrop) return;
+    if (board[0][col] !== null) {
+      sfx("error"); // that column is full
+      return;
+    }
     setSent({ seq, col });
     act({ type: "drop", col });
   };

@@ -1,11 +1,12 @@
 "use client";
 
-import { useCallback, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useEffectEvent, useState, type ReactNode } from "react";
 import type { GameClientProps } from "@/shared/client-game";
 import type { Player } from "@/shared/types";
 import { Note, TimerBar, useSecondsLeft } from "@/components/game-ui";
 import type { BlitzAction, BlitzView } from "./server";
 import { Board } from "./boards";
+import { feedback, sfx } from "@/lib/feedback";
 import { DOUBLE_LAST, META, MICRO_TYPES, RANKED, fmtPoints, fmtSecs, type Pick, type ResLine, type RoundResult } from "./shared";
 import { BlitzStyles, Face, GOLD, GREEN, MEDALS, ROSE, Sparks, cssVars, keyboard, ordinal, personOf } from "./ui";
 
@@ -20,10 +21,28 @@ export default function Blitz({ view, me, byId, isPlayer, act, serverNow, accent
   const submit = useCallback(
     (a: BlitzAction, pick: Pick | null) => {
       setPending({ r: a.r, pick });
+      sfx("pop");
       act(a);
     },
     [act],
   );
+  // Phase cues: a new microgame, the go, and how my answer landed (once per phase change).
+  const phaseNow = view?.phase ?? null;
+  const roundNow = view?.round ?? 0;
+  const onPhase = useEffectEvent(() => {
+    if (!view) return;
+    if (phaseNow === "ready") sfx("pop");
+    else if (phaseNow === "play") {
+      if (isPlayer) feedback("go");
+      else sfx("go");
+    } else if (phaseNow === "result" && isPlayer) {
+      const line = view.last?.res.find((l) => l.id === me);
+      if (line && line.pts > 0) feedback("score");
+      else if (line?.ok === false) feedback("error");
+    }
+  });
+  useEffect(() => onPhase(), [phaseNow, roundNow]);
+
   const claimKeyboard = () => {
     keyboard.owner = me;
   };
