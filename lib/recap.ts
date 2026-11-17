@@ -28,7 +28,8 @@ export function buildRecap(history: HistoryEntry[], players: Player[]): Recap {
     let s = stats.get(id);
     if (!s) {
       const p = byId.get(id);
-      if (!p) return null; // left the room: their wins went with them
+      // Left the room (their wins went with them), or a practice bot: not in the recap.
+      if (!p || p.bot || id.startsWith("bot-")) return null;
       s = { id, name: p.name, avatar: p.avatar, color: p.color, wins: 0, played: 0, bestStreak: 0, run: 0 };
       stats.set(id, s);
     }
