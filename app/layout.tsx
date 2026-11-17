@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Chakra_Petch, Geist, Geist_Mono, Unbounded } from "next/font/google";
+import { Bricolage_Grotesque, Caveat_Brush, Chakra_Petch, Geist, Geist_Mono } from "next/font/google";
 import { preconnect, prefetchDNS } from "react-dom";
 import { MotionProvider } from "@/components/motion/MotionProvider";
 import { ServiceWorker } from "@/components/ServiceWorker";
@@ -9,8 +9,10 @@ const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
 const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"] });
 // Narrow, angular display face for game UI headings (keeps game layouts compact).
 const display = Chakra_Petch({ variable: "--font-display-face", subsets: ["latin"], weight: ["500", "600", "700"] });
-// Wide hero face: the wordmark, the landing headline and big game titles only.
-const hero = Unbounded({ variable: "--font-hero-face", subsets: ["latin"], weight: ["600", "800"] });
+// Chunky, characterful hero face: the wordmark, headlines and big titles.
+const hero = Bricolage_Grotesque({ variable: "--font-hero-face", subsets: ["latin"], weight: ["600", "800"] });
+// Marker scribbles: side remarks, stickers, Rux's speech. Used sparingly.
+const marker = Caveat_Brush({ variable: "--font-marker-face", subsets: ["latin"], weight: "400" });
 
 // Absolute base for link-preview images: an explicit site URL, Vercel's production
 // domain when deployed there, or localhost in development.
@@ -41,7 +43,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html
       lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} ${display.variable} ${hero.variable} h-full antialiased`}
+      className={`${geistSans.variable} ${geistMono.variable} ${display.variable} ${hero.variable} ${marker.variable} h-full antialiased`}
     >
       <body className="flex min-h-full flex-col">
         <MotionProvider>{children}</MotionProvider>

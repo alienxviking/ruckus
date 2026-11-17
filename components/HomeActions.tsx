@@ -1,13 +1,13 @@
 "use client";
 
+import { ArrowRight } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { normalizeCode } from "@/lib/identity";
 import { roomExists } from "@/lib/rooms";
 import { useCreateRoom } from "@/lib/useCreateRoom";
-import { Magnetic } from "./Magnetic";
 
-/** Create a room, or join friends with a code (the "Play with friends" path on the home page). */
+/** The big one: start a room. Plus joining friends with a code. */
 export function HomeActions() {
   const router = useRouter();
   const [code, setCode] = useState("");
@@ -26,7 +26,7 @@ export function HomeActions() {
     // A mistyped code used to create a brand-new room; check it exists first.
     const exists = await roomExists(clean);
     if (exists === false) {
-      setJoinError(`No room with the code ${clean}. Check it with your friends, or create a new room.`);
+      setJoinError(`No room called ${clean}. Check the code with your friends, or start your own.`);
       setJoining(false);
       return;
     }
@@ -34,30 +34,26 @@ export function HomeActions() {
   };
 
   // Every room link is served by the same static page: fetch its code now so
-  // "Create a room" and "Join" open instantly.
+  // "Start a room" and "Join" open instantly.
   useEffect(() => {
     router.prefetch("/r/warmup");
   }, [router]);
 
   return (
-    <div className="space-y-4">
-      <Magnetic>
-        <button
-          className="btn btn-primary w-full py-3 text-lg"
-          onClick={() => {
-            setJoinError(null);
-            void room.create();
-          }}
-          disabled={busy}
-        >
-          {room.busy ? "Creating…" : "Create a room"}
-        </button>
-      </Magnetic>
-      <div className="label flex items-center gap-3 text-[10px]">
-        <span className="h-px flex-1 bg-line" /> or join with a code <span className="h-px flex-1 bg-line" />
-      </div>
+    <div className="flex flex-col gap-3 sm:flex-row sm:items-stretch">
+      <button
+        className="stk-btn px-7 py-4 text-xl sm:text-2xl"
+        onClick={() => {
+          setJoinError(null);
+          void room.create();
+        }}
+        disabled={busy}
+      >
+        {room.busy ? "Setting up…" : "Start a room"}
+        <ArrowRight aria-hidden className="size-6" strokeWidth={3} />
+      </button>
       <form
-        className="flex gap-2"
+        className="flex min-w-0 flex-1 items-stretch gap-2 sm:max-w-[17rem]"
         onSubmit={(e) => {
           e.preventDefault();
           void join();
@@ -68,7 +64,7 @@ export function HomeActions() {
         </label>
         <input
           id="room-code"
-          className="input min-w-0 font-mono text-lg tracking-[0.3em] uppercase"
+          className="input min-w-0 flex-1 border-2 py-3 text-center font-hero text-xl font-extrabold tracking-[0.25em] uppercase"
           placeholder="CODE"
           autoComplete="off"
           value={code}
@@ -80,12 +76,12 @@ export function HomeActions() {
           aria-invalid={error !== null && !busy && code !== ""}
           aria-describedby={error ? "home-error" : undefined}
         />
-        <button className="btn" disabled={clean.length < 4 || busy}>
+        <button className="btn border-2 px-4 font-hero font-extrabold" disabled={clean.length < 4 || busy}>
           {joining ? "…" : "Join"}
         </button>
       </form>
       {error && (
-        <p id="home-error" role="alert" className="animate-rise text-sm text-brand">
+        <p id="home-error" role="alert" className="animate-rise text-sm text-brand sm:basis-full">
           {error}
         </p>
       )}

@@ -1,205 +1,120 @@
 import Link from "next/link";
-import { ArrowRight, Bot, CalendarDays, Users } from "lucide-react";
-import type { ReactNode } from "react";
 import { CATALOG } from "@/games/catalog";
-import { GameBadge } from "@/components/GameBadge";
-import { HeroBackdrop } from "@/components/HeroBackdrop";
 import { HomeActions } from "@/components/HomeActions";
 import { Logo } from "@/components/Logo";
-import { DailyCard } from "@/components/home/DailyCard";
-import { HomeGames } from "@/components/home/HomeGames";
+import { Rux } from "@/components/Rux";
+import { DailySticker } from "@/components/home/DailySticker";
+import { HomeLibrary } from "@/components/home/HomeLibrary";
 import { LOCAL_GAMES } from "@/lib/local-games";
 
-// Under the headline: a mix of genres.
-const FEATURED_IDS = ["sketch", "barrage", "trivia", "sumo", "impostor", "market", "garble"];
-const FEATURED = FEATURED_IDS.map((id) => CATALOG.find((g) => g.id === id)).filter((g) => g !== undefined);
-// On the solo card: games that play well on your own or against bots.
-const SOLO_IDS = ["trivia", "minerush", "sumo", "tictactoe", "snakes"];
-const SOLO_PICKS = SOLO_IDS.map((id) => LOCAL_GAMES.find((g) => g.id === id)).filter((g) => g !== undefined);
 const LOCAL_IDS = LOCAL_GAMES.map((g) => g.id);
 
-const LINES = ["Grab your friends.", "Or don't.", "Cause a ruckus."];
+// Cover stickers slapped around Rux in the hero: [id, position, tilt, delay].
+const STAGE: [string, string, string, number][] = [
+  ["sumo", "left-0 top-6 w-40 xl:w-48", "-9deg", 520],
+  ["smuggle", "right-0 top-0 w-36 xl:w-44", "8deg", 600],
+  ["tug", "left-6 bottom-2 w-36 xl:w-44", "6deg", 680],
+  ["hotseat", "right-2 bottom-8 w-40 xl:w-48", "-7deg", 760],
+];
 
 export default function Home() {
   return (
-    <main className="w-full pb-24">
-      <div className="relative isolate">
-        <HeroBackdrop />
-        <div className="mx-auto w-full max-w-6xl px-4 sm:px-6">
-          <header className="flex items-center justify-between py-5">
-            <Logo />
-            <span className="label hidden items-center gap-2 sm:flex">
-              <span className="text-text">{CATALOG.length}</span> games
-              <span className="text-line">/</span> no sign-up
-              <span className="text-line">/</span> free
-            </span>
-          </header>
-
-          <section className="pt-6 pb-10 md:pt-12 md:pb-14">
-            <p className="label animate-rise mb-5 flex items-center gap-2.5">
-              <span className="relative flex size-2">
-                <span className="absolute inset-0 rounded-full bg-brand-2 motion-safe:animate-ping" />
-                <span className="relative size-2 rounded-full bg-brand-2" />
-              </span>
-              Real-time party games · 1–12 players
-            </p>
-            <div className="grid items-end gap-6 md:grid-cols-[1.3fr_1fr]">
-              <h1 className="font-hero text-[2.1rem] leading-[1.02] font-extrabold tracking-[-0.025em] sm:text-5xl lg:text-[3.4rem]">
-                {LINES.map((line, i) => (
-                  <span key={line} className="animate-line block overflow-hidden pb-[0.08em]">
-                    <span
-                      className={i === LINES.length - 1 ? "text-brand-2" : i === 1 ? "text-muted" : undefined}
-                      style={{ animationDelay: `${80 + i * 110}ms` }}
-                    >
-                      {line}
-                    </span>
-                  </span>
-                ))}
-              </h1>
-              <div>
-                {/* No fade-in: this is the biggest text on first paint (the LCP element). */}
-                <p className="max-w-md text-lg text-muted">
-                  {CATALOG.length} games in the browser. Start a room for friends, play solo against bots, or take on
-                  today&apos;s daily challenge. Nothing to install.
-                </p>
-                <div className="mt-5 flex flex-wrap items-center gap-2" aria-hidden>
-                  {FEATURED.map((g, i) => (
-                    <span key={g.id} className="animate-pop" style={{ animationDelay: `${480 + i * 60}ms` }}>
-                      <span
-                        className="animate-float block"
-                        style={{ "--tilt": `${(i % 2 ? 1 : -1) * (2 + (i % 3))}deg`, animationDelay: `${-i * 0.8}s` } as React.CSSProperties}
-                      >
-                        <GameBadge id={g.id} accent={g.accent} size="sm" />
-                      </span>
-                    </span>
-                  ))}
-                  <span
-                    className="animate-pop ml-1 font-mono text-xs tracking-wider text-muted"
-                    style={{ animationDelay: `${480 + FEATURED.length * 60}ms` }}
-                  >
-                    +{CATALOG.length - FEATURED.length} more
-                  </span>
-                </div>
-              </div>
-            </div>
-          </section>
-
-          <section aria-label="Ways to play" className="grid gap-3 pb-20 md:grid-cols-3">
-            <Path
-              n={1}
-              Icon={Users}
-              title="Play with friends"
-              text="Make a room, send the link. 2–12 players, any phone or laptop."
-              accent="var(--color-volt)"
-              delay={420}
-              glass
-            >
-              <HomeActions />
-            </Path>
-
-            <Path
-              n={2}
-              Icon={Bot}
-              title="Play solo / vs bots"
-              text={`No room, no waiting: ${LOCAL_GAMES.length} games you can start right now.`}
-              accent="var(--color-cyan)"
-              delay={500}
-            >
-              <div className="flex flex-1 flex-col">
-                <div className="flex items-center gap-2" aria-hidden>
-                  {SOLO_PICKS.map((g, i) => (
-                    // Popping in (not painted in the first frame) keeps first paint fast.
-                    <span key={g.id} className="animate-pop" style={{ animationDelay: `${600 + i * 60}ms` }}>
-                      <GameBadge id={g.id} accent={g.accent} size="md" />
-                    </span>
-                  ))}
-                </div>
-                <p className="mt-3 min-h-[2.5rem] font-mono text-[11px] leading-5 text-muted">
-                  Trivia, Mine Rush, Sumo and more.
-                  <br />
-                  Practice bots fill the empty seats.
-                </p>
-                <Link href="/play" className="btn mt-auto w-full py-3">
-                  Pick a game
-                  <ArrowRight aria-hidden className="size-4" strokeWidth={2.25} />
-                </Link>
-              </div>
-            </Path>
-
-            <Path
-              n={3}
-              Icon={CalendarDays}
-              title="Daily challenge"
-              text="Three quick games, the same puzzles for everyone. Keep your streak."
-              accent="var(--color-brand)"
-              delay={580}
-            >
-              <DailyCard />
-            </Path>
-          </section>
-        </div>
-      </div>
-
+    <main className="w-full overflow-x-clip pb-24">
       <div className="mx-auto w-full max-w-6xl px-4 sm:px-6">
-        <section aria-labelledby="games-heading">
-          <div className="mb-5 flex items-end justify-between gap-4">
-            <div>
-              <p className="label mb-2">The library</p>
-              <h2 id="games-heading" className="font-hero text-2xl font-extrabold tracking-[-0.03em] sm:text-3xl">
-                The games
-              </h2>
-              <p className="mt-1 text-sm text-muted">Tap one to play it solo or with friends.</p>
-            </div>
-            <span className="hidden font-mono text-xs text-muted sm:block">
-              {CATALOG.filter((g) => g.original).length} Ruckus originals
+        <header className="flex items-center justify-between gap-3 py-4">
+          <Logo />
+          <nav className="flex items-center gap-2 text-sm font-bold">
+            <Link href="/play" className="btn border-2 px-3 py-1.5">
+              Play solo
+            </Link>
+            <Link href="/daily" className="btn hidden border-2 px-3 py-1.5 sm:inline-flex">
+              Daily
+            </Link>
+          </nav>
+        </header>
+
+        {/* ---------- hero ---------- */}
+        <section className="relative grid items-center gap-8 pt-6 pb-14 md:grid-cols-[1.1fr_1fr] md:pt-10 md:pb-20">
+          <div>
+            <p className="marker slap mb-2 inline-block text-2xl text-brand-2" style={{ "--tilt": "-3deg" } as React.CSSProperties}>
+              {CATALOG.length} games. zero sign-ups. full bawaal.
+            </p>
+            {/* The biggest text on first paint: no fade-in, so it paints immediately. */}
+            {/* Phones: Rux peeks in beside the headline (the big stage is for wider screens). */}
+            <span aria-hidden className="bob pointer-events-none absolute top-20 right-3 w-24 md:hidden" style={{ "--tilt": "8deg" } as React.CSSProperties}>
+              <Rux mood="wink" className="w-full" />
             </span>
+            <h1 className="font-hero text-[3.4rem] leading-[0.88] font-extrabold tracking-[-0.045em] sm:text-7xl lg:text-[5.6rem]">
+              Cause a{" "}
+              <span className="relative inline-block text-brand-2">
+                ruckus.
+                <svg aria-hidden viewBox="0 0 300 24" preserveAspectRatio="none" className="absolute -bottom-2 left-0 h-4 w-full sm:h-5">
+                  <path d="M4 16 C70 4 140 22 210 9 S285 8 296 13" fill="none" stroke="#ff4fa3" strokeWidth="7" strokeLinecap="round" />
+                </svg>
+              </span>
+            </h1>
+            <p className="mt-6 max-w-md text-lg text-muted">
+              Party games right in the browser. Start a room, drop the link in the group chat, and let it get loud. No app, no
+              login, no nonsense.
+            </p>
+            <div className="mt-7">
+              <HomeActions />
+            </div>
+            <div className="mt-6 flex flex-wrap gap-3">
+              <Link
+                href="/play"
+                className="stk lift slap flex items-center gap-3 px-4 py-3"
+                style={{ "--stk-bg": "var(--color-blue)", "--stk-fg": "#fff", "--tilt": "-2deg", "--lift-tilt": "-3deg", animationDelay: "300ms" } as React.CSSProperties}
+              >
+                <span aria-hidden className="text-3xl leading-none">
+                  🤖
+                </span>
+                <span>
+                  <span className="block font-hero text-lg leading-tight font-extrabold">Play solo / vs bots</span>
+                  <span className="block text-sm font-semibold opacity-85">{LOCAL_GAMES.length} games, start right now</span>
+                </span>
+              </Link>
+              <DailySticker />
+            </div>
           </div>
-          <HomeGames localIds={LOCAL_IDS} />
+
+          {/* Rux on stage, surrounded by game stickers. Decorative. */}
+          <div aria-hidden className="relative mx-auto hidden aspect-square w-full max-w-[30rem] md:block">
+            {STAGE.map(([id, pos, tilt, delay]) => (
+              <span key={id} className={`absolute ${pos} slap`} style={{ "--tilt": tilt, animationDelay: `${delay}ms` } as React.CSSProperties}>
+                {/* eslint-disable-next-line @next/next/no-img-element -- tiny static SVG */}
+                <img
+                  src={`/covers/${id}.svg`}
+                  alt=""
+                  width={320}
+                  height={200}
+                  className="block w-full rounded-2xl border-[3px] border-paper shadow-[5px_6px_0_rgb(0_0_0/0.55)]"
+                />
+              </span>
+            ))}
+            <div className="absolute inset-x-0 top-1/2 mx-auto w-[64%] -translate-y-1/2">
+              <span className="bob block" style={{ "--tilt": "-4deg" } as React.CSSProperties}>
+                <Rux mood="shout" megaphone className="w-full drop-shadow-[6px_8px_0_rgb(0_0_0/0.5)]" />
+              </span>
+              <span
+                className="slap marker absolute -top-10 right-0 rounded-2xl border-[3px] border-ink bg-paper px-3 py-1 text-2xl text-ink shadow-[4px_5px_0_#000]"
+                style={{ "--tilt": "6deg", animationDelay: "900ms" } as React.CSSProperties}
+              >
+                oye! game time 📣
+              </span>
+            </div>
+          </div>
         </section>
+
+        {/* ---------- what to play ---------- */}
+        <HomeLibrary localIds={LOCAL_IDS} />
+
+        <footer className="mt-20 flex flex-col items-center gap-2 text-center">
+          <Rux mood="sleepy" className="h-20 w-16" />
+          <p className="marker text-2xl text-muted">bas itna hi. ab jao, khelo.</p>
+          <p className="text-xs text-muted">Free · no sign-up · made for friends</p>
+        </footer>
       </div>
     </main>
-  );
-}
-
-function Path({
-  n,
-  Icon,
-  title,
-  text,
-  accent,
-  delay,
-  glass,
-  children,
-}: {
-  n: number;
-  Icon: typeof Users;
-  title: string;
-  text: string;
-  accent: string;
-  delay: number;
-  glass?: boolean;
-  children: ReactNode;
-}) {
-  return (
-    <div
-      className={`${glass ? "glass" : "card"} lit-edge animate-rise flex flex-col p-5`}
-      style={{ "--accent": accent, animationDelay: `${delay}ms` } as React.CSSProperties}
-    >
-      <div className="mb-4 flex items-start gap-3">
-        <span
-          aria-hidden
-          className="grid size-10 shrink-0 place-items-center rounded-lg border border-line bg-ink"
-          style={{ color: accent }}
-        >
-          <Icon className="size-[18px]" strokeWidth={1.75} />
-        </span>
-        <div className="min-w-0">
-          <div className="font-mono text-[11px] tracking-[0.14em] text-muted">0{n}</div>
-          <h2 className="font-display text-xl leading-tight font-bold">{title}</h2>
-        </div>
-      </div>
-      <p className="mb-4 text-sm text-muted">{text}</p>
-      <div className="flex flex-1 flex-col">{children}</div>
-    </div>
   );
 }

@@ -1,145 +1,66 @@
 "use client";
 
-import { useRef } from "react";
 import { CATEGORY_LABEL, type GameMeta } from "@/games/catalog";
-import { GameBadge } from "./GameBadge";
 
+/** A game as a sticker: its cover art up top, then name, a line, and who it's for. */
 export function GameCard({
   game,
   selected,
   onSelect,
   disabled,
+  index = 0,
 }: {
   game: GameMeta;
   selected?: boolean;
   onSelect?: () => void;
   disabled?: boolean;
-  /** Position in the grid (the browser staggers the entrance). */
+  /** Position in the grid (alternates the hover tilt). */
   index?: number;
 }) {
-  const ref = useRef<HTMLElement>(null);
-  const frame = useRef(0);
   const players =
     game.minPlayers === game.maxPlayers ? `${game.minPlayers}` : `${game.minPlayers}–${game.maxPlayers}`;
-
-  // Tilt + spotlight for fine pointers: CSS variables feed transforms only.
-  const onPointerMove = (e: React.PointerEvent) => {
-    if (e.pointerType !== "mouse") return;
-    const el = ref.current;
-    if (!el) return;
-    const { clientX, clientY } = e;
-    cancelAnimationFrame(frame.current);
-    frame.current = requestAnimationFrame(() => {
-      const r = el.getBoundingClientRect();
-      const px = (clientX - r.left) / r.width;
-      const py = (clientY - r.top) / r.height;
-      el.dataset.tilting = "true";
-      el.style.setProperty("--mx", `${(px * r.width).toFixed(0)}px`);
-      el.style.setProperty("--my", `${(py * r.height).toFixed(0)}px`);
-      el.style.setProperty("--rx", `${((0.5 - py) * 5).toFixed(2)}deg`);
-      el.style.setProperty("--ry", `${((px - 0.5) * 7).toFixed(2)}deg`);
-    });
-  };
-  const onPointerLeave = () => {
-    const el = ref.current;
-    cancelAnimationFrame(frame.current);
-    if (!el) return;
-    delete el.dataset.tilting;
-    el.style.setProperty("--rx", "0deg");
-    el.style.setProperty("--ry", "0deg");
-  };
-
-  const tags = (cls: string) => (
-    <div aria-hidden className={`flex flex-wrap gap-1 font-mono text-[10px] font-medium tracking-[0.1em] uppercase ${cls}`}>
-      {game.isNew && (
-        <span className="rounded-sm px-1.5 py-0.5 text-ink" style={{ background: game.accent }}>
-          New
-        </span>
-      )}
-      {/* At most three tags: how you play it (teams / on a call) beats "original". */}
-      {game.call ? (
-        <span className="rounded-sm border border-sky-300/25 bg-sky-300/5 px-1.5 py-0.5 text-sky-200/90">On a call</span>
-      ) : game.teams ? (
-        <span className="rounded-sm border border-rose-300/25 bg-rose-300/5 px-1.5 py-0.5 text-rose-200/90">Teams</span>
-      ) : (
-        game.original && (
-          <span className="rounded-sm border border-brand-2/20 bg-brand-2/5 px-1.5 py-0.5 text-brand-2/85">Original</span>
-        )
-      )}
-      <span className="rounded-sm border border-line px-1.5 py-0.5 text-muted">{CATEGORY_LABEL[game.category]}</span>
-    </div>
-  );
+  const kind = game.call ? "On a call" : game.teams ? "Teams" : CATEGORY_LABEL[game.category];
 
   const body = (
     <>
-      <span aria-hidden className="spot" />
-      {/* Phones: badge beside the text, compact. Wider: badge on top, tags top-right. */}
-      <div className="flex items-start gap-3.5 sm:block">
-        <div className="flex items-start justify-between gap-3">
-          <GameBadge id={game.id} accent={game.accent} size="md" active={selected} />
-          {tags("hidden sm:flex justify-end")}
-        </div>
-        <div className="min-w-0 flex-1">
-          <div className="font-display text-lg leading-tight font-bold tracking-tight sm:mt-3.5">
-            {game.name}
-            <span className="sr-only">
-              {" "}
-              ({CATEGORY_LABEL[game.category]}
-              {game.original ? ", original" : ""}
-              {game.isNew ? ", new" : ""}
-              {game.teams ? ", team game" : ""}
-              {game.call ? ", made for video calls" : ""})
-            </span>
-          </div>
-          <p className="mt-1 text-sm text-muted">{game.tagline}</p>
-          <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-2 font-mono text-[11px] tracking-wide text-muted sm:mt-3.5 sm:flex-nowrap">
-            <span
-              aria-hidden
-              className="accent-rule hidden h-px flex-1 sm:block"
-              style={{ background: `linear-gradient(90deg, ${game.accent}, transparent)` }}
-            />
-            {tags("sm:hidden")}
-            <span className="shrink-0">
-              <span className="text-text/90">{players}</span> players
-            </span>
-            <span className="shrink-0">
-              ~<span className="text-text/90">{game.minutes}</span> min
-            </span>
-          </div>
-        </div>
-      </div>
+      <span className="gc-cover">
+        {/* Static, lazily loaded art (see scripts/gen-covers.tsx): costs nothing until on screen. */}
+        {/* eslint-disable-next-line @next/next/no-img-element -- tiny static SVGs; next/image adds nothing */}
+        <img src={`/covers/${game.id}.svg`} alt="" width={320} height={200} loading="lazy" decoding="async" draggable={false} />
+        {game.isNew && <span className="gc-new marker">new!</span>}
+      </span>
+      <span className="block px-3 pt-2.5 pb-3">
+        <span className="block font-hero text-lg leading-tight font-extrabold tracking-[-0.01em]">{game.name}</span>
+        <span className="mt-0.5 line-clamp-2 block text-sm leading-snug text-muted">{game.tagline}</span>
+        <span className="mt-2 flex flex-wrap items-center gap-1.5 text-xs">
+          <span className="gc-chip">
+            <b>{players}</b> players
+          </span>
+          <span className="gc-chip">~{game.minutes} min</span>
+          <span className="gc-chip" style={{ color: game.accent }}>
+            {kind}
+          </span>
+        </span>
+        <span className="sr-only">
+          {game.original ? ", a Ruckus original" : ""}
+          {game.isNew ? ", new" : ""}
+        </span>
+      </span>
     </>
   );
 
-  const style = {
-    "--accent": game.accent,
-  } as React.CSSProperties;
-  const cls = `card game-card badge-trigger relative block h-full w-full p-4 text-left ${selected ? "bg-panel-2" : ""}`;
+  const style = { "--accent": game.accent, "--lift-tilt": index % 2 ? "1deg" : "-1deg" } as React.CSSProperties;
+  // A column from the top: buttons centre their content vertically by default.
+  const cls = `game-card lift flex h-full w-full flex-col justify-start overflow-hidden text-left ${selected ? "is-selected" : ""}`;
   if (!onSelect) {
     return (
-      <div
-        ref={ref as React.RefObject<HTMLDivElement>}
-        className={cls}
-        style={style}
-        onPointerMove={onPointerMove}
-        onPointerLeave={onPointerLeave}
-      >
+      <div className={cls} style={style}>
         {body}
       </div>
     );
   }
   return (
-    <button
-      ref={ref as React.RefObject<HTMLButtonElement>}
-      type="button"
-      onClick={onSelect}
-      disabled={disabled}
-      aria-pressed={selected}
-      className={`${cls} disabled:cursor-default`}
-      style={style}
-      onPointerMove={onPointerMove}
-      onPointerLeave={onPointerLeave}
-    >
+    <button type="button" onClick={onSelect} disabled={disabled} aria-pressed={selected} className={`${cls} disabled:cursor-default`} style={style}>
       {body}
     </button>
   );

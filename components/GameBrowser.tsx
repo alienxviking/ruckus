@@ -82,7 +82,7 @@ export function GameBrowser({
                   aria-hidden
                   layoutId={`${uid}-tab`}
                   transition={GLIDE}
-                  className="absolute inset-0 rounded-lg bg-brand-2 shadow-[0_0_24px_-6px_var(--color-brand-2)]"
+                  className="absolute inset-0 rounded-lg bg-brand-2 shadow-[2px_3px_0_#6c8a00]"
                 />
               )}
               <span className="relative">
@@ -134,11 +134,11 @@ export function GameBrowser({
                     <span
                       key={g.id}
                       aria-hidden
-                      className="select-ring pointer-events-none absolute -inset-px z-10 rounded-[0.75rem]"
-                      style={{
-                        boxShadow: `0 0 0 1.5px ${g.accent}, 0 0 32px -6px ${g.accent}, inset 0 0 24px -12px ${g.accent}`,
-                      }}
-                    />
+                      className="slap marker pointer-events-none absolute -top-2.5 -right-2 z-10 rounded-lg border-2 border-ink bg-brand-2 px-2 pb-0.5 text-lg leading-tight text-ink shadow-[2px_3px_0_#14101f]"
+                      style={{ "--tilt": "7deg" } as React.CSSProperties}
+                    >
+                      picked!
+                    </span>
                   )}
                 </m.div>
               );
