@@ -7,6 +7,7 @@ import type { useRoom } from "@/lib/useRoom";
 import { Trophy } from "lucide-react";
 import { PlayerChip, useSecondsLeft } from "../game-ui";
 import { QuickPlaySwitch } from "./Lobby";
+import { HowToPlay } from "./HowToPlay";
 import { GameBadge } from "../GameBadge";
 import { Magnetic } from "../Magnetic";
 import { Confetti } from "../Confetti";
@@ -55,6 +56,7 @@ export function GameStage({
           )}
         </h1>
         <div className="flex shrink-0 items-center gap-2">
+          <HowToPlay gameId={room.gameId} compact />
           {isHost && !room.result && (
             <button
               className="btn px-3 py-1.5 text-sm"

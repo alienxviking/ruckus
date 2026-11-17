@@ -5,6 +5,7 @@ import type { ClientMsg, RoomView } from "@/shared/types";
 import { GameBadge } from "../GameBadge";
 import { GameBrowser } from "../GameBrowser";
 import { Magnetic } from "../Magnetic";
+import { HowToPlay } from "./HowToPlay";
 import { useEffect, useRef, useState } from "react";
 
 export function Lobby({
@@ -69,6 +70,7 @@ export function Lobby({
               </li>
             ))}
           </ul>
+          <HowToPlay gameId={game.id} className="mt-4" />
         </div>
         <div className="flex flex-col justify-end gap-2 sm:w-52">
           {isHost ? (
