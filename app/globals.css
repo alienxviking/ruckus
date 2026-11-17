@@ -1075,12 +1075,12 @@ body::after {
   }
 }
 
-/* ---------- hero backdrop candidates (see components/HeroBackdrop.tsx) ---------- */
+/* ---------- hero backdrop: blobs + lights + doodles (see components/HeroBackdrop.tsx) ---------- */
 @layer components {
   /* Doodles: marker scribbles that "boil" like stop-motion and drift a little. */
   .hero-field .bd-doodle {
     position: absolute;
-    opacity: 0.55;
+    opacity: 0.5;
     rotate: var(--rot);
     animation:
       bd-boil 0.42s steps(1) infinite,
@@ -1090,20 +1090,6 @@ body::after {
     display: block;
     width: 100%;
     filter: drop-shadow(2px 2px 0 rgb(0 0 0 / 0.6));
-  }
-  /* Stickers: game icons on colour tiles, rising slowly from the bottom and spinning. */
-  .hero-field .bd-sticker {
-    position: absolute;
-    bottom: -90px;
-    display: grid;
-    place-items: center;
-    aspect-ratio: 1;
-    border: 3px solid var(--color-paper);
-    border-radius: 0.9rem;
-    color: #14101f;
-    opacity: 0.4;
-    box-shadow: 3px 4px 0 rgb(0 0 0 / 0.5);
-    animation: bd-rise 30s linear infinite;
   }
   /* Lights: stage beams sweeping from the top, plus twinkles. */
   .hero-field .bd-beam {
@@ -1116,7 +1102,7 @@ body::after {
     background: linear-gradient(180deg, color-mix(in oklab, var(--c) 40%, transparent), transparent 85%);
     clip-path: polygon(46% 0, 54% 0, 100% 100%, 0 100%);
     mix-blend-mode: screen;
-    opacity: 0.55;
+    opacity: 0.45;
     animation: bd-sweep 7s ease-in-out infinite alternate;
   }
   .hero-field .bd-spark {
@@ -1131,7 +1117,7 @@ body::after {
     position: absolute;
     width: 26rem;
     height: 22rem;
-    opacity: 0.32;
+    opacity: 0.26;
     filter: blur(40px);
     border-radius: 42% 58% 63% 37% / 41% 44% 56% 59%;
     animation: bd-morph 14s ease-in-out infinite alternate;
@@ -1163,6 +1149,23 @@ body::after {
     inset: 0;
     background: radial-gradient(circle, rgb(5 6 10 / 0.9) 1.6px, transparent 2.2px) 0 0 / 7px 7px;
   }
+  /* Phones: the same party, quieter, so the text stays easy to read. */
+  @media (max-width: 640px) {
+    .hero-field .bd-blob {
+      width: 16rem;
+      height: 14rem;
+      opacity: 0.18;
+    }
+    .hero-field .bd-beam {
+      opacity: 0.28;
+    }
+    .hero-field .bd-doodle {
+      opacity: 0.38;
+    }
+    .hero-field .bd-more {
+      display: none;
+    }
+  }
 }
 @keyframes bd-boil {
   0% {
@@ -1178,14 +1181,6 @@ body::after {
 @keyframes bd-float {
   to {
     translate: 0 -14px;
-  }
-}
-@keyframes bd-rise {
-  from {
-    transform: translateY(0) rotate(var(--rot));
-  }
-  to {
-    transform: translateY(-130vh) rotate(calc(var(--rot) + 220deg));
   }
 }
 @keyframes bd-sweep {

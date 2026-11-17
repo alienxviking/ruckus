@@ -1,15 +1,13 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { GameGlyph } from "./game-icons";
+import { useEffect, useRef } from "react";
 
 /**
- * The landing hero's moving backdrop. Four candidates while we pick one, switchable with
- * ?bg=doodles|stickers|lights|blobs|grid. CSS keyframes on transforms/opacity only, paused
- * when off-screen or the tab is hidden, static for reduced motion.
+ * The landing hero's moving backdrop, three layers deep: lava-lamp colour blobs under a print
+ * halftone, stage lights sweeping through with a few twinkles, and marker doodles on top that
+ * jitter like stop-motion. CSS keyframes on transforms/opacity only, paused whenever the hero
+ * is off-screen or the tab is hidden; static for reduced motion.
  */
-type Variant = "doodles" | "stickers" | "lights" | "blobs" | "grid";
-const VARIANTS: Variant[] = ["doodles", "stickers", "lights", "blobs", "grid"];
 
 const C = ["#c6f432", "#ff4fa3", "#4f7bff", "#ffd23f", "#4ce0ff"];
 
@@ -29,132 +27,19 @@ const DOODLES = [
   "M12 3 V15 M12 20 V21", // !
 ];
 
-function hashCount(n: number, seed: number) {
-  return Array.from({ length: n }, (_, i) => {
-    const r = (k: number) => {
-      const x = Math.sin((i + 1) * 9301 + seed * 49297 + k * 233) * 10000;
-      return x - Math.floor(x);
-    };
-    return r;
+/** Stable pseudo-random numbers per item, so server and client render the same scatter. */
+function scatter(n: number, seed: number) {
+  return Array.from({ length: n }, (_, i) => (k: number) => {
+    const x = Math.sin((i + 1) * 9301 + seed * 49297 + k * 233) * 10000;
+    return x - Math.floor(x);
   });
 }
 
-function Doodles() {
-  const items = hashCount(22, 1);
-  return (
-    <>
-      {items.map((r, i) => (
-        <span
-          key={i}
-          className="bd-doodle"
-          style={
-            {
-              left: `${r(1) * 96}%`,
-              top: `${r(2) * 92}%`,
-              width: `${34 + r(3) * 44}px`,
-              color: C[i % C.length],
-              "--rot": `${(r(4) - 0.5) * 70}deg`,
-              animationDelay: `${-r(5) * 2}s, ${-r(6) * 9}s`,
-            } as React.CSSProperties
-          }
-        >
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
-            <path d={DOODLES[i % DOODLES.length]} />
-          </svg>
-        </span>
-      ))}
-    </>
-  );
-}
-
-const STICKER_IDS = ["sumo", "trivia", "tug", "flags", "puck", "sketch", "blitz", "hotseat", "salvo", "snakes", "pixels", "smuggle", "lava", "potato"];
-
-function Stickers() {
-  const items = hashCount(STICKER_IDS.length, 2);
-  return (
-    <>
-      {items.map((r, i) => (
-        <span
-          key={i}
-          className="bd-sticker"
-          style={
-            {
-              left: `${(i / STICKER_IDS.length) * 100 + r(1) * 5}%`,
-              width: `${46 + r(2) * 34}px`,
-              background: C[i % C.length],
-              "--rot": `${(r(3) - 0.5) * 50}deg`,
-              animationDuration: `${26 + r(4) * 22}s`,
-              animationDelay: `${-r(5) * 40}s`,
-            } as React.CSSProperties
-          }
-        >
-          <GameGlyph id={STICKER_IDS[i]} className="size-[62%]" />
-        </span>
-      ))}
-    </>
-  );
-}
-
-function Lights() {
-  const sparks = hashCount(28, 3);
-  return (
-    <>
-      {[0, 1, 2, 3].map((i) => (
-        <span
-          key={i}
-          className="bd-beam"
-          style={
-            {
-              left: `${12 + i * 25}%`,
-              "--c": C[i],
-              animationDuration: `${6 + i * 1.7}s`,
-              animationDelay: `${-i * 1.3}s`,
-            } as React.CSSProperties
-          }
-        />
-      ))}
-      {sparks.map((r, i) => (
-        <span
-          key={`s${i}`}
-          className="bd-spark"
-          style={{ left: `${r(1) * 100}%`, top: `${r(2) * 90}%`, background: C[i % C.length], animationDelay: `${-r(3) * 3}s` } as React.CSSProperties}
-        />
-      ))}
-    </>
-  );
-}
-
-function Blobs() {
-  return (
-    <>
-      {[0, 1, 2, 3].map((i) => (
-        <span key={i} className={`bd-blob bd-blob-${i}`} style={{ background: C[i] } as React.CSSProperties} />
-      ))}
-      <span className="bd-halftone" />
-    </>
-  );
-}
-
-function Grid() {
-  return (
-    <>
-      <div className="aurora aurora-a" />
-      <div className="aurora aurora-b" />
-      <div className="aurora aurora-c" />
-      <div className="floor" />
-      <div className="scan" />
-    </>
-  );
-}
+const DOODLE_SPOTS = scatter(18, 1);
+const SPARKS = scatter(22, 3);
 
 export function HeroBackdrop() {
   const ref = useRef<HTMLDivElement>(null);
-  const [variant, setVariant] = useState<Variant>("doodles");
-
-  useEffect(() => {
-    const v = new URLSearchParams(window.location.search).get("bg") as Variant | null;
-    if (v && VARIANTS.includes(v)) queueMicrotask(() => setVariant(v));
-  }, []);
 
   useEffect(() => {
     const el = ref.current;
@@ -176,12 +61,55 @@ export function HeroBackdrop() {
   }, []);
 
   return (
-    <div ref={ref} aria-hidden className={`hero-field bd-${variant}`}>
-      {variant === "doodles" && <Doodles />}
-      {variant === "stickers" && <Stickers />}
-      {variant === "lights" && <Lights />}
-      {variant === "blobs" && <Blobs />}
-      {variant === "grid" && <Grid />}
+    <div ref={ref} aria-hidden className="hero-field bd-mix">
+      {/* 1. Lava-lamp colour wash under a print halftone. */}
+      {[0, 1, 2, 3].map((i) => (
+        <span key={`b${i}`} className={`bd-blob bd-blob-${i}`} style={{ background: C[i] }} />
+      ))}
+      <span className="bd-halftone" />
+      {/* 2. Stage lights sweeping through, and a few twinkles. */}
+      {[0, 1, 2, 3].map((i) => (
+        <span
+          key={`l${i}`}
+          className="bd-beam"
+          style={
+            {
+              left: `${12 + i * 25}%`,
+              "--c": C[i],
+              animationDuration: `${6 + i * 1.7}s`,
+              animationDelay: `${-i * 1.3}s`,
+            } as React.CSSProperties
+          }
+        />
+      ))}
+      {SPARKS.map((r, i) => (
+        <span
+          key={`s${i}`}
+          className="bd-spark"
+          style={{ left: `${r(1) * 100}%`, top: `${r(2) * 90}%`, background: C[i % C.length], animationDelay: `${-r(3) * 3}s` }}
+        />
+      ))}
+      {/* 3. Marker doodles on top, boiling like stop-motion. */}
+      {DOODLE_SPOTS.map((r, i) => (
+        <span
+          key={`d${i}`}
+          className={`bd-doodle ${i >= 9 ? "bd-more" : ""}`}
+          style={
+            {
+              left: `${r(1) * 96}%`,
+              top: `${r(2) * 92}%`,
+              width: `${30 + r(3) * 40}px`,
+              color: C[i % C.length],
+              "--rot": `${(r(4) - 0.5) * 70}deg`,
+              animationDelay: `${-r(5) * 2}s, ${-r(6) * 9}s`,
+            } as React.CSSProperties
+          }
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+            <path d={DOODLES[i % DOODLES.length]} />
+          </svg>
+        </span>
+      ))}
     </div>
   );
 }
