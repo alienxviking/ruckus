@@ -5,6 +5,7 @@ import type { ClientMsg, RoomView } from "@/shared/types";
 import { GameBadge } from "../GameBadge";
 import { GameBrowser } from "../GameBrowser";
 import { Magnetic } from "../Magnetic";
+import { useEffect, useRef, useState } from "react";
 
 export function Lobby({
   room,
@@ -21,9 +22,23 @@ export function Lobby({
   const tooFew = online < game.minPlayers;
   const tooMany = online > game.maxPlayers;
 
+  // When the big Start button scrolls out of view (the host is browsing games further
+  // down), a floating pill offers Start right where they are.
+  const heroRef = useRef<HTMLDivElement>(null);
+  const [heroHidden, setHeroHidden] = useState(false);
+  useEffect(() => {
+    const el = heroRef.current;
+    if (!el || !isHost) return;
+    const io = new IntersectionObserver(([e]) => setHeroHidden(!e.isIntersecting), { threshold: 0.15 });
+    io.observe(el);
+    return () => io.disconnect();
+  }, [isHost]);
+  const showPill = isHost && heroHidden;
+
   return (
     <div className="flex flex-col gap-4">
       <div
+        ref={heroRef}
         className="card lit-edge animate-rise relative grid gap-5 overflow-hidden p-5 transition-[border-color] duration-300 sm:grid-cols-[1fr_auto] sm:p-6"
         style={
           {
@@ -106,6 +121,36 @@ export function Lobby({
           onSelect={(g) => isHost && send({ t: "pick", gameId: g.id })}
         />
       </div>
+
+      {isHost && (
+        <div
+          aria-hidden={!showPill}
+          inert={!showPill}
+          className={`fixed bottom-4 left-4 right-28 z-30 transition-[translate,opacity] duration-300 ease-[var(--ease-out-expo)] sm:right-auto sm:left-1/2 sm:w-[min(26rem,calc(100%-2rem))] sm:-translate-x-1/2 lg:bottom-6 ${
+            showPill ? "translate-y-0 opacity-100" : "pointer-events-none translate-y-6 opacity-0"
+          }`}
+        >
+          <div
+            className="lit-edge flex items-center gap-3 rounded-full border bg-panel/95 backdrop-blur-md py-1.5 pr-1.5 pl-2 shadow-lg shadow-black/50"
+            style={{ borderColor: game.accent + "66", "--accent": game.accent } as React.CSSProperties}
+          >
+            <GameBadge key={game.id} id={game.id} accent={game.accent} size="sm" className="animate-pop shrink-0" />
+            <div key={`n-${game.id}`} className="animate-rise min-w-0 flex-1 leading-tight">
+              <div className="truncate font-display text-sm font-bold">{game.name}</div>
+              <div className="truncate font-mono text-[10px] text-muted">
+                {tooFew ? `Needs ${game.minPlayers}+ players` : `${online} ready`}
+              </div>
+            </div>
+            <button
+              className="btn btn-primary shrink-0 rounded-full px-4 py-2"
+              disabled={tooFew}
+              onClick={() => send({ t: "start" })}
+            >
+              Start
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
