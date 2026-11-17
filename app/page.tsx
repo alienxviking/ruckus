@@ -8,6 +8,7 @@ import { Rux } from "@/components/Rux";
 import { DailySticker } from "@/components/home/DailySticker";
 import { RuxIntro } from "@/components/home/RuxIntro";
 import { HomeLibrary } from "@/components/home/HomeLibrary";
+import { WhenIdle } from "@/components/home/WhenIdle";
 import { LOCAL_GAMES } from "@/lib/local-games";
 
 const LOCAL_IDS = LOCAL_GAMES.map((g) => g.id);
@@ -111,7 +112,10 @@ export default function Home() {
 
       <div className="mx-auto w-full max-w-6xl px-4 sm:px-6">
         {/* ---------- what to play ---------- */}
-        <HomeLibrary localIds={LOCAL_IDS} />
+        {/* Below the fold and heavy (66 cards): built once the first screen has settled. */}
+        <WhenIdle minHeight="220vh">
+          <HomeLibrary localIds={LOCAL_IDS} />
+        </WhenIdle>
 
         <footer className="mt-20 flex flex-col items-center gap-2 text-center">
           <Rux mood="sleepy" className="h-20 w-16" />

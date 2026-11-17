@@ -31,7 +31,9 @@ const DOODLES = [
 function scatter(n: number, seed: number) {
   return Array.from({ length: n }, (_, i) => (k: number) => {
     const x = Math.sin((i + 1) * 9301 + seed * 49297 + k * 233) * 10000;
-    return x - Math.floor(x);
+    // Rounded: the browser rounds long decimals in style attributes, which would make the
+    // server's HTML and the client's first render disagree (a hydration mismatch).
+    return Math.round((x - Math.floor(x)) * 1000) / 1000;
   });
 }
 
@@ -64,7 +66,7 @@ export function HeroBackdrop() {
     <div ref={ref} aria-hidden className="hero-field bd-mix">
       {/* 1. Lava-lamp colour wash under a print halftone. */}
       {[0, 1, 2, 3].map((i) => (
-        <span key={`b${i}`} className={`bd-blob bd-blob-${i}`} style={{ background: C[i] }} />
+        <span key={`b${i}`} className={`bd-blob bd-blob-${i}`} style={{ backgroundColor: C[i] }} />
       ))}
       <span className="bd-halftone" />
       {/* 2. Stage lights sweeping through, and a few twinkles. */}
@@ -86,7 +88,12 @@ export function HeroBackdrop() {
         <span
           key={`s${i}`}
           className="bd-spark"
-          style={{ left: `${r(1) * 100}%`, top: `${r(2) * 90}%`, background: C[i % C.length], animationDelay: `${-r(3) * 3}s` }}
+          style={{
+            left: `${(r(1) * 100).toFixed(1)}%`,
+            top: `${(r(2) * 90).toFixed(1)}%`,
+            backgroundColor: C[i % C.length],
+            animationDelay: `${(-r(3) * 3).toFixed(2)}s`,
+          }}
         />
       ))}
       {/* 3. Marker doodles on top, boiling like stop-motion. */}
@@ -96,12 +103,12 @@ export function HeroBackdrop() {
           className={`bd-doodle ${i >= 9 ? "bd-more" : ""}`}
           style={
             {
-              left: `${r(1) * 96}%`,
-              top: `${r(2) * 92}%`,
-              width: `${30 + r(3) * 40}px`,
+              left: `${(r(1) * 96).toFixed(1)}%`,
+              top: `${(r(2) * 92).toFixed(1)}%`,
+              width: `${Math.round(30 + r(3) * 40)}px`,
               color: C[i % C.length],
-              "--rot": `${(r(4) - 0.5) * 70}deg`,
-              animationDelay: `${-r(5) * 2}s, ${-r(6) * 9}s`,
+              "--rot": `${Math.round((r(4) - 0.5) * 70)}deg`,
+              animationDelay: `${(-r(5) * 2).toFixed(2)}s, ${(-r(6) * 9).toFixed(2)}s`,
             } as React.CSSProperties
           }
         >
