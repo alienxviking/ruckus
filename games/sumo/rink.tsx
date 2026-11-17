@@ -20,7 +20,7 @@
 import { useEffect, useEffectEvent, useRef, type PointerEvent, type ReactNode, type RefObject } from "react";
 import type { SumoView } from "./server";
 import type { Kin } from "./physics";
-import type { SumoPredictor } from "./predict";
+import type { PredictedContact, SumoPredictor, World, WorldDisc } from "./predict";
 import {
   CENTER,
   DASH_CD_MS,
@@ -46,6 +46,9 @@ import {
   type DiscTuple,
   type FxTuple,
   type Snap,
+  decodeStick,
+  rinkRadius,
+  HIT_FX_MIN,
 } from "./shared";
 import { Spring2D, Timeline, debugFrame } from "../snakes/netsmooth";
 
@@ -54,6 +57,8 @@ const TAU = Math.PI * 2;
 const DELAY_MS = 100;
 /** Your disc: server corrections fade out like a critically damped spring with this time constant (ms; ~95% gone in 5x)... */
 export const CORR_MS = 100;
+/** Other discs: their corrections are bigger (dead reckoning), so they fade a little slower. */
+export const OTHERS_CORR_MS = 140;
 /** ...unless they're this big (units): then it just jumps. */
 export const CORR_SNAP = 160;
 /** Late frames: keep sliding along the last known velocity for at most this long. */
@@ -76,8 +81,8 @@ const easeOutBack = (t: number) => 1 + 2.4 * Math.pow(t - 1, 3) + 1.4 * Math.pow
 
 // ---------- frames & clock ----------
 
-/** A disc tuple with the trailing zeros put back. */
-type Full = [number, number, number, number, number, number, number];
+/** A disc tuple with the trailing zeros put back (the stick: -1 when centred / not sent). */
+type Full = [number, number, number, number, number, number, number, number];
 
 interface Frame {
   n: number;
@@ -88,13 +93,13 @@ interface Frame {
   u: Snap["u"];
   fx: FxTuple[] | null;
   /** Input acknowledgements carried by the snapshot (see Snap.a). */
-  fxAcks?: [number, number, number][];
+  fxAcks?: [number, number, number, number?][];
 }
 
 function toFrame(s: Snap): Frame {
   const d: (Full | undefined)[] = [];
   for (const p of s.p as DiscTuple[]) {
-    if (Array.isArray(p) && p.length >= 5 && p[0] >= 0 && p[0] < 16) d[p[0]] = [p[0], p[1], p[2], p[3], p[4], p[5] ?? 0, p[6] ?? 0];
+    if (Array.isArray(p) && p.length >= 5 && p[0] >= 0 && p[0] < 16) d[p[0]] = [p[0], p[1], p[2], p[3], p[4], p[5] ?? 0, p[6] ?? 0, p[7] ?? -1];
   }
   return {
     n: s.n,
@@ -273,6 +278,24 @@ interface Scene {
   wx: number[];
   wy: number[];
   wr: number[];
+  /**
+   * A player sees everything at one moment, the present (`rt` = your clock + lead): the whole rink
+   * predicted from the newest snapshot (predict.ts), contacts included. Spectators watch the
+   * smooth past playback instead.
+   */
+  present: boolean;
+  mySlot: number;
+  /** The newest snapshot as a rink to predict from. */
+  worldBase: World | null;
+  /** The rink predicted for this frame, per slot. */
+  world: (Kin | undefined)[];
+  /** Other discs' leftover corrections, per slot (yours is `corr`). */
+  springs: Spring2D[];
+  /** Where each disc was drawn lately (render time), for trails and effects. */
+  hist: { t: number; x: number; y: number; vx: number; vy: number }[][];
+  contacts: PredictedContact[];
+  /** Render time each pair last got a hit effect from the prediction ("a,b"). */
+  localHit: Map<string, number>;
 }
 
 export function newScene(): Scene {
@@ -324,8 +347,30 @@ export function newScene(): Scene {
     wx: [],
     wy: [],
     wr: [],
+    present: false,
+    mySlot: -1,
+    worldBase: null,
+    world: [],
+    springs: [],
+    hist: [],
+    contacts: [],
+    localHit: new Map(),
   };
 }
+
+/** A frame as a rink to predict from. */
+function worldOf(f: Frame): World {
+  const discs: WorldDisc[] = [];
+  for (const t of f.d) {
+    if (!t) continue;
+    const [ix, iy] = t[7] >= 0 ? decodeStick(t[7]) : [0, 0];
+    discs.push({ slot: t[0], x: t[1], y: t[2], vx: t[3], vy: t[4], ix, iy, heavy: (t[5] & F_HEAVY) !== 0 });
+  }
+  return { n: f.n, t: f.t, r: f.r, discs };
+}
+
+const springOf = (sc: Scene, slot: number) =>
+  slot === sc.mySlot ? sc.corr : (sc.springs[slot] ??= new Spring2D(OTHERS_CORR_MS));
 
 /** Your side of a frame: the predictor and who you are (players only). */
 export interface Mine {
@@ -334,23 +379,26 @@ export interface Mine {
   data: RinkData;
 }
 
-const scratch: Kin = { x: 0, y: 0, vx: 0, vy: 0 };
-const scratch2: Kin = { x: 0, y: 0, vx: 0, vy: 0 };
 
 /** Hand a frame to your predictor: acknowledgements, your disc's newest state, your fall. */
 function feedMine(sc: Scene, f: Frame, newest: boolean, prev: Frame | undefined, me: Mine, now: number) {
   const { pred, slot } = me;
-  // What you see right now, before this frame changes anything. Acknowledgements move your replay
-  // too (an input landed earlier or later than guessed: on a jittery uplink, by 100+ ms), so that
-  // change has to be blended out like any other correction, not shown as a jump.
+  sc.mySlot = slot;
+  // What you see right now, before this frame changes anything. A new snapshot and the
+  // acknowledgements it carries move the predicted rink (yours and everyone else's disc), and
+  // that change has to be blended out, not shown as a jump.
   const T = sc.clock.serverNow(now) + pred.lead(now);
-  const round = pred.base?.n;
-  const had = sc.clock.ready && pred.predict(T, scratch);
-  if (Array.isArray(f.fxAcks)) for (const a of f.fxAcks) if (a[0] === slot) pred.ack(a[1], f.t + a[2], now);
+  const old = sc.worldBase;
+  const had = sc.clock.ready && !!old;
+  if (had) pred.predictWorld(T, old!, slot, shownBefore);
+  if (Array.isArray(f.fxAcks)) {
+    for (const a of f.fxAcks) if (a[0] === slot) pred.ack(a[1], f.t + a[2], typeof a[3] === "number" ? f.t + a[3] : undefined, now);
+  }
   if (!newest) {
-    blendCorrection(sc, pred, had, T);
+    if (had) blendWorld(sc, pred, old!, T, slot);
     return;
   }
+  sc.worldBase = worldOf(f);
   const dt = f.d[slot];
   if (!dt) {
     // Gone from the ice: show your fall now (you've been running ahead of the playback).
@@ -362,27 +410,36 @@ function feedMine(sc: Scene, f: Frame, newest: boolean, prev: Frame | undefined,
       fallFx(sc, slot, sc.myX, sc.myY, vx, vy, sc.rt, me.data);
     }
     pred.setBase(null);
+    if (had && old!.n === f.n) blendWorld(sc, pred, sc.worldBase, T, slot);
     return;
   }
   pred.serverReadyAt = f.t + dt[6] * 100 - 60;
   pred.turbo = (dt[5] & F_TURBO) !== 0;
   const base = { n: f.n, t: f.t, x: dt[1], y: dt[2], vx: dt[3], vy: dt[4], heavy: (dt[5] & F_HEAVY) !== 0, r: f.r };
-  const old = pred.base;
-  if (!old || old.n !== f.n || !sc.clock.ready) {
-    pred.setBase(base);
+  const ownBase = pred.base;
+  pred.setBase(base);
+  if (!ownBase || ownBase.n !== f.n || !sc.clock.ready) {
     sc.corr.reset();
+    for (const sp of sc.springs) sp?.reset();
     return;
   }
   // Same moment, two answers: keep showing the old one and fade the difference out.
-  pred.setBase(base);
-  blendCorrection(sc, pred, had && round === f.n, T);
+  if (had && old!.n === f.n) blendWorld(sc, pred, sc.worldBase, T, slot);
 }
 
-/** Your replay changed under you (`scratch` = what was shown): fade the difference out. */
-function blendCorrection(sc: Scene, pred: Mine["pred"], had: boolean, T: number) {
-  if (had && pred.predict(T, scratch2)) {
-    sc.corr.add(scratch.x - scratch2.x, scratch.y - scratch2.y, (scratch.vx - scratch2.vx) / 1000, (scratch.vy - scratch2.vy) / 1000);
-    if (sc.corr.size > CORR_SNAP) sc.corr.reset();
+const shownBefore: (Kin | undefined)[] = [];
+const shownAfter: (Kin | undefined)[] = [];
+
+/** The predicted rink changed under you (`shownBefore` = what was shown): fade every difference out. */
+function blendWorld(sc: Scene, pred: Mine["pred"], w: World, T: number, mine: number) {
+  pred.predictWorld(T, w, mine, shownAfter);
+  for (let slot = 0; slot < shownAfter.length; slot++) {
+    const a = shownBefore[slot];
+    const b = shownAfter[slot];
+    if (!a || !b) continue;
+    const sp = springOf(sc, slot);
+    sp.add(a.x - b.x, a.y - b.y, (a.vx - b.vx) / 1000, (a.vy - b.vy) / 1000);
+    if (sp.size > CORR_SNAP) sp.reset();
   }
 }
 
@@ -469,6 +526,49 @@ export function sampleDisc(frames: Frame[], slot: number, time: number, o: Sampl
   o.x = h00 * da[1] + h10 * h * da[3] + h01 * db[1] + h11 * h * db[3];
   o.y = h00 * da[2] + h10 * h * da[4] + h01 * db[2] + h11 * h * db[4];
   return true;
+}
+
+/**
+ * Where a disc is drawn at render time `time`. A player (the present): the predicted rink plus the
+ * disc's leftover correction this frame, and where it was drawn for moments just past (trails,
+ * effects). Watching: the playback of the frames themselves.
+ */
+function sampleAt(sc: Scene, slot: number, time: number, o: Sample): boolean {
+  const frames = sc.frames;
+  if (!sc.present) return sampleDisc(frames, slot, time, o);
+  const latest = frames[frames.length - 1];
+  const tup = latest?.d[slot];
+  if (!latest || !tup) return false;
+  o.flags = tup[5];
+  o.cd = tup[6];
+  o.cdAt = latest.t;
+  const h = sc.hist[slot];
+  if (time < sc.rt - 1 && h && h.length) {
+    let i = h.length - 1;
+    while (i > 0 && h[i].t > time) i--;
+    const a = h[i];
+    const b = h[i + 1];
+    const u = !b || a.t >= time ? 0 : (time - a.t) / (b.t - a.t);
+    o.x = a.x + ((b ?? a).x - a.x) * u;
+    o.y = a.y + ((b ?? a).y - a.y) * u;
+    o.vx = a.vx;
+    o.vy = a.vy;
+    return true;
+  }
+  const w = sc.world[slot];
+  if (!w) return false;
+  const sp = springOf(sc, slot);
+  o.x = w.x + sp.x;
+  o.y = w.y + sp.y;
+  o.vx = w.vx;
+  o.vy = w.vy;
+  return true;
+}
+
+/** Rink radius at render time `time` (in the present: where the shrink has got to by then). */
+function radiusAt(sc: Scene, d: RinkData, time: number): number {
+  if (sc.present && d.view.phase === "fight" && d.view.fightAt) return Math.min(sampleRadius(sc.frames, time), rinkRadius(time - d.view.fightAt));
+  return sampleRadius(sc.frames, time);
 }
 
 function sampleRadius(frames: Frame[], time: number): number {
@@ -723,73 +823,47 @@ function spark(
 }
 
 /** Fire the effects carried by a frame (the moment playback reaches it). */
-function applyFx(sc: Scene, f: Frame, d: RinkData) {
+/** Effects carried by a frame, shown at render time `at` (the frame's own time when watching the past). */
+function applyFx(sc: Scene, f: Frame, d: RinkData, at = f.t) {
   if (!f.fx) return;
   const reduced = d.reduced;
   for (const e of f.fx) {
     if (!Array.isArray(e)) continue;
     const type = e[0];
     if (type === FX_HIT) {
-      const [, x, y, j, a, b] = e;
-      const hard = clamp01((j - 140) / 700);
-      const ca = d.colors[a] ?? "#ffffff";
-      const cb = d.colors[b] ?? "#ffffff";
-      // Spray sideways along the contact (perpendicular to the line between the discs).
-      let nx = 1;
-      let ny = 0;
-      if (sampleDisc(sc.frames, a, f.t, tmp) && sampleDisc(sc.frames, b, f.t, tmp2)) {
-        const dx = tmp2.x - tmp.x;
-        const dy = tmp2.y - tmp.y;
-        const len = Math.hypot(dx, dy) || 1;
-        nx = dx / len;
-        ny = dy / len;
+      let [, x, y] = e;
+      const [, , , j, a, b] = e;
+      if (sc.present) {
+        // Already shown when the two met on screen (predict.ts resolves contacts too)?
+        const shown = sc.localHit.get(a < b ? `${a},${b}` : `${b},${a}`);
+        if (shown !== undefined && Math.abs(at - shown) < 900) continue;
+        // Otherwise where they are drawn, if they're close: the hit lines up with the discs.
+        if (sampleAt(sc, a, at, tmp) && sampleAt(sc, b, at, tmp2) && Math.hypot(tmp2.x - tmp.x, tmp2.y - tmp.y) < DISC_R * 3) {
+          x = (tmp.x + tmp2.x) / 2;
+          y = (tmp.y + tmp2.y) / 2;
+        }
       }
-      const n = reduced ? 3 : 6 + Math.round(hard * 14);
-      spark(sc, x, y, Math.ceil(n / 2), 260 + hard * 520, "#fbbf24", 0, 1.3, -ny, nx);
-      spark(sc, x, y, Math.ceil(n / 2), 260 + hard * 520, "#ffffff", 0, 1.3, ny, -nx);
-      if (!reduced) {
-        spark(sc, x, y, 2 + Math.round(hard * 4), 200, ca, 2, TAU);
-        spark(sc, x, y, 2 + Math.round(hard * 4), 200, cb, 2, TAU);
-      }
-      sc.rings.push({
-        x,
-        y,
-        t0: f.t,
-        dur: 420,
-        r0: 14,
-        r1: 60 + hard * 90,
-        w: 6 + hard * 6,
-        color: "rgba(12, 52, 92, 0.6)",
-      });
-      sc.flashes.push({ x, y, t0: f.t, size: 22 + hard * 30, rot: Math.random() * TAU });
-      const amt = Math.min(0.3, 0.08 + j / 2600);
-      sc.squash[a] = { t0: f.t, nx, ny, amt };
-      sc.squash[b] = { t0: f.t, nx, ny, amt };
-      const mine = a === d.mySlot || b === d.mySlot;
-      const amp = Math.min(1, (j / 900) * (mine ? 1.3 : 0.8));
-      if (amp > 0.12 && (f.t - sc.shakeAt > 120 || amp > sc.shakeAmp)) {
-        sc.shakeAt = f.t;
-        sc.shakeAmp = amp;
-      }
-      if (j > 760)
-        sc.pops.push({ slot: -1, x, y, t0: f.t, text: j > 1100 ? "💥 WHAM!" : "💥", color: "#fde047", big: j > 1100 });
+      hitFx(sc, d, x, y, j, a, b, at);
     } else if (type === FX_FALL) {
       const [, slot, x, y, vx, vy] = e;
       if (slot === d.mySlot && sc.myGone === f.n) continue; // already shown, the moment it happened for you
-      fallFx(sc, slot, x, y, vx, vy, f.t, d);
+      const h = sc.present ? sc.hist[slot] : undefined;
+      const last = h && h.length ? h[h.length - 1] : null;
+      if (last) fallFx(sc, slot, last.x, last.y, last.vx, last.vy, at, d);
+      else fallFx(sc, slot, x, y, vx, vy, at, d);
     } else if (type === FX_PICKUP) {
       const [, slot, k] = e;
       const kind = POWER_KINDS[k] ?? "heavy";
       const info = POWER_INFO[kind];
-      if (kind === "heavy") sc.heavyAt[slot] = f.t;
-      else sc.turboAt[slot] = f.t;
-      if (sampleDisc(sc.frames, slot, f.t, tmp)) {
-        sc.rings.push({ x: tmp.x, y: tmp.y, t0: f.t, dur: 520, r0: 30, r1: 120, w: 8, color: info.color });
+      if (kind === "heavy") sc.heavyAt[slot] = at;
+      else sc.turboAt[slot] = at;
+      if (sampleAt(sc, slot, at, tmp)) {
+        sc.rings.push({ x: tmp.x, y: tmp.y, t0: at, dur: 520, r0: 30, r1: 120, w: 8, color: info.color });
         sc.pops.push({
           slot,
           x: tmp.x,
           y: tmp.y,
-          t0: f.t,
+          t0: at,
           text: `${info.icon} ${info.label.toUpperCase()}!`,
           color: info.color,
           big: true,
@@ -798,17 +872,64 @@ function applyFx(sc: Scene, f: Frame, d: RinkData) {
     } else if (type === FX_DASH) {
       const [, slot, dx, dy] = e;
       if (slot === d.mySlot && sc.perf - sc.myDashAt < 900) continue; // shown when you pressed it
-      sc.dashAt[slot] = f.t;
+      sc.dashAt[slot] = at;
       sc.dashDir[slot] = [dx / 100, dy / 100];
-      if (sampleDisc(sc.frames, slot, f.t, tmp)) {
-        sc.rings.push({ x: tmp.x, y: tmp.y, t0: f.t, dur: 300, r0: 30, r1: 70, w: 6, color: d.colors[slot] ?? "#fff" });
+      if (sampleAt(sc, slot, at, tmp)) {
+        sc.rings.push({ x: tmp.x, y: tmp.y, t0: at, dur: 300, r0: 30, r1: 70, w: 6, color: d.colors[slot] ?? "#fff" });
         if (!reduced) spark(sc, tmp.x - (dx / 100) * 26, tmp.y - (dy / 100) * 26, 8, 300, "#ffffff", 0, 0.9, -dx, -dy);
       }
     } else if (type === FX_MELT) {
       const [, x, y] = e;
-      sc.rings.push({ x, y, t0: f.t, dur: 600, r0: 10, r1: 60, w: 5, color: "#a5f3fc" });
+      sc.rings.push({ x, y, t0: at, dur: 600, r0: 10, r1: 60, w: 5, color: "#a5f3fc" });
     }
   }
+}
+
+/** A hit between discs a and b at (x, y), impulse j, shown at render time `at`. */
+function hitFx(sc: Scene, d: RinkData, x: number, y: number, j: number, a: number, b: number, at: number) {
+  const reduced = d.reduced;
+  const hard = clamp01((j - 140) / 700);
+  const ca = d.colors[a] ?? "#ffffff";
+  const cb = d.colors[b] ?? "#ffffff";
+  // Spray sideways along the contact (perpendicular to the line between the discs).
+  let nx = 1;
+  let ny = 0;
+  if (sampleAt(sc, a, at, tmp) && sampleAt(sc, b, at, tmp2)) {
+    const dx = tmp2.x - tmp.x;
+    const dy = tmp2.y - tmp.y;
+    const len = Math.hypot(dx, dy) || 1;
+    nx = dx / len;
+    ny = dy / len;
+  }
+  const n = reduced ? 3 : 6 + Math.round(hard * 14);
+  spark(sc, x, y, Math.ceil(n / 2), 260 + hard * 520, "#fbbf24", 0, 1.3, -ny, nx);
+  spark(sc, x, y, Math.ceil(n / 2), 260 + hard * 520, "#ffffff", 0, 1.3, ny, -nx);
+  if (!reduced) {
+    spark(sc, x, y, 2 + Math.round(hard * 4), 200, ca, 2, TAU);
+    spark(sc, x, y, 2 + Math.round(hard * 4), 200, cb, 2, TAU);
+  }
+  sc.rings.push({
+    x,
+    y,
+    t0: at,
+    dur: 420,
+    r0: 14,
+    r1: 60 + hard * 90,
+    w: 6 + hard * 6,
+    color: "rgba(12, 52, 92, 0.6)",
+  });
+  sc.flashes.push({ x, y, t0: at, size: 22 + hard * 30, rot: Math.random() * TAU });
+  const amt = Math.min(0.3, 0.08 + j / 2600);
+  sc.squash[a] = { t0: at, nx, ny, amt };
+  sc.squash[b] = { t0: at, nx, ny, amt };
+  const mine = a === d.mySlot || b === d.mySlot;
+  const amp = Math.min(1, (j / 900) * (mine ? 1.3 : 0.8));
+  if (amp > 0.12 && (at - sc.shakeAt > 120 || amp > sc.shakeAmp)) {
+    sc.shakeAt = at;
+    sc.shakeAmp = amp;
+  }
+  if (j > 760)
+    sc.pops.push({ slot: -1, x, y, t0: at, text: j > 1100 ? "💥 WHAM!" : "💥", color: "#fde047", big: j > 1100 });
 }
 
 /** A disc slides into the water: ghost, splash rings, ice chips, and a red flash if it's you. */
@@ -866,22 +987,50 @@ function drawScene(
   pred: SumoPredictor | null,
 ) {
   const frames = sc.frames;
-  const rt = sc.clock.play(now, sc.frames);
+  const playT = sc.clock.play(now, sc.frames);
   const wallDt = sc.wall < 0 ? 16 : Math.min(60, Math.max(0, now - sc.wall));
   sc.wall = now;
-  sc.rt = rt;
   sc.perf = now;
   const { W, H, dpr } = s;
   const reduced = d.reduced;
   const phase = d.view.phase;
   const mySlot = d.mySlot;
   const slots = d.view.ids.length;
+  const newestFrame = frames[frames.length - 1];
 
-  // Fire effects that playback has reached (skip stale ones after a hidden tab).
+  // A player sees the whole rink at one moment, the present: when an input pressed now takes
+  // effect. Every disc is predicted to then (yours replayed, the others dead-reckoned, contacts
+  // resolved), so what touches on screen touches on the server. Spectators watch the playback.
+  sc.present = !!pred && mySlot >= 0 && sc.clock.ready && !!sc.worldBase && sc.worldBase.n === newestFrame?.n;
+  const prevRt = sc.rt;
+  const rt = sc.present ? Math.max(prevRt, sc.clock.serverNow(now) + pred!.lead(now)) : playT;
+  sc.rt = rt;
+  if (sc.present) {
+    pred!.decided = phase !== "fight";
+    sc.contacts.length = 0;
+    const gone = sc.myGone === newestFrame!.n;
+    pred!.predictWorld(rt, sc.worldBase!, gone ? -1 : mySlot, sc.world, sc.contacts);
+    sc.corr.step(wallDt);
+    for (const sp of sc.springs) sp?.step(wallDt);
+    // Hits the prediction reached this frame show now, where the discs meet on screen.
+    for (const c of sc.contacts) {
+      if (c.t <= prevRt || c.t > rt || c.j < HIT_FX_MIN) continue;
+      const key = c.a < c.b ? `${c.a},${c.b}` : `${c.b},${c.a}`;
+      const last = sc.localHit.get(key);
+      if (last !== undefined && rt - last < 300) continue;
+      sc.localHit.set(key, rt);
+      const sa = springOf(sc, c.a);
+      const sb = springOf(sc, c.b);
+      hitFx(sc, d, c.x + (sa.x + sb.x) / 2, c.y + (sa.y + sb.y) / 2, c.j, c.a, c.b, rt);
+    }
+  }
+
+  // Fire effects that playback has reached (skip stale ones after a hidden tab). In the present
+  // that's as soon as their frame arrives, shown from now.
   for (const f of frames) {
     if (f.t <= sc.fxCursor) continue;
     if (f.t > rt) break;
-    if (f.t > rt - 600) applyFx(sc, f, d);
+    if (f.t > rt - (sc.present ? 1_500 : 600)) applyFx(sc, f, d, sc.present ? rt : f.t);
     sc.fxCursor = f.t;
   }
   // Drop frames we're well past (keep enough for trails).
@@ -898,6 +1047,9 @@ function drawScene(
     sc.turboAt.length = 0;
     sc.dashAt.length = 0;
     sc.myTrail.length = 0;
+    sc.hist.length = 0;
+    sc.localHit.clear();
+    for (const sp of sc.springs) sp?.reset();
   }
 
   // ----- your disc: replayed from its newest snapshot up to where your inputs are landing -----
@@ -905,15 +1057,22 @@ function drawScene(
   const myNewest = latest && mySlot >= 0 ? latest.d[mySlot] : undefined;
   if (pred && myNewest && phase !== "countdown" && pred.base && pred.base.n === latest!.n && sc.myGone !== latest!.n) {
     pred.decided = phase !== "fight";
-    if (pred.predict(sc.clock.serverNow(now) + pred.lead(now), sc.my)) {
+    const w = sc.present ? sc.world[mySlot] : undefined;
+    if (w) {
+      // Predicted with everyone else (contacts included) above.
+      sc.my.x = w.x;
+      sc.my.y = w.y;
+      sc.my.vx = w.vx;
+      sc.my.vy = w.vy;
+      sc.myOn = true;
+    } else if (!sc.present && pred.predict(sc.clock.serverNow(now) + pred.lead(now), sc.my)) {
       sc.corr.step(wallDt);
       sc.myOn = true;
-      debugFrame("sumo", { t: now, x: sc.my.x + sc.corr.x, y: sc.my.y + sc.corr.y, rt });
     }
   }
 
   // ----- camera: zoom in as the rink shrinks -----
-  const rinkR = sampleRadius(frames, rt);
+  const rinkR = radiusAt(sc, d, rt);
   // Zoom in part of the way as the rink shrinks: the shrink stays visible, discs get bigger.
   const fullCam = RINK_R + 48;
   const wantCam = fullCam - (fullCam - Math.max(rinkR + 48, 200)) * 0.62;
@@ -1164,7 +1323,7 @@ function drawScene(
   // Where everyone is: the others from playback, yours from the predictor.
   for (const slot of order) {
     if (slot === mySlot && sc.myOn) continue;
-    if (!sampleDisc(frames, slot, rt, tmp)) continue;
+    if (!sampleAt(sc, slot, rt, tmp)) continue;
     sc.wx[slot] = tmp.x;
     sc.wy[slot] = tmp.y;
     sc.wr[slot] = sc.radius[slot] ?? DISC_R;
@@ -1197,6 +1356,32 @@ function drawScene(
     sc.myTrail.push({ at: now, x, y });
     while (sc.myTrail.length > 2 && now - sc.myTrail[0].at > TRAIL_MS + 60) sc.myTrail.shift();
   } else if (sc.myTrail.length) sc.myTrail.length = 0;
+
+  // Where everyone was drawn (render time), for trails and effects in the present.
+  if (sc.present) {
+    for (let slot = 0; slot < slots; slot++) {
+      if (Number.isNaN(sc.wx[slot])) continue;
+      const w = slot === mySlot && sc.myOn ? sc.my : sc.world[slot];
+      const h = (sc.hist[slot] ??= []);
+      if (h.length && h[h.length - 1].t >= rt) h.pop();
+      h.push({ t: rt, x: sc.wx[slot], y: sc.wy[slot], vx: w?.vx ?? 0, vy: w?.vy ?? 0 });
+      while (h.length > 2 && h[0].t < rt - 500) h.shift();
+    }
+  }
+  {
+    // ?debug=1: your disc and the nearest other one as drawn, and the render clock.
+    let other = -1;
+    for (let slot = 0; slot < slots; slot++) if (slot !== mySlot && !Number.isNaN(sc.wx[slot])) other = other < 0 ? slot : other;
+    debugFrame("sumo", {
+      t: now,
+      x: sc.myOn ? sc.wx[mySlot] : NaN,
+      y: sc.myOn ? sc.wy[mySlot] : NaN,
+      ox: other >= 0 ? sc.wx[other] : NaN,
+      oy: other >= 0 ? sc.wy[other] : NaN,
+      rt,
+      present: sc.present ? 1 : 0,
+    });
+  }
 
   // Your dash shows the moment you press it.
   if (pred && pred.dashes !== sc.dashSeen) {
@@ -1238,7 +1423,7 @@ function drawScene(
         g.globalAlpha = 1;
         continue;
       }
-      if (!sampleDisc(frames, slot, rt, tmp)) continue;
+      if (!sampleAt(sc, slot, rt, tmp)) continue;
       const speed = Math.hypot(tmp.vx, tmp.vy);
       const dashing = (tmp.flags & F_DASH) !== 0;
       if (speed < 140 && !dashing) continue;
@@ -1249,7 +1434,7 @@ function drawScene(
       const steps = dashing ? TRAIL_STEPS + 3 : TRAIL_STEPS;
       g.lineCap = "round";
       for (let k = 1; k <= steps; k++) {
-        if (!sampleDisc(frames, slot, rt - (k * TRAIL_MS) / TRAIL_STEPS, tmp2)) break;
+        if (!sampleAt(sc, slot, rt - (k * TRAIL_MS) / TRAIL_STEPS, tmp2)) break;
         const f = 1 - k / (steps + 1);
         g.globalAlpha = (dashing ? 0.6 : 0.42) * f * clamp01((speed - 100) / 220 + (dashing ? 0.6 : 0));
         g.strokeStyle = dashing ? "#ffffff" : color;
@@ -1279,7 +1464,7 @@ function drawScene(
       tmp.flags = (myNewest[5] & ~F_DASH) | (now - sc.myDashAt < 260 ? F_DASH : 0);
       tmp.cd = myNewest[6];
       tmp.cdAt = latest!.t;
-    } else if (!sampleDisc(frames, slot, rt, tmp)) continue;
+    } else if (!sampleAt(sc, slot, rt, tmp)) continue;
     const color = d.colors[slot] ?? "#94a3b8";
     const heavy = (tmp.flags & F_HEAVY) !== 0;
     const turbo = (tmp.flags & F_TURBO) !== 0;
@@ -1567,7 +1752,7 @@ function drawScene(
     }
     // Badges: power-ups and offline.
     const t = tmp;
-    if (sampleDisc(frames, slot, rt, t)) {
+    if (sampleAt(sc, slot, rt, t)) {
       const badges: string[] = [];
       if (t.flags & F_HEAVY) badges.push(POWER_INFO.heavy.icon);
       if (t.flags & F_TURBO) badges.push(POWER_INFO.turbo.icon);

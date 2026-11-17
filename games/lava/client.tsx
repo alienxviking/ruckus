@@ -225,7 +225,8 @@ function Game({
     c.tokens = Math.max(0, c.tokens - 1);
     c.sent = [x, y];
     const s = pred.recordInput(x, y, performance.now());
-    act({ type: "input", x, y, s });
+    // Stamped with the moment it should take effect on the server (predict.ts).
+    act({ type: "input", x, y, s, at: pred.stamp(s) });
   };
   const refreshInput = () => {
     const c = ctl.current;
@@ -253,7 +254,8 @@ function Game({
     // Make sure the server has the stick you're holding before the jump that uses it.
     const c = ctl.current;
     if (Math.round(input.current.x * 100) !== c.sent[0] || Math.round(input.current.y * 100) !== c.sent[1]) sendInput(true);
-    act({ type: "jump", s: pred.recordJump(performance.now()) });
+    const js = pred.recordJump(performance.now());
+    act({ type: "jump", s: js, at: pred.stamp(js) });
     setJumps((n) => n + 1);
   };
   const onStick = (x: number, y: number) => {

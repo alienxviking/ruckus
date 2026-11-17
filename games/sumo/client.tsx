@@ -228,7 +228,8 @@ function Game({
     c.tokens = Math.max(0, c.tokens - 1);
     c.sent = [x, y];
     const s = pred.recordInput(x, y, performance.now());
-    act({ type: "input", x, y, s });
+    // Stamped with the moment it should take effect on the server (predict.ts).
+    act({ type: "input", x, y, s, at: pred.stamp(s) });
   };
   const refreshInput = () => {
     const c = ctl.current;
@@ -254,7 +255,8 @@ function Game({
     if (!canDash) return;
     // Still recharging (by the server's word or your own last dash): the server would refuse it.
     if (pred.dashLeft(performance.now(), pred.turbo ? TURBO_CD_MS : DASH_CD_MS) > 50) return;
-    act({ type: "dash", s: pred.recordDash(performance.now()) });
+    const ds = pred.recordDash(performance.now());
+    act({ type: "dash", s: ds, at: pred.stamp(ds) });
     setDashes((n) => n + 1);
   };
   const onStick = (x: number, y: number) => {

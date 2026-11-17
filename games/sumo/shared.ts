@@ -34,6 +34,8 @@ export const DASH_CD_MS = 2_500;
 export const TURBO_CD_MS = 600;
 /** How long a disc counts as "dashing" for the visuals. */
 export const DASH_FX_MS = 260;
+/** Impacts at least this hard are shown (sparks, shake); softer ones are just shoving. */
+export const HIT_FX_MIN = 140;
 
 export const POWER_KINDS = ["heavy", "turbo"] as const;
 export type PowerKind = (typeof POWER_KINDS)[number];
@@ -60,10 +62,11 @@ export const F_DASH = 4;
 export const F_OFFLINE = 8;
 
 /**
- * [slot, x, y, vx, vy, flags, dash cooldown left in tenths of a second]; all ints.
- * Trailing zeros are left off (most discs, most frames: just the first five).
+ * [slot, x, y, vx, vy, flags, dash cooldown left in tenths of a second, stick]; all ints.
+ * Trailing zeros are left off (most discs, most frames: just the first five). The stick
+ * (encodeStick; left off when centred) lets every client dead-reckon the other discs.
  */
-export type DiscTuple = [number, number, number, number, number, number?, number?];
+export type DiscTuple = [number, number, number, number, number, number?, number?, number?];
 
 /**
  * Something that happened during a tick, played back when the snapshot is on screen:
@@ -98,9 +101,10 @@ export interface Snap {
   q?: 1;
   /**
    * Inputs received since the previous snapshot, for client prediction:
-   * [slot, input number, ms from this frame's time to the sim time it took effect from].
+   * [slot, input number, ms from this frame's time to the sim time it takes effect from,
+   *  ms from this frame's time to when it arrived (older servers leave it off)].
    */
-  a?: [number, number, number][];
+  a?: [number, number, number, number?][];
 }
 
 // ---------- helpers ----------
@@ -117,4 +121,16 @@ export function isSnap(v: unknown): v is Snap {
   if (!v || typeof v !== "object") return false;
   const s = v as Partial<Snap>;
   return s.k === "s" && typeof s.t === "number" && typeof s.n === "number" && Array.isArray(s.p);
+}
+
+// ---------- sticks on the wire ----------
+
+/** A stick (-1..1 each way) as one small integer, 0.05 steps (0 = centred is left off the wire). */
+export function encodeStick(x: number, y: number): number {
+  return (Math.round(x * 20) + 20) * 41 + (Math.round(y * 20) + 20);
+}
+
+export function decodeStick(c: number | undefined): [number, number] {
+  if (typeof c !== "number" || !Number.isInteger(c) || c < 0 || c > 40 * 41 + 40) return [0, 0];
+  return [(Math.floor(c / 41) - 20) / 20, ((c % 41) - 20) / 20];
 }

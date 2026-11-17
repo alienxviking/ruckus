@@ -31,13 +31,27 @@ import {
   TURBO_CD_MS,
   WINS_NEEDED,
   rinkRadius,
+  encodeStick,
+  HIT_FX_MIN,
   type DiscTuple,
   type FxTuple,
   type Phase,
   type PowerKind,
   type Snap,
 } from "./shared";
-import { BRAKE_FRICTION, FRICTION, SUB_MS, applyDash, integrate, keepOnIce } from "./physics";
+import {
+  BRAKE_FRICTION,
+  DASH_IMPULSE,
+  FRICTION,
+  MAX_REWIND_STEPS,
+  SUB_MS,
+  applyDash,
+  integrate,
+  keepOnIce,
+  resolveContact,
+  rewindDelta,
+  stampStep,
+} from "./physics";
 
 // Ice Sumo: real-time shoving on a shrinking ice rink (Ruckus original).
 // The server owns the physics: 3 fixed substeps of 1/60s per 50ms tick, driven by
@@ -46,21 +60,18 @@ import { BRAKE_FRICTION, FRICTION, SUB_MS, applyDash, integrate, keepOnIce } fro
 // only goes out when something big happens (a phase change or someone falling in).
 // Nothing is secret, so every viewer gets the same view.
 //
-// Latency: each input may carry a number (`s`). The next snapshot acknowledges it with
-// the sim time it took effect from (`a`), so the owner's client can replay its own inputs
-// on top of the server's state with exactly the server's timing (see predict.ts), and
-// learn how far ahead of the server it has to run. The motion code itself is shared with
-// the client (physics.ts).
+// Latency: each input may carry a number (`s`) and the sim time it is meant for (`at`, stamped
+// by the client a network trip ahead on its smoothed clock). An input that arrives early waits
+// for its substep, so the server moves the disc exactly as the client already showed it; one that
+// arrives late is applied at once, as if it had arrived on time but at most ~150 ms back (that
+// player's own stick or dash only: nobody else is rewound), so a jittery uplink doesn't drag the
+// disc off the path its owner saw. The next snapshot acknowledges every input with the sim time
+// it takes effect from and when it arrived (`a`), so the client replays its inputs with exactly
+// the server's timing and learns how far ahead to stamp. Motion and collisions are shared code
+// (physics.ts): the client predicts the whole rink, contacts included.
 
 // ---------- tuning ----------
 
-/** Restitution blends from soft (slow shoves) to bouncy (real hits). */
-const E_SOFT = 0.35;
-const E_BOUNCY = 1.15;
-const E_SOFT_BELOW = 40;
-const E_BOUNCY_ABOVE = 200;
-/** Impacts at least this hard are shown (sparks, shake); softer ones are just shoving. */
-const HIT_FX_MIN = 140;
 /** A collision this hard counts as a shove for knockout credit. */
 const SHOVE_MIN = 50;
 /** A fall within this long after a shove credits the shover. */
@@ -70,6 +81,9 @@ const MAX_CATCHUP = 6;
 /** Even when nothing moves, a snapshot goes out this often. */
 const HEARTBEAT_MS = 1_000;
 const MAX_FX = 16;
+/** An early input waits at most this many substeps (1 s) for its stamp. */
+const MAX_HOLD_STEPS = 60;
+const MAX_QUEUE = 16;
 
 // ---------- state ----------
 
@@ -95,11 +109,20 @@ interface Disc {
   /** Who last shoved this disc, and when (knockout credit). */
   hitBy: number;
   hitAt: number;
-  /** Newest input number received from the owner (0 = none), the sim time it took effect from... */
+  /** Newest input number received from the owner (0 = none). */
   seq: number;
-  ackT: number;
-  /** ...and whether the next snapshot still has to acknowledge it. */
-  ackDirty: boolean;
+  /** Inputs waiting for their stamped substep. */
+  queue: Queued[];
+  /** Inputs the next snapshot acknowledges: [input number, sim time it takes effect (0 = n/a), time it arrived]. */
+  acks: [number, number, number][];
+}
+
+interface Queued {
+  /** Substep it takes effect in. */
+  k: number;
+  dash: boolean;
+  x: number;
+  y: number;
 }
 
 interface Power {
@@ -159,7 +182,7 @@ export interface SumoState {
 }
 
 /** `s` numbers the client's inputs (optional): the next snapshot acknowledges it. */
-export type SumoAction = { type: "input"; x: number; y: number; s?: number } | { type: "dash"; s?: number };
+export type SumoAction = { type: "input"; x: number; y: number; s?: number; at?: number } | { type: "dash"; s?: number; at?: number };
 
 export interface SumoView {
   phase: Phase;
@@ -216,8 +239,8 @@ function newDisc(slot: number, id: string): Disc {
     hitBy: -1,
     hitAt: 0,
     seq: 0,
-    ackT: 0,
-    ackDirty: false,
+    queue: [],
+    acks: [],
   };
 }
 
@@ -265,46 +288,13 @@ function startRound(s: SumoState, ctx: GameCtx) {
 
 // ---------- physics ----------
 
-function restitution(approach: number) {
-  if (approach <= E_SOFT_BELOW) return E_SOFT;
-  if (approach >= E_BOUNCY_ABOVE) return E_BOUNCY;
-  return E_SOFT + ((approach - E_SOFT_BELOW) / (E_BOUNCY_ABOVE - E_SOFT_BELOW)) * (E_BOUNCY - E_SOFT);
-}
-
 /** Resolve one disc-disc contact. Exported for tests. */
 export function collide(s: SumoState, a: Disc, b: Disc, t: number) {
   const ra = radiusOf(a, t);
-  const rb = radiusOf(b, t);
-  let dx = b.x - a.x;
-  let dy = b.y - a.y;
-  const dist = Math.hypot(dx, dy);
-  const minD = ra + rb;
-  if (dist >= minD) return;
-  if (dist < 1e-6) {
-    // Exactly on top of each other: split along the lower slot's facing.
-    dx = a.fx || 1;
-    dy = a.fy;
-  }
-  const len = Math.hypot(dx, dy) || 1;
-  const nx = dx / len;
-  const ny = dy / len;
-  const ima = 1 / massOf(a, t);
-  const imb = 1 / massOf(b, t);
-  const sum = ima + imb;
-  // Push apart so they no longer overlap (lighter disc moves more).
-  const overlap = minD - dist;
-  a.x -= (nx * overlap * ima) / sum;
-  a.y -= (ny * overlap * ima) / sum;
-  b.x += (nx * overlap * imb) / sum;
-  b.y += (ny * overlap * imb) / sum;
-  const vrel = (b.vx - a.vx) * nx + (b.vy - a.vy) * ny;
-  if (vrel >= 0) return; // already separating
-  const approach = -vrel;
-  const j = ((1 + restitution(approach)) * approach) / sum;
-  a.vx -= j * ima * nx;
-  a.vy -= j * ima * ny;
-  b.vx += j * imb * nx;
-  b.vy += j * imb * ny;
+  // Push apart and bounce (physics.ts); exactly on top of each other, split along a's facing.
+  const c = resolveContact(a, b, ra, radiusOf(b, t), massOf(a, t), massOf(b, t), a.fx, a.fy);
+  if (!c || c.j <= 0) return; // apart, or already separating
+  const { j, nx, ny } = c;
   if (j >= SHOVE_MIN) {
     a.hitBy = b.slot;
     a.hitAt = t;
@@ -411,9 +401,79 @@ function simulate(s: SumoState, ctx: GameCtx): number {
   let fell = 0;
   for (let i = 0; i < n; i++) {
     s.steps += 1;
+    releaseInputs(s, s.steps);
     fell += substep(s, ctx, simTime(s));
   }
   return fell;
+}
+
+// ---------- inputs ----------
+
+function setStick(d: Disc, x: number, y: number) {
+  d.ix = x;
+  d.iy = y;
+  const m = Math.hypot(x, y);
+  if (m > 0.05) {
+    d.fx = x / m;
+    d.fy = y / m;
+  }
+}
+
+/** Inputs whose stamped substep has come (in the order they were sent). */
+function releaseInputs(s: SumoState, k: number) {
+  for (const d of s.discs) {
+    while (d.queue.length && d.queue[0].k <= k) {
+      const q = d.queue.shift()!;
+      if (q.dash) {
+        if (d.alive && s.phase === "fight") d.dashQueued = true;
+      } else setStick(d, q.x, q.y);
+    }
+  }
+}
+
+/**
+ * An input meant for substep `k`. Early: it waits for its substep. Due or late: it takes effect
+ * from the next substep, plus (for at most MAX_REWIND_STEPS) the difference it would have made had
+ * it arrived on time: the bounded lag compensation, for this disc only. Returns the sim time it
+ * counts from (what the owner's replay uses).
+ */
+function stampedInput(s: SumoState, d: Disc, k: number, dash: boolean, x: number, y: number): number {
+  const next = s.steps + 1;
+  if (k > next && d.queue.length < MAX_QUEUE) {
+    const at = Math.min(k, next + MAX_HOLD_STEPS);
+    d.queue.push({ k: at, dash, x, y });
+    return s.fightAt + at * SUB_MS;
+  }
+  // Due now (or late). Anything still queued before it goes first, in the order sent.
+  for (const q of d.queue.splice(0)) {
+    if (q.dash) d.dashQueued = d.alive && s.phase === "fight";
+    else setStick(d, q.x, q.y);
+  }
+  const live = d.alive && s.phase === "fight";
+  const back = live ? Math.max(0, Math.min(MAX_REWIND_STEPS, next - k)) : 0;
+  const heavy = d.heavyUntil > simTime(s);
+  if (dash) {
+    if (!live) return s.fightAt + next * SUB_MS;
+    d.dashQueued = true;
+    if (back > 0) {
+      // Where the dash would have carried the disc by now (the kick itself lands next substep).
+      const probe = { x: 0, y: 0, vx: d.vx, vy: d.vy };
+      const [ux, uy] = applyDash(probe, d.ix, d.iy, d.fx, d.fy);
+      const r = rewindDelta(back, 0, 0, heavy, ux * DASH_IMPULSE, uy * DASH_IMPULSE);
+      d.x += r.x;
+      d.y += r.y;
+    }
+  } else {
+    if (back > 0) {
+      const r = rewindDelta(back, x - d.ix, y - d.iy, heavy);
+      d.x += r.x;
+      d.y += r.y;
+      d.vx += r.vx;
+      d.vy += r.vy;
+    }
+    setStick(d, x, y);
+  }
+  return s.fightAt + (next - back) * SUB_MS;
 }
 
 // ---------- snapshots ----------
@@ -433,16 +493,19 @@ function makeSnap(s: SumoState, ctx: GameCtx): Snap {
     const cd = Math.max(0, Math.min(99, Math.ceil((d.dashReadyAt - now) / 100)));
     // Trailing zeros (no flags, no cooldown) are left off: most frames, most discs.
     const tuple: DiscTuple = [d.slot, Math.round(d.x), Math.round(d.y), Math.round(d.vx), Math.round(d.vy)];
-    if (flags || cd) tuple.push(flags);
-    if (cd) tuple.push(cd);
+    // The stick lets clients dead-reckon this disc until the next frame (left off when centred).
+    const steering = live && s.phase === "fight" && (d.ix !== 0 || d.iy !== 0);
+    if (flags || cd || steering) tuple.push(flags);
+    if (cd || steering) tuple.push(cd);
+    if (steering) tuple.push(encodeStick(d.ix, d.iy));
     p.push(tuple);
   }
-  // Inputs received since the last snapshot: [slot, input number, ms from this frame to when it took effect].
-  const acks: [number, number, number][] = [];
+  // Inputs received since the last snapshot:
+  // [slot, input number, ms from this frame to when it takes effect, ms from this frame to when it arrived].
+  const acks: [number, number, number, number][] = [];
   for (const d of s.discs) {
-    if (!d.ackDirty) continue;
-    d.ackDirty = false;
-    acks.push([d.slot, d.seq, d.ackT ? Math.round(d.ackT - t) : 0]);
+    for (const [seq, eff, arr] of d.acks) acks.push([d.slot, seq, eff ? Math.round(eff - t) : 0, Math.round(arr - t)]);
+    d.acks.length = 0;
   }
   const snap: Snap = {
     k: "s",
@@ -656,33 +719,42 @@ export const sumo: GameDef<SumoState, SumoAction> = {
     const rec = a as Record<string, unknown>;
     const seq = rec.s;
     if (seq !== undefined && !(typeof seq === "number" && Number.isInteger(seq) && seq > 0 && seq <= 2 ** 31)) return false;
-    /** Remember the input number; it takes effect from the next substep simulated. */
-    const ack = () => {
+    const at = rec.at;
+    if (at !== undefined && !(typeof at === "number" && Number.isFinite(at))) return false;
+    const live = s.phase === "fight" && s.fightAt > 0;
+    // The substep the input is meant for: as stamped, else the next one (older clients).
+    const k = live && typeof at === "number" ? stampStep(at, s.fightAt) : s.steps + 1;
+    const now = ctx.now();
+    /** Acknowledge the input number with the sim time it counts from (0: not in a fight). */
+    const ack = (from: number) => {
       if (typeof seq !== "number") return;
       d.seq = seq;
-      d.ackT = s.fightAt && s.phase !== "countdown" ? s.fightAt + (s.steps + 1) * SUB_MS : 0;
-      d.ackDirty = true;
+      if (d.acks.length < 32) d.acks.push([seq, from, now]);
     };
     if (rec.type === "input") {
       const v = readInput(rec);
       if (!v) return false;
-      ack();
-      [d.ix, d.iy] = v;
-      const m = Math.hypot(v[0], v[1]);
-      if (m > 0.05) {
-        d.fx = v[0] / m;
-        d.fy = v[1] / m;
+      if (live) ack(stampedInput(s, d, k, false, v[0], v[1]));
+      else {
+        setStick(d, v[0], v[1]);
+        ack(0);
       }
       return false; // shows up in the next snapshot
     }
     if (rec.type === "dash") {
-      // Acknowledged even when refused, so the client stops predicting it.
-      ack();
-      if (s.phase !== "fight") return false;
-      const now = ctx.now();
-      if (!d.alive || d.dashQueued || now < d.dashReadyAt) return false;
-      d.dashQueued = true;
+      // Acknowledged even when refused (as of the next substep, already in the past for the
+      // client's replay), so the client stops predicting it.
+      const refused = s.fightAt + (s.steps + 1) * SUB_MS;
+      if (!live) {
+        ack(s.fightAt ? refused : 0);
+        return false;
+      }
+      if (!d.alive || d.dashQueued || d.queue.some((q) => q.dash) || now < d.dashReadyAt) {
+        ack(refused);
+        return false;
+      }
       d.dashReadyAt = now + (d.turboUntil > now ? TURBO_CD_MS : DASH_CD_MS);
+      ack(stampedInput(s, d, k, true, 0, 0));
       return false;
     }
     return false;

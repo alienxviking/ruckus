@@ -17,7 +17,7 @@
 import { useEffect, useEffectEvent, useRef, type PointerEvent, type ReactNode, type RefObject } from "react";
 import type { LavaView } from "./server";
 import type { Kin } from "./physics";
-import type { LavaPredictor } from "./predict";
+import type { LavaPredictor, PredictedContact, World, WorldRunner } from "./predict";
 import {
   APOTHEM,
   CAMP_MS,
@@ -50,6 +50,8 @@ import {
   type FxTuple,
   type PlayerTuple,
   type Snap,
+  HIT_FX_MIN,
+  decodeStick,
 } from "./shared";
 import { Spring2D, Timeline, debugFrame } from "../snakes/netsmooth";
 
@@ -57,6 +59,8 @@ const TAU = Math.PI * 2;
 const DELAY_MS = 100;
 export const CORR_MS = 100;
 export const CORR_SNAP = 160;
+/** Other players: their corrections are bigger (dead reckoning), so they fade a little slower. */
+export const OTHERS_CORR_MS = 140;
 const EXTRAP_MS = 150;
 const KEEP_MS = 400;
 const MAX_FRAMES = 120;
@@ -87,8 +91,8 @@ export function arenaAspect(R: number) {
 
 // ---------- frames & clock ----------
 
-/** A player tuple with the trailing zeros put back. */
-type Full = [number, number, number, number, number, number, number];
+/** A player tuple with the trailing zeros put back (the stick: -1 when centred / not sent). */
+type Full = [number, number, number, number, number, number, number, number];
 
 interface Frame {
   n: number;
@@ -99,14 +103,14 @@ interface Frame {
   c: number[] | null;
   /** The whole board (from a view): replaces the tiles when playback reaches it. */
   board: string | null;
-  acks?: [number, number, number][];
+  acks?: [number, number, number, number?][];
 }
 
 function toFrame(s: Snap, boardStr: string | null): Frame {
   const d: (Full | undefined)[] = [];
   for (const p of s.p as PlayerTuple[]) {
     if (Array.isArray(p) && p.length >= 5 && p[0] >= 0 && p[0] < 16)
-      d[p[0]] = [p[0], p[1], p[2], p[3], p[4], p[5] ?? 0, p[6] ?? 0];
+      d[p[0]] = [p[0], p[1], p[2], p[3], p[4], p[5] ?? 0, p[6] ?? 0, p[7] ?? -1];
   }
   return {
     n: s.n,
@@ -258,6 +262,20 @@ interface Scene {
   /** Your tile as drawn, and since when (performance.now()): the no-camping meter. */
   myTile: number;
   myTileAt: number;
+  /**
+   * A player sees everyone at one moment, the present (`rt` = your clock + lead): all of you
+   * predicted from the newest snapshot (predict.ts), bumps included. Spectators watch the playback.
+   */
+  present: boolean;
+  mySlot: number;
+  worldBase: World | null;
+  world: (Kin | undefined)[];
+  /** Other players' leftover corrections, per slot (yours is `corr`). */
+  springs: Spring2D[];
+  /** Where each player was drawn lately (render time), for effects and falls. */
+  hist: { t: number; x: number; y: number; vx: number; vy: number }[][];
+  contacts: PredictedContact[];
+  localHit: Map<string, number>;
   wx: number[];
   wy: number[];
   powerSeen: Map<number, number>;
@@ -307,7 +325,45 @@ export function newScene(): Scene {
     wx: [],
     wy: [],
     powerSeen: new Map(),
+    present: false,
+    mySlot: -1,
+    worldBase: null,
+    world: [],
+    springs: [],
+    hist: [],
+    contacts: [],
+    localHit: new Map(),
   };
+}
+
+/** A frame as everyone to predict from. */
+function worldOf(f: Frame): World {
+  const runners: WorldRunner[] = [];
+  for (const t of f.d) {
+    if (!t) continue;
+    const [ix, iy] = t[7] >= 0 ? decodeStick(t[7]) : [0, 0];
+    runners.push({ slot: t[0], x: t[1], y: t[2], vx: t[3], vy: t[4], ix, iy, cd: t[6] });
+  }
+  return { n: f.n, t: f.t, runners };
+}
+
+const springOf = (sc: Scene, slot: number) =>
+  slot === sc.mySlot ? sc.corr : (sc.springs[slot] ??= new Spring2D(OTHERS_CORR_MS));
+
+const shownBefore: (Kin | undefined)[] = [];
+const shownAfter: (Kin | undefined)[] = [];
+
+/** The predicted players changed under you (`shownBefore` = what was shown): fade every difference out. */
+function blendWorld(sc: Scene, pred: Mine["pred"], w: World, T: number, mine: number) {
+  pred.predictWorld(T, w, mine, shownAfter);
+  for (let slot = 0; slot < shownAfter.length; slot++) {
+    const a = shownBefore[slot];
+    const b = shownAfter[slot];
+    if (!a || !b) continue;
+    const sp = springOf(sc, slot);
+    sp.add(a.x - b.x, a.y - b.y, (a.vx - b.vx) / 1000, (a.vy - b.vy) / 1000);
+    if (sp.size > CORR_SNAP) sp.reset();
+  }
 }
 
 export interface Mine {
@@ -316,8 +372,6 @@ export interface Mine {
   data: ArenaData;
 }
 
-const scratch: Kin = { x: 0, y: 0, vx: 0, vy: 0 };
-const scratch2: Kin = { x: 0, y: 0, vx: 0, vy: 0 };
 
 /** Replace the whole board (a view, or a new round). */
 function setBoard(sc: Scene, str: string, R: number, rt: number) {
@@ -345,17 +399,21 @@ function setStage(sc: Scene, i: number, stage: number, rt: number, animate: bool
 /** Hand a frame to your predictor: acknowledgements, your newest state, your fall. */
 function feedMine(sc: Scene, f: Frame, newest: boolean, prev: Frame | undefined, me: Mine, now: number) {
   const { pred, slot } = me;
-  // What you see right now, before this frame changes anything. Acknowledgements move your replay
-  // too (an input landed earlier or later than guessed: on a jittery uplink, by 100+ ms), so that
-  // change has to be blended out like any other correction, not shown as a jump.
+  sc.mySlot = slot;
+  // What you see right now, before this frame changes anything. A new snapshot and the
+  // acknowledgements it carries move the predicted players (you included): blend that out.
   const T = sc.clock.serverNow(now) + pred.lead(now);
-  const round = pred.base?.n;
-  const had = sc.clock.ready && pred.predict(T, scratch);
-  if (Array.isArray(f.acks)) for (const a of f.acks) if (a[0] === slot) pred.ack(a[1], f.t + a[2], now);
+  const old = sc.worldBase;
+  const had = sc.clock.ready && !!old;
+  if (had) pred.predictWorld(T, old!, slot, shownBefore);
+  if (Array.isArray(f.acks)) {
+    for (const a of f.acks) if (a[0] === slot) pred.ack(a[1], f.t + a[2], typeof a[3] === "number" ? f.t + a[3] : undefined, now);
+  }
   if (!newest) {
-    blendCorrection(sc, pred, had, T);
+    if (had) blendWorld(sc, pred, old!, T, slot);
     return;
   }
+  sc.worldBase = worldOf(f);
   const dt = f.d[slot];
   if (!dt) {
     if (prev && prev.n === f.n && prev.d[slot] && sc.myGone !== f.n && !Number.isNaN(sc.myX)) {
@@ -363,26 +421,19 @@ function feedMine(sc: Scene, f: Frame, newest: boolean, prev: Frame | undefined,
       fallFx(sc, slot, sc.myX, sc.myY, sc.rt, me.data);
     }
     pred.setBase(null);
+    if (had && old!.n === f.n) blendWorld(sc, pred, sc.worldBase, T, slot);
     return;
   }
   const base = { n: f.n, t: f.t, x: dt[1], y: dt[2], vx: dt[3], vy: dt[4], cd: dt[6] };
-  const old = pred.base;
-  if (!old || old.n !== f.n || !sc.clock.ready) {
-    pred.setBase(base);
+  const ownBase = pred.base;
+  pred.setBase(base);
+  if (!ownBase || ownBase.n !== f.n || !sc.clock.ready) {
     sc.corr.reset();
+    for (const sp of sc.springs) sp?.reset();
     return;
   }
   // Same moment, two answers: keep showing the old one and fade the difference out.
-  pred.setBase(base);
-  blendCorrection(sc, pred, had && round === f.n, T);
-}
-
-/** Your replay changed under you (`scratch` = what was shown): fade the difference out. */
-function blendCorrection(sc: Scene, pred: Mine["pred"], had: boolean, T: number) {
-  if (had && pred.predict(T, scratch2)) {
-    sc.corr.add(scratch.x - scratch2.x, scratch.y - scratch2.y, (scratch.vx - scratch2.vx) / 1000, (scratch.vy - scratch2.vy) / 1000);
-    if (sc.corr.size > CORR_SNAP) sc.corr.reset();
-  }
+  if (had && old!.n === f.n) blendWorld(sc, pred, sc.worldBase, T, slot);
 }
 
 /** Add a server frame to the playback buffer (and, for a player, to their predictor). */
@@ -414,6 +465,43 @@ export function pushFrame(sc: Scene, snap: Snap, now: number, R: number, boardSt
   }
   if (frames.length > MAX_FRAMES) frames.splice(0, frames.length - MAX_FRAMES);
   if (me && me.slot >= 0) feedMine(sc, f, frames[frames.length - 1] === f, newestBefore, me, now);
+}
+
+/**
+ * Where a player is drawn at render time `time`. A player (the present): the prediction plus
+ * the leftover correction this frame, and where they were drawn for moments just past. Watching:
+ * the playback of the frames themselves.
+ */
+function sampleAt(sc: Scene, slot: number, time: number, o: Sample): boolean {
+  const frames = sc.frames;
+  if (!sc.present) return samplePlayer(frames, slot, time, o);
+  const latest = frames[frames.length - 1];
+  const tup = latest?.d[slot];
+  if (!latest || !tup) return false;
+  o.flags = tup[5];
+  o.cd = tup[6];
+  o.cdAt = latest.t;
+  const h = sc.hist[slot];
+  if (time < sc.rt - 1 && h && h.length) {
+    let i = h.length - 1;
+    while (i > 0 && h[i].t > time) i--;
+    const a = h[i];
+    const b = h[i + 1];
+    const u = !b || a.t >= time ? 0 : (time - a.t) / (b.t - a.t);
+    o.x = a.x + ((b ?? a).x - a.x) * u;
+    o.y = a.y + ((b ?? a).y - a.y) * u;
+    o.vx = a.vx;
+    o.vy = a.vy;
+    return true;
+  }
+  const w = sc.world[slot];
+  if (!w) return false;
+  const sp = springOf(sc, slot);
+  o.x = w.x + sp.x;
+  o.y = w.y + sp.y;
+  o.vx = w.vx;
+  o.vy = w.vy;
+  return true;
 }
 
 /** Where a player is at server time `time`. False when they aren't in the arena. */
@@ -766,6 +854,7 @@ export interface ArenaData {
 }
 
 const tmp: Sample = { x: 0, y: 0, vx: 0, vy: 0, flags: 0, cd: 0, cdAt: 0 };
+const tmp2: Sample = { x: 0, y: 0, vx: 0, vy: 0, flags: 0, cd: 0, cdAt: 0 };
 
 function spark(
   sc: Scene,
@@ -807,16 +896,17 @@ function smoke(sc: Scene, x: number, y: number, n: number) {
 }
 
 /** Apply the tile changes carried by a frame (always) and fire its effects (if still fresh). */
-function applyFrame(sc: Scene, f: Frame, d: ArenaData, fresh: boolean) {
+/** A frame's tile changes and effects, shown at render time `at` (the frame's own time when watching). */
+function applyFrame(sc: Scene, f: Frame, d: ArenaData, fresh: boolean, at = f.t) {
   const b = board(sc.R || d.view.R);
-  if (f.board !== null) setBoard(sc, f.board, d.view.R, f.t);
+  if (f.board !== null) setBoard(sc, f.board, d.view.R, at);
   if (f.c) {
     for (let k = 0; k + 1 < f.c.length; k += 2) {
       const i = f.c[k];
       const stage = f.c[k + 1];
       if (!Number.isInteger(i) || !Number.isInteger(stage) || stage < 0 || stage > GONE) continue;
       const was = sc.tiles[i];
-      setStage(sc, i, stage, f.t, fresh);
+      setStage(sc, i, stage, at, fresh);
       const h = b.tiles[i];
       if (!fresh || !h) continue;
       if (stage === GONE && !d.reduced) {
@@ -833,61 +923,80 @@ function applyFrame(sc: Scene, f: Frame, d: ArenaData, fresh: boolean) {
     if (!Array.isArray(e)) continue;
     const type = e[0];
     if (type === FX_HIT) {
-      const [, x, y, j, a, bb] = e;
-      const hard = clamp01((j - 120) / 500);
-      const n = reduced ? 3 : 6 + Math.round(hard * 10);
-      spark(sc, x, y, n, 220 + hard * 380, "#fde047", 0, TAU);
-      if (!reduced) {
-        spark(sc, x, y, 3, 160, d.colors[a] ?? "#fff", 2, TAU);
-        spark(sc, x, y, 3, 160, d.colors[bb] ?? "#fff", 2, TAU);
+      let [, x, y] = e;
+      const [, , , j, a, bb] = e;
+      if (sc.present) {
+        // Already shown when the two met on screen (predict.ts resolves bumps too)?
+        const shown = sc.localHit.get(a < bb ? `${a},${bb}` : `${bb},${a}`);
+        if (shown !== undefined && Math.abs(at - shown) < 900) continue;
+        // Otherwise where they are drawn, if they're close: the bump lines up with the players.
+        if (sampleAt(sc, a, at, tmp) && sampleAt(sc, bb, at, tmp2) && Math.hypot(tmp2.x - tmp.x, tmp2.y - tmp.y) < PLAYER_R * 4) {
+          x = (tmp.x + tmp2.x) / 2;
+          y = (tmp.y + tmp2.y) / 2;
+        }
       }
-      sc.rings.push({ x, y, t0: f.t, dur: 360, r0: 8, r1: 40 + hard * 50, w: 5, color: "rgba(255, 240, 200, 0.8)" });
-      const mine = a === d.mySlot || bb === d.mySlot;
-      const amp = Math.min(1, (j / 600) * (mine ? 1.3 : 0.7));
-      if (amp > 0.15 && (f.t - sc.shakeAt > 120 || amp > sc.shakeAmp)) {
-        sc.shakeAt = f.t;
-        sc.shakeAmp = amp;
-      }
-      if (j > 320) sc.pops.push({ slot: -1, x, y, t0: f.t, text: j > 480 ? "💥 BONK!" : "💥", color: "#fde047" });
+      hitFx(sc, d, x, y, j, a, bb, at);
     } else if (type === FX_FALL) {
       const [, slot, x, y] = e;
       if (slot === d.mySlot && sc.myGone === f.n) continue;
-      fallFx(sc, slot, x, y, f.t, d);
+      const hh = sc.present ? sc.hist[slot] : undefined;
+      const lastSeen = hh && hh.length ? hh[hh.length - 1] : null;
+      fallFx(sc, slot, lastSeen ? lastSeen.x : x, lastSeen ? lastSeen.y : y, at, d);
     } else if (type === FX_PICKUP) {
       const [, slot, k, tile] = e;
       const kind = POWER_KINDS[k] ?? "rebuild";
       const info = POWER_INFO[kind];
       const h = b.tiles[tile];
-      const px = samplePlayer(sc.frames, slot, f.t, tmp) ? tmp.x : (h?.x ?? CENTER);
-      const py = samplePlayer(sc.frames, slot, f.t, tmp) ? tmp.y : (h?.y ?? CENTER);
-      sc.rings.push({ x: px, y: py, t0: f.t, dur: 520, r0: 20, r1: kind === "rebuild" ? 160 : 90, w: 7, color: info.color });
-      sc.pops.push({ slot, x: px, y: py, t0: f.t, text: `${info.icon} ${info.label.toUpperCase()}!`, color: info.color });
+      const px = sampleAt(sc, slot, at, tmp) ? tmp.x : (h?.x ?? CENTER);
+      const py = sampleAt(sc, slot, at, tmp) ? tmp.y : (h?.y ?? CENTER);
+      sc.rings.push({ x: px, y: py, t0: at, dur: 520, r0: 20, r1: kind === "rebuild" ? 160 : 90, w: 7, color: info.color });
+      sc.pops.push({ slot, x: px, y: py, t0: at, text: `${info.icon} ${info.label.toUpperCase()}!`, color: info.color });
       if (!reduced) spark(sc, px, py, 10, 220, info.color, 2, TAU);
     } else if (type === FX_JUMP) {
       const [, slot] = e;
       if (slot === d.mySlot) continue; // yours showed when you pressed
-      if (!reduced && samplePlayer(sc.frames, slot, f.t, tmp)) spark(sc, tmp.x, tmp.y + 8, 5, 70, "#8a7f78", 3, TAU);
+      if (!reduced && sampleAt(sc, slot, at, tmp)) spark(sc, tmp.x, tmp.y + 8, 5, 70, "#8a7f78", 3, TAU);
     } else if (type === FX_SHOCK) {
       const [, slot] = e;
-      if (samplePlayer(sc.frames, slot, f.t, tmp)) {
-        sc.rings.push({ x: tmp.x, y: tmp.y, t0: f.t, dur: 700, r0: 20, r1: 700, w: 14, color: POWER_INFO.shock.color });
-        sc.rings.push({ x: tmp.x, y: tmp.y, t0: f.t + 120, dur: 700, r0: 20, r1: 520, w: 8, color: "#fde68a" });
+      if (sampleAt(sc, slot, at, tmp)) {
+        sc.rings.push({ x: tmp.x, y: tmp.y, t0: at, dur: 700, r0: 20, r1: 700, w: 14, color: POWER_INFO.shock.color });
+        sc.rings.push({ x: tmp.x, y: tmp.y, t0: at + 120, dur: 700, r0: 20, r1: 520, w: 8, color: "#fde68a" });
       }
       for (let s2 = 0; s2 < d.view.ids.length; s2++) {
-        if (s2 === slot || !samplePlayer(sc.frames, s2, f.t, tmp)) continue;
-        sc.rings.push({ x: tmp.x, y: tmp.y, t0: f.t + 200, dur: 500, r0: 10, r1: 80, w: 6, color: POWER_INFO.shock.color });
+        if (s2 === slot || !sampleAt(sc, s2, at, tmp)) continue;
+        sc.rings.push({ x: tmp.x, y: tmp.y, t0: at + 200, dur: 500, r0: 10, r1: 80, w: 6, color: POWER_INFO.shock.color });
         if (s2 === d.mySlot) {
-          sc.shakeAt = f.t + 200;
+          sc.shakeAt = at + 200;
           sc.shakeAmp = 0.8;
         }
       }
-      sc.shakeAt = Math.max(sc.shakeAt, f.t);
+      sc.shakeAt = Math.max(sc.shakeAt, at);
       sc.shakeAmp = Math.max(sc.shakeAmp, 0.5);
     } else if (type === FX_SINK) {
       const h = b.tiles[e[1]];
-      if (h) sc.rings.push({ x: h.x, y: h.y, t0: f.t, dur: 600, r0: 6, r1: 40, w: 4, color: "#ffd166" });
+      if (h) sc.rings.push({ x: h.x, y: h.y, t0: at, dur: 600, r0: 6, r1: 40, w: 4, color: "#ffd166" });
     }
   }
+}
+
+/** A bump between a and bb at (x, y), impulse j, shown at render time `at`. */
+function hitFx(sc: Scene, d: ArenaData, x: number, y: number, j: number, a: number, bb: number, at: number) {
+  const reduced = d.reduced;
+  const hard = clamp01((j - 120) / 500);
+  const n = reduced ? 3 : 6 + Math.round(hard * 10);
+  spark(sc, x, y, n, 220 + hard * 380, "#fde047", 0, TAU);
+  if (!reduced) {
+    spark(sc, x, y, 3, 160, d.colors[a] ?? "#fff", 2, TAU);
+    spark(sc, x, y, 3, 160, d.colors[bb] ?? "#fff", 2, TAU);
+  }
+  sc.rings.push({ x, y, t0: at, dur: 360, r0: 8, r1: 40 + hard * 50, w: 5, color: "rgba(255, 240, 200, 0.8)" });
+  const mine = a === d.mySlot || bb === d.mySlot;
+  const amp = Math.min(1, (j / 600) * (mine ? 1.3 : 0.7));
+  if (amp > 0.15 && (at - sc.shakeAt > 120 || amp > sc.shakeAmp)) {
+    sc.shakeAt = at;
+    sc.shakeAmp = amp;
+  }
+  if (j > 320) sc.pops.push({ slot: -1, x, y, t0: at, text: j > 480 ? "💥 BONK!" : "💥", color: "#fde047" });
 }
 
 /** A player drops into the lava: sinking ghost, splash, smoke, and a red flash if it's you. */
@@ -953,16 +1062,41 @@ function drawScene(
   pred: LavaPredictor | null,
 ) {
   const frames = sc.frames;
-  const rt = sc.clock.play(now, sc.frames);
+  const playT = sc.clock.play(now, sc.frames);
   const wallDt = sc.wall < 0 ? 16 : Math.min(60, Math.max(0, now - sc.wall));
   sc.wall = now;
-  sc.rt = rt;
   sc.perf = now;
   const { W, H, dpr } = s;
   const reduced = d.reduced;
   const phase = d.view.phase;
   const mySlot = d.mySlot;
   const slots = d.view.ids.length;
+  const newestFrame = frames[frames.length - 1];
+
+  // A player sees everyone at one moment, the present: when an input pressed now takes effect.
+  // All of you are predicted to then (you replayed, the others dead-reckoned, bumps resolved), so a
+  // bump on screen is the server's bump. Spectators watch the playback.
+  sc.present = !!pred && mySlot >= 0 && sc.clock.ready && !!sc.worldBase && sc.worldBase.n === newestFrame?.n;
+  const prevRt = sc.rt;
+  const rt = sc.present ? Math.max(prevRt, sc.clock.serverNow(now) + pred!.lead(now)) : playT;
+  sc.rt = rt;
+  if (sc.present) {
+    pred!.decided = phase !== "fight";
+    sc.contacts.length = 0;
+    pred!.predictWorld(rt, sc.worldBase!, sc.myGone === newestFrame!.n ? -1 : mySlot, sc.world, sc.contacts);
+    sc.corr.step(wallDt);
+    for (const sp of sc.springs) sp?.step(wallDt);
+    for (const c of sc.contacts) {
+      if (c.t <= prevRt || c.t > rt || c.j < HIT_FX_MIN) continue;
+      const key = c.a < c.b ? `${c.a},${c.b}` : `${c.b},${c.a}`;
+      const last = sc.localHit.get(key);
+      if (last !== undefined && rt - last < 300) continue;
+      sc.localHit.set(key, rt);
+      const sa = springOf(sc, c.a);
+      const sb = springOf(sc, c.b);
+      hitFx(sc, d, c.x + (sa.x + sb.x) / 2, c.y + (sa.y + sb.y) / 2, c.j, c.a, c.b, rt);
+    }
+  }
   const R = d.view.R;
   const b = board(R);
   if (sc.R !== R || sc.tiles.length !== b.tiles.length) setBoard(sc, d.view.board, R, rt);
@@ -971,7 +1105,7 @@ function drawScene(
   for (const f of frames) {
     if (f.t <= sc.cursor) continue;
     if (f.t > rt) break;
-    applyFrame(sc, f, d, f.t > rt - 600);
+    applyFrame(sc, f, d, f.t > rt - (sc.present ? 1_500 : 600), sc.present ? rt : f.t);
     sc.cursor = f.t;
   }
   while (frames.length > 2 && frames[1].t < rt - KEEP_MS) frames.shift();
@@ -984,6 +1118,9 @@ function drawScene(
     sc.pops.length = 0;
     sc.rings.length = 0;
     sc.powerSeen.clear();
+    sc.hist.length = 0;
+    sc.localHit.clear();
+    for (const sp of sc.springs) sp?.reset();
   }
 
   // ----- your avatar: replayed from its newest snapshot up to where your inputs land -----
@@ -991,10 +1128,17 @@ function drawScene(
   const myNewest = latest && mySlot >= 0 ? latest.d[mySlot] : undefined;
   if (pred && myNewest && phase !== "countdown" && pred.base && pred.base.n === latest!.n && sc.myGone !== latest!.n) {
     pred.decided = phase !== "fight";
-    if (pred.predict(sc.clock.serverNow(now) + pred.lead(now), sc.my)) {
+    const w = sc.present ? sc.world[mySlot] : undefined;
+    if (w) {
+      // Predicted with everyone else (bumps included) above.
+      sc.my.x = w.x;
+      sc.my.y = w.y;
+      sc.my.vx = w.vx;
+      sc.my.vy = w.vy;
+      sc.myOn = true;
+    } else if (!sc.present && pred.predict(sc.clock.serverNow(now) + pred.lead(now), sc.my)) {
       sc.corr.step(wallDt);
       sc.myOn = true;
-      debugFrame("lava", { t: now, x: sc.my.x + sc.corr.x, y: sc.my.y + sc.corr.y, rt });
     }
   }
 
@@ -1226,8 +1370,23 @@ function drawScene(
       draws.push({ slot, x, y, vx: sc.my.vx, vy: sc.my.vy, flags: myNewest[5], jp: jp >= 0 && jp < 1 ? jp : -1, cd: myNewest[6], cdAt: latest!.t });
       continue;
     }
-    if (!samplePlayer(frames, slot, rt, tmp)) continue;
+    if (!sampleAt(sc, slot, rt, tmp)) continue;
     draws.push({ slot, x: tmp.x, y: tmp.y, vx: tmp.vx, vy: tmp.vy, flags: tmp.flags, jp: jumpPhase(tmp.cd, tmp.cdAt, rt), cd: tmp.cd, cdAt: tmp.cdAt });
+  }
+  // Where everyone was drawn (render time), for effects and falls in the present.
+  if (sc.present) {
+    for (const dr of draws) {
+      const h = (sc.hist[dr.slot] ??= []);
+      if (h.length && h[h.length - 1].t >= rt) h.pop();
+      h.push({ t: rt, x: dr.x, y: dr.y, vx: dr.vx, vy: dr.vy });
+      while (h.length > 2 && h[0].t < rt - 500) h.shift();
+    }
+  }
+  {
+    // ?debug=1: you and the first other player as drawn, and the render clock.
+    const mine = draws.find((x) => x.slot === mySlot);
+    const other = draws.find((x) => x.slot !== mySlot);
+    debugFrame("lava", { t: now, x: mine?.x ?? NaN, y: mine?.y ?? NaN, ox: other?.x ?? NaN, oy: other?.y ?? NaN, rt, present: sc.present ? 1 : 0 });
   }
   // Airborne players draw last (they're above everyone); otherwise back to front.
   draws.sort((p, q) => (p.jp >= 0 ? 1 : 0) - (q.jp >= 0 ? 1 : 0) || p.y - q.y);

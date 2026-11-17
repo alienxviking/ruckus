@@ -81,11 +81,12 @@ export const F_FLOAT_LOW = 2;
 export const F_OFFLINE = 4;
 
 /**
- * [slot, x, y, vx, vy, flags, jump cooldown left in substeps]; all ints.
+ * [slot, x, y, vx, vy, flags, jump cooldown left in substeps, stick]; all ints.
  * Trailing zeros are left off (most players, most frames: just the first five).
- * Airborne while the cooldown is above JUMP_CD_STEPS - JUMP_STEPS.
+ * Airborne while the cooldown is above JUMP_CD_STEPS - JUMP_STEPS. The stick (encodeStick, left
+ * off when centred) lets every client dead-reckon the other players.
  */
-export type PlayerTuple = [number, number, number, number, number, number?, number?];
+export type PlayerTuple = [number, number, number, number, number, number?, number?, number?];
 
 /**
  * Something that happened during a tick, played back when the snapshot is on screen:
@@ -122,9 +123,10 @@ export interface Snap {
   q?: 1;
   /**
    * Inputs received since the previous snapshot, for client prediction:
-   * [slot, input number, ms from this frame's time to the sim time it took effect from].
+   * [slot, input number, ms from this frame's time to the sim time it takes effect from,
+   *  ms from this frame's time to when it arrived (older servers leave it off)].
    */
-  a?: [number, number, number][];
+  a?: [number, number, number, number?][];
 }
 
 export function isSnap(v: unknown): v is Snap {
@@ -248,4 +250,17 @@ export function faceCentre(x: number, y: number): [number, number] {
 /** Jump cooldown on the wire (substeps left) -> substeps since take-off, or -1 when not jumping lately. */
 export function jumpAge(cd: number): number {
   return cd > 0 ? JUMP_CD_STEPS - cd : -1;
+}
+
+/** Bumps at least this hard are shown (sparks, shake). */
+export const HIT_FX_MIN = 120;
+
+/** A stick (-1..1 each way) as one small integer, 0.05 steps. */
+export function encodeStick(x: number, y: number): number {
+  return (Math.round(x * 20) + 20) * 41 + (Math.round(y * 20) + 20);
+}
+
+export function decodeStick(c: number | undefined): [number, number] {
+  if (typeof c !== "number" || !Number.isInteger(c) || c < 0 || c > 40 * 41 + 40) return [0, 0];
+  return [(Math.floor(c / 41) - 20) / 20, ((c % 41) - 20) / 20];
 }

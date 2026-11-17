@@ -1,7 +1,7 @@
 // Run with: npx tsx games/lava/lava.test.ts
 import { assert, makeTestCtx } from "../../shared/testing";
 import lava, { collide, type LavaState, type LavaView } from "./server";
-import { LavaPredictor } from "./predict";
+import { LavaPredictor, worldOfSnap, type PredictedContact } from "./predict";
 import { CORR_MS, CORR_SNAP } from "./arena";
 import { Spring2D, Timeline } from "../snakes/netsmooth";
 import { WIFI, WIFI_BAD, burstyLink, type BurstyOptions } from "../snakes/netsim";
@@ -779,7 +779,7 @@ function lavaJitter(link: BurstyOptions, seed: number, secs = 10) {
       clock.observe(snap.t, now);
       const T = clock.serverNow(now) + pred.lead(now);
       const had = pred.base?.n === snap.n && pred.predict(T, k);
-      for (const a of snap.a ?? []) if (a[0] === 0) pred.ack(a[1], snap.t + a[2], now);
+      for (const a of snap.a ?? []) if (a[0] === 0) pred.ack(a[1], snap.t + a[2], a[3] === undefined ? undefined : snap.t + a[3], now);
       const me = snap.p.find((x) => x[0] === 0);
       if (me) pred.setBase({ n: snap.n, t: snap.t, x: me[1], y: me[2], vx: me[3], vy: me[4], cd: me[6] ?? 0 });
       if (had && pred.predict(T, k2)) {
@@ -807,7 +807,7 @@ function lavaJitter(link: BurstyOptions, seed: number, secs = 10) {
       const m = Math.hypot(ix, iy) || 1;
       [ix, iy] = [Math.round((ix / m) * 100), Math.round((iy / m) * 100)];
       const seq = pred.recordInput(ix, iy, now);
-      toServer.push({ at: upLink.send(now), a: { type: "input", x: ix, y: iy, s: seq } });
+      toServer.push({ at: upLink.send(now), a: { type: "input", x: ix, y: iy, s: seq, at: pred.stamp(seq) } });
     }
   }
   const lurch: number[] = [];
@@ -835,6 +835,58 @@ for (const [name, link, seed, lim] of [
   assert(r.alive, `${label}: still standing`);
   assert(r.p95 < lim[0], `${label}: your runner moves smoothly (p95 lurch ${r.p95.toFixed(2)} units/frame)`);
   assert(r.lurchesPerS < lim[1], `${label}: no visible lurches (${r.lurchesPerS.toFixed(2)}/s)`);
+}
+
+// ---------- the predicted players bump the way the server bumps them ----------
+{
+  const { s, t } = setup(2);
+  startFight(s, t);
+  clearFloor(s);
+  place(s, 0, -1, 0);
+  place(s, 1, 1, -1);
+  Object.assign(s.runners[0], { vx: 180, vy: 0, ix: 1, iy: 0 });
+  Object.assign(s.runners[1], { vx: -150, vy: 10, ix: -1, iy: 0 });
+  step(s, t);
+  const w = worldOfSnap(s.snap);
+  const pred = new LavaPredictor();
+  const out: ({ x: number; y: number; vx: number; vy: number } | undefined)[] = [];
+  const contacts: PredictedContact[] = [];
+  pred.predictWorld(s.snap.t + 300, w, -1, out, contacts);
+  for (let ms = 0; ms < 300; ms += TICK_MS) {
+    clearFloor(s);
+    fidget(s, t, [0, 1]);
+    step(s, t);
+  }
+  assert(contacts.length > 0 && contacts[0].j > 60, "the prediction sees the bump coming");
+  for (const slot of [0, 1]) {
+    const r = s.runners[slot];
+    const e = Math.hypot(out[slot]!.x - r.x, out[slot]!.y - r.y);
+    assert(e < 6, `predicted player ${slot} ends where the server puts them after the bump (${e.toFixed(1)})`);
+  }
+}
+
+// ---------- stamped inputs: early ones wait for their substep, late ones count back (bounded) ----------
+{
+  const { s, t } = setup(2);
+  startFight(s, t);
+  clearFloor(s);
+  place(s, 0, 0, 0);
+  step(s, t);
+  const sim = (k: number) => s.fightAt + k * SUB_MS;
+  const stick = () => s.runners[0].ix as number;
+  lava.action(s, "p0", { type: "input", x: 100, y: 0, s: 1, at: Math.round(sim(s.steps + 2)) }, t.ctx);
+  assert(stick() === 0, "an early input waits");
+  step(s, t);
+  assert(stick() === 1, "...and lands on its substep");
+  const a = (s.snap.a ?? []).find((x) => x[1] === 1);
+  assert(a && typeof a[3] === "number", "acknowledged with its arrival time");
+  const vy = s.runners[0].vy;
+  lava.action(s, "p0", { type: "input", x: 0, y: 100, s: 2, at: Math.round(sim(s.steps + 1) - 100) }, t.ctx);
+  assert(s.runners[0].vy > vy + 20, `a late input counts back (vy ${s.runners[0].vy.toFixed(0)})`);
+  const vy2 = s.runners[0].vy;
+  lava.action(s, "p0", { type: "input", x: 0, y: -100, s: 3, at: Math.round(sim(s.steps + 1) - 1_000) }, t.ctx);
+  assert(vy2 - s.runners[0].vy < 2 * 600 * 0.16, `rewind is bounded (${(vy2 - s.runners[0].vy).toFixed(0)})`);
+  assert(lava.action(s, "p0", { type: "input", x: 0, y: 0, s: 4, at: Number.POSITIVE_INFINITY }, t.ctx) === false, "a bad stamp is refused");
 }
 
 void CRACK_STAGE_MS;

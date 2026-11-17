@@ -47,8 +47,19 @@ import {
   type PlayerTuple,
   type PowerKind,
   type Snap,
+  HIT_FX_MIN,
+  encodeStick,
 } from "./shared";
-import { BRAKE_FRICTION, FRICTION, applyJump, integrate } from "./physics";
+import {
+  BRAKE_FRICTION,
+  FRICTION,
+  MAX_REWIND_STEPS,
+  applyJump,
+  integrate,
+  resolveBump,
+  rewindDelta,
+  stampStep,
+} from "./physics";
 
 // Floor is Lava: a hex arena over lava where every tile you leave crumbles (Ruckus original).
 // The server owns the physics: 3 fixed substeps of 1/60 s per 50 ms tick, driven by the clock
@@ -57,23 +68,23 @@ import { BRAKE_FRICTION, FRICTION, applyJump, integrate } from "./physics";
 // the whole board as a string, only goes out on big moments (phase changes, falls). Nothing is
 // secret, so every viewer gets the same view.
 //
-// Latency: inputs carry a number (`s`); the next snapshot acknowledges it with the sim time it
-// took effect from (`a`), so the owner's client replays its own inputs with the server's timing
-// (predict.ts). The motion code is shared with the client (physics.ts).
+// Latency: inputs carry a number (`s`) and the sim time they are meant for (`at`, stamped by the
+// client a network trip ahead). An early input waits for its substep; a late one is applied at once,
+// as if on time but at most ~150 ms back (that player's own stick only; nobody else is rewound).
+// The next snapshot acknowledges every input with when it takes effect and when it arrived (`a`),
+// so the owner's client replays its inputs with the server's timing (predict.ts). Motion and bumps
+// are shared code (physics.ts): the client predicts everyone, bumps included.
 
 // ---------- tuning ----------
 
-const E_SOFT = 0.45;
-const E_BOUNCY = 1.25;
-const E_SOFT_BELOW = 40;
-const E_BOUNCY_ABOVE = 220;
-/** Bumps at least this hard are shown (sparks, shake). */
-const HIT_FX_MIN = 120;
 /** A bump this hard counts as a shove for knockout credit... */
 const SHOVE_MIN = 45;
 /** ...if the victim falls within this long. */
 const KO_WINDOW_MS = 2_500;
 const MAX_CATCHUP = 6;
+/** An early input waits at most this many substeps (1 s) for its stamp. */
+const MAX_HOLD_STEPS = 60;
+const MAX_QUEUE = 16;
 const HEARTBEAT_MS = 1_000;
 const MAX_FX = 16;
 /** Falls show at once in the snapshots; the full view (feed, scores) follows at most this often. */
@@ -106,10 +117,12 @@ interface Runner {
   tileSince: number;
   hitBy: number;
   hitAt: number;
-  /** Newest input number received, the sim time it took effect from, and whether to acknowledge it. */
+  /** Newest input number received. */
   seq: number;
-  ackT: number;
-  ackDirty: boolean;
+  /** Inputs waiting for their stamped substep. */
+  queue: { k: number; jump: boolean; x: number; y: number }[];
+  /** Inputs the next snapshot acknowledges: [input number, sim time it takes effect (0 = n/a), time it arrived]. */
+  acks: [number, number, number][];
 }
 
 interface Power {
@@ -172,7 +185,7 @@ export interface LavaState {
 }
 
 /** `s` numbers the client's inputs (optional): the next snapshot acknowledges it. */
-export type LavaAction = { type: "input"; x: number; y: number; s?: number } | { type: "jump"; s?: number };
+export type LavaAction = { type: "input"; x: number; y: number; s?: number; at?: number } | { type: "jump"; s?: number; at?: number };
 
 export interface LavaView {
   phase: Phase;
@@ -238,8 +251,8 @@ function newRunner(slot: number, id: string): Runner {
     hitBy: -1,
     hitAt: 0,
     seq: 0,
-    ackT: 0,
-    ackDirty: false,
+    queue: [],
+    acks: [],
   };
 }
 
@@ -321,39 +334,12 @@ function startRound(s: LavaState, ctx: GameCtx) {
 
 // ---------- physics ----------
 
-function restitution(approach: number) {
-  if (approach <= E_SOFT_BELOW) return E_SOFT;
-  if (approach >= E_BOUNCY_ABOVE) return E_BOUNCY;
-  return E_SOFT + ((approach - E_SOFT_BELOW) / (E_BOUNCY_ABOVE - E_SOFT_BELOW)) * (E_BOUNCY - E_SOFT);
-}
-
 /** Resolve one bump between two players. Exported for tests. */
 export function collide(s: LavaState, a: Runner, b: Runner, t: number) {
-  let dx = b.x - a.x;
-  let dy = b.y - a.y;
-  const dist = Math.hypot(dx, dy);
-  const minD = PLAYER_R * 2;
-  if (dist >= minD) return;
-  if (dist < 1e-6) {
-    dx = a.fx || 1;
-    dy = a.fy;
-  }
-  const len = Math.hypot(dx, dy) || 1;
-  const nx = dx / len;
-  const ny = dy / len;
-  const overlap = minD - dist;
-  a.x -= (nx * overlap) / 2;
-  a.y -= (ny * overlap) / 2;
-  b.x += (nx * overlap) / 2;
-  b.y += (ny * overlap) / 2;
-  const vrel = (b.vx - a.vx) * nx + (b.vy - a.vy) * ny;
-  if (vrel >= 0) return;
-  const approach = -vrel;
-  const j = ((1 + restitution(approach)) * approach) / 2;
-  a.vx -= j * nx;
-  a.vy -= j * ny;
-  b.vx += j * nx;
-  b.vy += j * ny;
+  // Push apart and bounce (physics.ts); exactly on top of each other, split along a's facing.
+  const c = resolveBump(a, b, PLAYER_R, a.fx, a.fy);
+  if (!c || c.j <= 0) return;
+  const { j, nx, ny } = c;
   if (j >= SHOVE_MIN) {
     a.hitBy = b.slot;
     a.hitAt = t;
@@ -537,9 +523,66 @@ function simulate(s: LavaState, ctx: GameCtx): number {
   let fell = 0;
   for (let i = 0; i < n; i++) {
     s.steps += 1;
+    releaseInputs(s, s.steps);
     fell += substep(s, ctx, simTime(s));
   }
   return fell;
+}
+
+// ---------- inputs ----------
+
+function setStick(r: Runner, x: number, y: number) {
+  r.ix = x;
+  r.iy = y;
+  const m = Math.hypot(x, y);
+  if (m > 0.05) {
+    r.fx = x / m;
+    r.fy = y / m;
+  }
+}
+
+/** Inputs whose stamped substep has come (in the order they were sent). */
+function releaseInputs(s: LavaState, k: number) {
+  for (const r of s.runners) {
+    while (r.queue.length && r.queue[0].k <= k) {
+      const q = r.queue.shift()!;
+      if (q.jump) r.jumpQueued = r.alive && s.phase === "fight";
+      else setStick(r, q.x, q.y);
+    }
+  }
+}
+
+/**
+ * An input meant for substep `k`. Early: it waits for its substep. Due or late: it takes effect
+ * from the next substep, plus (stick only, at most MAX_REWIND_STEPS) the difference it would have
+ * made had it arrived on time. Returns the sim time it counts from.
+ */
+function stampedInput(s: LavaState, r: Runner, k: number, jump: boolean, x: number, y: number): number {
+  const next = s.steps + 1;
+  if (k > next && r.queue.length < MAX_QUEUE) {
+    const at = Math.min(k, next + MAX_HOLD_STEPS);
+    r.queue.push({ k: at, jump, x, y });
+    return s.fightAt + at * SUB_MS;
+  }
+  for (const q of r.queue.splice(0)) {
+    if (q.jump) r.jumpQueued = r.alive && s.phase === "fight";
+    else setStick(r, q.x, q.y);
+  }
+  if (jump) {
+    r.jumpQueued = r.alive && s.phase === "fight";
+    return s.fightAt + next * SUB_MS;
+  }
+  const live = r.alive && s.phase === "fight";
+  const back = live ? Math.max(0, Math.min(MAX_REWIND_STEPS, next - k)) : 0;
+  if (back > 0) {
+    const d = rewindDelta(back, x - r.ix, y - r.iy, airborne(s, r));
+    r.x += d.x;
+    r.y += d.y;
+    r.vx += d.vx;
+    r.vy += d.vy;
+  }
+  setStick(r, x, y);
+  return s.fightAt + (next - back) * SUB_MS;
 }
 
 // ---------- snapshots ----------
@@ -555,15 +598,18 @@ function makeSnap(s: LavaState, ctx: GameCtx): Snap {
     if (!connected(ctx, r.id)) flags |= F_OFFLINE;
     const cd = s.fightAt ? Math.max(0, Math.min(JUMP_CD_STEPS, r.jumpStep + JUMP_CD_STEPS - s.steps)) : 0;
     const tuple: PlayerTuple = [r.slot, Math.round(r.x), Math.round(r.y), Math.round(r.vx), Math.round(r.vy)];
-    if (flags || cd) tuple.push(flags);
-    if (cd) tuple.push(cd);
+    // The stick lets clients dead-reckon this player until the next frame (left off when centred).
+    const steering = s.phase === "fight" && (r.ix !== 0 || r.iy !== 0);
+    if (flags || cd || steering) tuple.push(flags);
+    if (cd || steering) tuple.push(cd);
+    if (steering) tuple.push(encodeStick(r.ix, r.iy));
     p.push(tuple);
   }
-  const acks: [number, number, number][] = [];
+  // [slot, input number, ms from this frame to when it takes effect, ms from this frame to when it arrived]
+  const acks: [number, number, number, number][] = [];
   for (const r of s.runners) {
-    if (!r.ackDirty) continue;
-    r.ackDirty = false;
-    acks.push([r.slot, r.seq, r.ackT ? Math.round(r.ackT - t) : 0]);
+    for (const [seq, eff, arr] of r.acks) acks.push([r.slot, seq, eff ? Math.round(eff - t) : 0, Math.round(arr - t)]);
+    r.acks.length = 0;
   }
   const snap: Snap = {
     k: "s",
@@ -782,32 +828,41 @@ export const lava: GameDef<LavaState, LavaAction> = {
     const rec = a as Record<string, unknown>;
     const seq = rec.s;
     if (seq !== undefined && !(typeof seq === "number" && Number.isInteger(seq) && seq > 0 && seq <= 2 ** 31)) return false;
-    const ack = () => {
+    const at = rec.at;
+    if (at !== undefined && !(typeof at === "number" && Number.isFinite(at))) return false;
+    const live = s.phase === "fight" && s.fightAt > 0;
+    // The substep it is meant for: as stamped, else the next one (older clients).
+    const k = live && typeof at === "number" ? stampStep(at, s.fightAt) : s.steps + 1;
+    const now = ctx.now();
+    const ack = (from: number) => {
       if (typeof seq !== "number") return;
       r.seq = seq;
-      r.ackT = s.fightAt && s.phase !== "countdown" ? s.fightAt + (s.steps + 1) * SUB_MS : 0;
-      r.ackDirty = true;
+      if (r.acks.length < 32) r.acks.push([seq, from, now]);
     };
     if (rec.type === "input") {
       const v = readInput(rec);
       if (!v) return false;
-      ack();
-      [r.ix, r.iy] = v;
-      const m = Math.hypot(v[0], v[1]);
-      if (m > 0.05) {
-        r.fx = v[0] / m;
-        r.fy = v[1] / m;
+      if (live) ack(stampedInput(s, r, k, false, v[0], v[1]));
+      else {
+        setStick(r, v[0], v[1]);
+        ack(0);
       }
       return false;
     }
     if (rec.type === "jump") {
-      // Acknowledged even when refused, so the client stops predicting it.
-      ack();
-      if (s.phase !== "fight" || !r.alive || r.jumpQueued) return false;
-      // A press up to 3 substeps early waits for the cooldown (the client's clock may run a hair ahead).
-      const steps = Math.floor(((ctx.now() - s.fightAt) * SUBSTEPS) / TICK_MS);
-      if (steps + 3 < r.jumpStep + JUMP_CD_STEPS) return false;
-      r.jumpQueued = true;
+      // Acknowledged even when refused (as of the next substep), so the client stops predicting it.
+      const refused = s.fightAt ? s.fightAt + (s.steps + 1) * SUB_MS : 0;
+      if (!live || !r.alive || r.jumpQueued || r.queue.some((q) => q.jump)) {
+        ack(refused);
+        return false;
+      }
+      // A press up to 3 substeps before the cooldown is over waits for it (clocks differ a hair).
+      const steps = Math.max(Math.floor(((now - s.fightAt) * SUBSTEPS) / TICK_MS), k - 1);
+      if (steps + 3 < r.jumpStep + JUMP_CD_STEPS) {
+        ack(refused);
+        return false;
+      }
+      ack(stampedInput(s, r, k, true, 0, 0));
       return false;
     }
     return false;

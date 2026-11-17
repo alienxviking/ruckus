@@ -1,9 +1,9 @@
 // Run with: npx tsx games/sumo/sumo.test.ts
 import { assert, makeTestCtx } from "../../shared/testing";
 import sumo, { collide, type SumoState, type SumoView } from "./server";
-import { CORR_MS, CORR_SNAP, newScene, pushFrame, sampleDisc, type Sample } from "./rink";
-import { SumoPredictor } from "./predict";
-import { Spring2D, Timeline } from "../snakes/netsmooth";
+import { newScene, pushFrame, sampleDisc, type Sample } from "./rink";
+import { SumoPredictor, worldOfSnap, type PredictedContact } from "./predict";
+import { Timeline } from "../snakes/netsmooth";
 import { WIFI, WIFI_BAD, burstyLink, type BurstyOptions } from "../snakes/netsim";
 import {
   ABANDON_MS,
@@ -260,7 +260,7 @@ function steer(s: SumoState, t: T, slot: number, x: number, y: number) {
     "frames sit on the 50ms grid",
   );
   assert(
-    live.every((e) => e.p.every((d) => d.length >= 5 && d.length <= 7 && d.every(Number.isInteger))),
+    live.every((e) => e.p.every((d) => d.length >= 5 && d.length <= 8 && d.every(Number.isInteger))),
     "ints only",
   );
   const env = (e: Snap) => JSON.stringify({ t: "ev", e, now: e.t }).length;
@@ -751,10 +751,11 @@ function sumoNet(up: number, down: number, jitter: number, seed: number): NetSta
     const T = now - down + pred.lead();
     while (toClient.length && toClient[0].at <= now) {
       const { snap } = toClient.shift()!;
-      for (const a of snap.a ?? []) if (a[0] === 0) pred.ack(a[1], snap.t + a[2]);
+      // As rink.tsx: what was shown, then the acknowledgements and the new snapshot together.
+      const had = pred.predict(T, k);
+      for (const a of snap.a ?? []) if (a[0] === 0) pred.ack(a[1], snap.t + a[2], a[3] === undefined ? undefined : snap.t + a[3]);
       const d = snap.p.find((p) => p[0] === 0);
       if (!d) continue;
-      const had = pred.predict(T, k);
       pred.setBase({ n: snap.n, t: snap.t, x: d[1], y: d[2], vx: d[3], vy: d[4], heavy: false, r: snap.r });
       if (had && pred.predict(T, k2) && now - t0 > 1_500) stats.corr.push(Math.hypot(k.x - k2.x, k.y - k2.y));
     }
@@ -778,7 +779,7 @@ function sumoNet(up: number, down: number, jitter: number, seed: number): NetSta
       const m = Math.hypot(ix, iy) || 1;
       [ix, iy] = [Math.round((ix / m) * 100), Math.round((iy / m) * 100)];
       const seq = pred.recordInput(ix, iy, now);
-      toServer.push({ at: now + up, a: { type: "input", x: ix, y: iy, s: seq } });
+      toServer.push({ at: now + up, a: { type: "input", x: ix, y: iy, s: seq, at: pred.stamp(seq) } });
       if (now - t0 > 1_500) probes.push({ at: now, v0: [k.vx, k.vy], dir: [ix / 100, iy / 100] });
     }
   }
@@ -804,113 +805,209 @@ for (const [up, down, jitter] of [
   // 20ms of a full stick is ~20 units/s: your disc answers at once, not a round trip later.
   assert(resp > 8, `${label}: your disc answers the stick at once (${resp.toFixed(1)} units/s after 20ms)`);
   const rtt = up + down;
-  assert(r.lead > rtt - TICK_MS - 5 && r.lead < rtt + jitter + 5, `${label}: lead ~ one round trip (${r.lead.toFixed(0)})`);
+  // Stamps aim 60 ms short of the slowest arrivals (the server counts a late one back up to 150 ms).
+  assert(r.lead > rtt - 60 - 5 && r.lead < rtt + jitter - 60 + 15, `${label}: lead ~ one round trip less 60 ms (${r.lead.toFixed(0)})`);
 }
 
-// ---------- your disc over a jittery, bursty link (what the live server sees from Wi-Fi) ----------
-// Snapshots stall and then land in a bunch; inputs do the same on the way up. Drawn the way
-// rink.tsx draws it (the renderer's clock, the replay at serverNow + lead, corrections blended
-// out), your disc must move smoothly: no lurches when a bunch lands, few visible corrections.
-function sumoJitter(link: BurstyOptions, seed: number, secs = 10) {
+// ---------- a duel over a jittery, bursty link (what the live server sees from Wi-Fi) ----------
+// Two networked players, each with its own bursty uplink and downlink; player 0's screen is drawn
+// the way rink.tsx draws it: the whole rink predicted to the present (stamped inputs, the others
+// dead-reckoned, contacts resolved), new snapshots blended in. Player 0 wanders and charges,
+// player 1 hunts player 0. Checked: your disc's raw prediction rarely needs correcting, nothing
+// lurches on screen, and when the server has the two discs collide, they touch on screen too.
+function sumoDuel(link: BurstyOptions, seed: number, secs = 16) {
   const { s, t } = setup(2, seed);
   startFight(s, t);
-  Object.assign(s.discs[0], { x: CENTER, y: CENTER + 60, vx: 0, vy: 0 });
-  const upLink = burstyLink(seed, link);
-  const downLink = burstyLink(seed + 100, link);
-  const clock = new Timeline({ period: TICK_MS, start: 100, min: TICK_MS + 15, max: 650 });
-  const pred = new SumoPredictor();
-  pred.attachClock(clock);
+  Object.assign(s.discs[0], { x: CENTER - 120, y: CENTER, vx: 0, vy: 0 });
+  Object.assign(s.discs[1], { x: CENTER + 120, y: CENTER, vx: 0, vy: 0 });
+  const data = { reduced: true, mySlot: 0, colors: [], names: [], avatars: [], steerable: true, accent: "", view: view(s, t) };
+  const players = [0, 1].map((slot) => {
+    const pred = new SumoPredictor();
+    const sc = newScene();
+    pred.attachClock(sc.clock);
+    return { slot, pred, sc, up: burstyLink(seed * 10 + slot, link), down: burstyLink(seed * 10 + 5 + slot, link), inbox: [] as { at: number; snap: Snap }[], last: null as Snap | null };
+  });
+  const toServer: { at: number; slot: number; a: unknown }[] = [];
   let rnd = seed * 7919 + 13;
   const rand = () => ((rnd = (rnd * 1103515245 + 12345) % 2147483648) / 2147483648);
-  const toServer: { at: number; a: unknown }[] = [];
-  const toClient: { at: number; snap: Snap }[] = [];
-  const deliver = (snap: Snap) => toClient.push({ at: downLink.send(t.ctx.now()), snap: JSON.parse(JSON.stringify(snap)) });
-  deliver(s.snap);
   const k = { x: 0, y: 0, vx: 0, vy: 0 };
-  const k2 = { x: 0, y: 0, vx: 0, vy: 0 };
-  // The renderer's blend of corrections (rink.tsx: CORR_MS / CORR_SNAP).
-  const corr = new Spring2D(CORR_MS);
-  let corrections = 0;
-  const drawn: [number, number][] = [];
+  const raw = (p: (typeof players)[0], T: number) => {
+    const out: (typeof k | undefined)[] = [];
+    if (!p.sc.worldBase) return null;
+    p.pred.predictWorld(T, p.sc.worldBase, p.slot, out);
+    return out[p.slot] ?? null;
+  };
   const t0 = t.ctx.now();
   let nextTick = t0 + TICK_MS;
-  let nextInput = t0 + 100;
+  const nextInput = [t0 + 100, t0 + 150];
   let nextFrame = t0;
-  let target: [number, number] = [CENTER, CENTER];
+  let rt = -Infinity;
+  let corrections = 0;
+  const shown: { p: number; me: [number, number] | null; ot: [number, number] | null }[] = [];
+  const hits: number[] = [];
   for (let now = t0; now < t0 + secs * 1_000; now += 1) {
     t.advance(now - t.ctx.now());
-    while (toServer.length && toServer[0].at <= now) sumo.action(s, "p0", toServer.shift()!.a as never, t.ctx);
+    while (toServer.length && toServer[0].at <= now) {
+      const m = toServer.shift()!;
+      sumo.action(s, t.ids[m.slot], m.a as never, t.ctx);
+    }
     if (now >= nextTick) {
       nextTick += TICK_MS;
       t.events.length = 0;
-      if (sumo.tick!(s, t.ctx)) deliver(s.snap);
-      for (const e of snaps(t)) deliver(e);
+      if (sumo.tick!(s, t.ctx)) for (const p of players) p.inbox.push({ at: p.down.send(now), snap: JSON.parse(JSON.stringify(s.snap)) });
+      for (const e of snaps(t)) for (const p of players) p.inbox.push({ at: p.down.send(now), snap: JSON.parse(JSON.stringify(e)) });
+      // This test is about motion and contacts, not falling in: a disc near the edge goes back to the middle.
+      for (const d of s.discs) if (!d.alive || Math.hypot(d.x - CENTER, d.y - CENTER) > 300) Object.assign(d, { alive: true, x: CENTER, y: CENTER, vx: 0, vy: 0 });
     }
-    while (toClient.length && toClient[0].at <= now) {
-      const { snap } = toClient.shift()!;
-      clock.observe(snap.t, now);
-      // As rink.tsx does it: what's shown first, then the acknowledgements and the new base.
-      const T = clock.serverNow(now) + pred.lead(now);
-      const had = pred.base?.n === snap.n && pred.predict(T, k);
-      for (const a of snap.a ?? []) if (a[0] === 0) pred.ack(a[1], snap.t + a[2], now);
-      const d = snap.p.find((p) => p[0] === 0);
-      if (d) pred.setBase({ n: snap.n, t: snap.t, x: d[1], y: d[2], vx: d[3], vy: d[4], heavy: false, r: snap.r });
-      if (had && pred.predict(T, k2)) {
-        corr.add(k.x - k2.x, k.y - k2.y, (k.vx - k2.vx) / 1000, (k.vy - k2.vy) / 1000);
-        if (now - t0 > 1_500 && Math.hypot(k.x - k2.x, k.y - k2.y) > 1) corrections += 1;
-        if (corr.size > CORR_SNAP) corr.reset();
+    for (const p of players) {
+      while (p.inbox.length && p.inbox[0].at <= now) {
+        const snap = p.inbox.shift()!.snap;
+        p.last = snap;
+        const T = p.sc.clock.serverNow(now) + p.pred.lead(now);
+        const before = p.slot === 0 ? raw(p, T) : null;
+        pushFrame(p.sc, snap, now, { pred: p.pred, slot: p.slot, data });
+        const after = before ? raw(p, T) : null;
+        if (before && after && now - t0 > 2_500 && Math.hypot(after.x - before.x, after.y - before.y) > 2) corrections += 1;
+        if (p.slot === 0) for (const e of snap.fx ?? []) if (e[0] === FX_HIT) hits.push(now);
       }
-    }
-    if (now >= nextFrame) {
-      nextFrame += 1000 / 60;
-      clock.tick(now);
-      if (pred.predict(clock.serverNow(now) + pred.lead(now), k)) {
-        corr.step(1000 / 60);
-        if (now - t0 > 1_500) drawn.push([k.x + corr.x, k.y + corr.y]);
-      }
-    }
-    if (now >= nextInput) {
-      nextInput = now + 150 + Math.floor(rand() * 200);
-      if (rand() < 0.4) {
-        const a = rand() * Math.PI * 2;
-        target = [CENTER + Math.cos(a) * 120, CENTER + Math.sin(a) * 120];
-      }
-      if (!pred.predict(clock.serverNow(now) + pred.lead(now), k)) continue;
-      let ix = (target[0] - k.x) * 0.9 - k.vx * 0.45;
-      let iy = (target[1] - k.y) * 0.9 - k.vy * 0.45;
+      if (now < nextInput[p.slot] || !p.last || !p.pred.base) continue;
+      nextInput[p.slot] = now + 160 + Math.floor(rand() * 220);
+      if (!p.pred.predict(p.sc.clock.serverNow(now) + p.pred.lead(now), k)) continue;
+      const other = p.last.p.find((d) => d[0] !== p.slot);
+      let [tx, ty] = [CENTER + (rand() - 0.5) * 280, CENTER + (rand() - 0.5) * 280];
+      if (other && (p.slot === 1 || rand() < 0.35)) [tx, ty] = [other[1], other[2]];
+      if (Math.hypot(k.x - CENTER, k.y - CENTER) > 220) [tx, ty] = [CENTER, CENTER];
+      let ix = (tx - k.x) * 0.9 - k.vx * 0.3;
+      let iy = (ty - k.y) * 0.9 - k.vy * 0.3;
       const m = Math.hypot(ix, iy) || 1;
       [ix, iy] = [Math.round((ix / m) * 100), Math.round((iy / m) * 100)];
-      const seq = pred.recordInput(ix, iy, now);
-      toServer.push({ at: upLink.send(now), a: { type: "input", x: ix, y: iy, s: seq } });
+      const seq = p.pred.recordInput(ix, iy, now);
+      toServer.push({ at: p.up.send(now), slot: p.slot, a: { type: "input", x: ix, y: iy, s: seq, at: p.pred.stamp(seq) } });
+      toServer.sort((a, b) => a.at - b.at);
+    }
+    if (now >= nextFrame) {
+      // Player 0's screen (rink.tsx drawScene, present mode).
+      nextFrame += 1000 / 60;
+      const { sc, pred } = players[0];
+      sc.clock.play(now, sc.frames);
+      if (!sc.worldBase || !sc.clock.ready) continue;
+      rt = Math.max(rt, sc.clock.serverNow(now) + pred.lead(now));
+      pred.predictWorld(rt, sc.worldBase, 0, sc.world);
+      sc.corr.step(1000 / 60);
+      for (const sp of sc.springs) sp?.step(1000 / 60);
+      const w0 = sc.world[0];
+      const w1 = sc.world[1];
+      const me: [number, number] | null = w0 ? [w0.x + sc.corr.x, w0.y + sc.corr.y] : null;
+      const ot: [number, number] | null = w1 ? [w1.x + (sc.springs[1]?.x ?? 0), w1.y + (sc.springs[1]?.y ?? 0)] : null;
+      if (me && ot) {
+        // As drawn (rink.tsx): your disc never sinks into another one.
+        const dd = Math.hypot(me[0] - ot[0], me[1] - ot[1]);
+        if (dd < 2 * DISC_R && dd > 1e-3) {
+          me[0] = ot[0] + ((me[0] - ot[0]) / dd) * 2 * DISC_R;
+          me[1] = ot[1] + ((me[1] - ot[1]) / dd) * 2 * DISC_R;
+        }
+      }
+      if (now - t0 > 2_500) shown.push({ p: now, me, ot });
     }
   }
-  // Lurch: the frame-to-frame change of velocity on screen (units/frame); steering alone stays < 1.
+  const span = (shown[shown.length - 1].p - shown[0].p) / 1000;
   const lurch: number[] = [];
-  for (let i = 2; i < drawn.length; i++) {
-    lurch.push(Math.hypot(drawn[i][0] - 2 * drawn[i - 1][0] + drawn[i - 2][0], drawn[i][1] - 2 * drawn[i - 1][1] + drawn[i - 2][1]));
+  for (let i = 2; i < shown.length; i++) {
+    const [a, b, c] = [shown[i - 2].me, shown[i - 1].me, shown[i].me];
+    if (!a || !b || !c || Math.hypot(c[0] - b[0], c[1] - b[1]) > 150) continue;
+    lurch.push(Math.hypot(c[0] - 2 * b[0] + a[0], c[1] - 2 * b[1] + a[1]));
   }
-  lurch.sort((a, b) => a - b);
-  const span = secs - 1.5;
+  lurch.sort((x, y) => x - y);
+  // Each server hit: how close the two discs came on screen around when it reached player 0.
+  const gaps: number[] = [];
+  let deepest = 0;
+  for (const h of hits) {
+    if (h - t0 < 3_000) continue;
+    let best = Infinity;
+    for (const f of shown) {
+      if (f.p < h - 1_200 || f.p > h + 400 || !f.me || !f.ot) continue;
+      best = Math.min(best, Math.hypot(f.me[0] - f.ot[0], f.me[1] - f.ot[1]) - 2 * DISC_R);
+    }
+    if (Number.isFinite(best)) gaps.push(Math.abs(best));
+  }
+  for (const f of shown) if (f.me && f.ot) deepest = Math.max(deepest, 2 * DISC_R - Math.hypot(f.me[0] - f.ot[0], f.me[1] - f.ot[1]));
+  gaps.sort((x, y) => x - y);
   return {
-    alive: s.discs.every((d) => d.alive),
-    p95: lurch[Math.floor(lurch.length * 0.95)],
-    max: lurch[lurch.length - 1],
-    lurchesPerS: lurch.filter((v) => v > 3).length / span,
     corrPerS: corrections / span,
+    p95: lurch[Math.floor(lurch.length * 0.95)],
+    lurchesPerS: lurch.filter((v) => v > 3).length / span,
+    hits: gaps.length,
+    gapP50: gaps[Math.floor(gaps.length / 2)] ?? 0,
+    deepest,
   };
 }
 
 for (const [name, link, seed, lim] of [
-  ["wifi", WIFI, 31, [2.5, 2.5]],
-  ["wifi", WIFI, 32, [2.5, 2.5]],
-  ["bad wifi", WIFI_BAD, 33, [4, 4]],
+  ["wifi", WIFI, 31, { corr: 3, p95: 2, lurch: 2.5, gap: 40, hits: 3 }],
+  ["wifi", WIFI, 32, { corr: 3, p95: 2, lurch: 2.5, gap: 40, hits: 3 }],
+  ["bad wifi", WIFI_BAD, 33, { corr: 4.5, p95: 2.5, lurch: 3, gap: Infinity, hits: 1 }],
 ] as const) {
-  const r = sumoJitter(link, seed);
-  const label = `sumo net ${name} #${seed}`;
-  if (process.env.NET_VERBOSE) console.log(label, { p95: r.p95.toFixed(2), max: r.max.toFixed(1), lurchesPerS: r.lurchesPerS.toFixed(2), corrPerS: r.corrPerS.toFixed(2) });
-  assert(r.alive, `${label}: nobody fell`);
-  assert(r.p95 < lim[0], `${label}: your disc moves smoothly (p95 lurch ${r.p95.toFixed(2)} units/frame)`);
-  assert(r.lurchesPerS < lim[1], `${label}: no visible lurches (${r.lurchesPerS.toFixed(2)}/s)`);
+  const r = sumoDuel(link, seed);
+  const label = `sumo duel ${name} #${seed}`;
+  if (process.env.NET_VERBOSE) console.log(label, Object.fromEntries(Object.entries(r).map(([k2, v]) => [k2, +v.toFixed(2)])));
+  assert(r.corrPerS < lim.corr, `${label}: your disc's prediction rarely needs correcting (${r.corrPerS.toFixed(2)}/s)`);
+  assert(r.p95 < lim.p95 && r.lurchesPerS < lim.lurch, `${label}: your disc moves smoothly (p95 ${r.p95.toFixed(2)}, ${r.lurchesPerS.toFixed(2)} lurches/s)`);
+  assert(r.hits >= lim.hits, `${label}: they collided (${r.hits})`);
+  assert(r.gapP50 < lim.gap, `${label}: server hits touch on screen (median gap ${r.gapP50.toFixed(1)})`);
+  assert(r.deepest < 45, `${label}: discs never sink far into each other on screen (${r.deepest.toFixed(1)})`);
+}
+
+// ---------- the predicted rink resolves contacts the way the server does ----------
+{
+  const { s, t } = setup(2);
+  startFight(s, t);
+  Object.assign(s.discs[0], { x: CENTER - 150, y: CENTER, vx: 300, vy: 0, ix: 1, iy: 0 });
+  Object.assign(s.discs[1], { x: CENTER + 50, y: CENTER + 20, vx: -200, vy: 0, ix: -1, iy: 0 });
+  step(s, t);
+  const w = worldOfSnap(s.snap);
+  const pred = new SumoPredictor();
+  const out: ({ x: number; y: number; vx: number; vy: number } | undefined)[] = [];
+  const contacts: PredictedContact[] = [];
+  pred.predictWorld(s.snap.t + 300, w, -1, out, contacts);
+  run(s, t, 300);
+  assert(contacts.length > 0 && contacts[0].j > 100, "the prediction sees the collision coming");
+  for (const slot of [0, 1]) {
+    const d = s.discs[slot];
+    const e = Math.hypot(out[slot]!.x - d.x, out[slot]!.y - d.y);
+    assert(e < 6, `predicted disc ${slot} ends where the server puts it after the hit (${e.toFixed(1)})`);
+  }
+}
+
+// ---------- stamped inputs: early ones wait for their substep, late ones count back (bounded) ----------
+{
+  const { s, t } = setup(2);
+  startFight(s, t);
+  Object.assign(s.discs[0], { x: CENTER, y: CENTER, vx: 0, vy: 0, ix: 0, iy: 0 });
+  step(s, t);
+  const sim = (k: number) => s.fightAt + k * (TICK_MS / 3);
+  // Early: meant for 2 substeps from now. Nothing happens until then.
+  sumo.action(s, "p0", { type: "input", x: 100, y: 0, s: 1, at: Math.round(sim(s.steps + 2)) }, t.ctx);
+  const stick = () => s.discs[0].ix as number;
+  const queued = () => s.discs[0].queue.length as number;
+  assert(stick() === 0 && queued() === 1, "an early input waits");
+  step(s, t);
+  assert(stick() === 1 && queued() === 0, "...and lands on its substep");
+  // Its acknowledgement says when it took effect and when it arrived.
+  const a = (s.snap.a ?? []).find((x) => x[1] === 1);
+  assert(a && typeof a[3] === "number", "acknowledged with its arrival time");
+  // Late by 100 ms: applied at once, as if on time (the disc is already moving the new way).
+  const before = { ...s.discs[0] };
+  sumo.action(s, "p0", { type: "input", x: 0, y: 100, s: 2, at: Math.round(sim(s.steps + 1) - 100) }, t.ctx);
+  assert(s.discs[0].iy === 1 && s.discs[0].vy > before.vy + 50, `a late input counts back (vy ${s.discs[0].vy.toFixed(0)})`);
+  // Late by a whole second: counted back at most ~150 ms.
+  const vy = s.discs[0].vy;
+  sumo.action(s, "p0", { type: "input", x: 0, y: -100, s: 3, at: Math.round(sim(s.steps + 1) - 1_000) }, t.ctx);
+  // (The stick swung from +1 to -1: at most 150 ms of a 2x full-stick difference.)
+  assert(vy - s.discs[0].vy < 2 * 1000 * 0.16, `rewind is bounded (${(vy - s.discs[0].vy).toFixed(0)} units/s)`);
+  // Absurd stamps are refused or clamped.
+  assert(sumo.action(s, "p0", { type: "input", x: 0, y: 0, s: 4, at: Number.NaN }, t.ctx) === false, "a NaN stamp is refused");
+  sumo.action(s, "p0", { type: "input", x: 50, y: 0, s: 5, at: Math.round(sim(s.steps + 1) + 60_000) }, t.ctx);
+  assert(s.discs[0].queue[0].k <= s.steps + 1 + 60, "a stamp far ahead is held at most a second");
 }
 
 // ---------- dash: predicted at once; a refused one disappears once acknowledged ----------
@@ -934,11 +1031,11 @@ for (const [name, link, seed, lim] of [
   assert(pred.dashLeft(now, DASH_CD_MS) > DASH_CD_MS - 10, "and the recharge starts at once");
   // The server refuses it (still cooling down) and says so; the next replay drops it.
   s.discs[0].dashReadyAt = now + 5_000;
-  sumo.action(s, "p0", { type: "dash", s: seq }, t.ctx);
+  sumo.action(s, "p0", { type: "dash", s: seq, at: pred.stamp(seq) }, t.ctx);
   t.events.length = 0;
   step(s, t);
   const f = snaps(t)[0] ?? s.snap;
-  for (const a of f.a ?? []) if (a[0] === 0) pred.ack(a[1], f.t + a[2]);
+  for (const a of f.a ?? []) if (a[0] === 0) pred.ack(a[1], f.t + a[2], a[3] === undefined ? undefined : f.t + a[3]);
   pred.setBase(base());
   pred.predict(t.ctx.now() + pred.lead(), k);
   assert(Math.abs(k.vx) < 1, `a refused dash vanishes from the replay (${k.vx.toFixed(1)})`);
