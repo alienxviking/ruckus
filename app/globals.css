@@ -240,6 +240,21 @@ body::after {
   animation: pop-in 0.26s var(--ease-spring) both;
 }
 
+/* The selected-game frame: snaps onto the card it belongs to, no travelling. */
+@keyframes ring-in {
+  from {
+    transform: scale(1.035);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+.select-ring {
+  animation: ring-in 0.22s var(--ease-out-expo) both;
+}
+
 @keyframes rise {
   from {
     transform: translateY(10px);

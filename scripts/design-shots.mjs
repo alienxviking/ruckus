@@ -25,7 +25,6 @@ async function open(name, viewport, mobile = false) {
   const page = await ctx.newPage();
   page.on("pageerror", (e) => errors.push(`[${name}] ${e.message}`));
   page.on("console", (m) => m.type() === "error" && !/hydrat/i.test(m.text()) && errors.push(`[${name}] ${m.text().slice(0, 200)}`));
-  page.on("dialog", (d) => d.accept());
   return page;
 }
 const shot = (page, name, full = false) => page.screenshot({ path: join(OUT, `${name}.png`), fullPage: full });
@@ -92,7 +91,7 @@ try {
     await host.waitForTimeout(2500);
     await shot(host, `game-${g.id}-desktop`);
     await shot(phone, `game-${g.id}-phone`);
-    await host.getByRole("button", { name: "End game" }).click();
+    await endGame(host);
     await host.getByRole("heading", { name: "Pick a game" }).waitFor({ timeout: 10_000 });
   }
 
@@ -148,3 +147,9 @@ try {
 }
 console.log(errors.length ? errors.join("\n") : "design shots OK");
 process.exit(errors.some((e) => e.startsWith("FAILED")) ? 1 : 0);
+
+/** "End game" opens Ruckus's own confirm dialog; confirm it. */
+async function endGame(page, timeout = 10_000) {
+  await page.getByRole("button", { name: "End game" }).first().click({ timeout });
+  await page.getByRole("dialog").getByRole("button", { name: "End game" }).click({ timeout });
+}

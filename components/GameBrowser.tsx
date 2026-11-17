@@ -29,6 +29,9 @@ export function GameBrowser({
   const [filter, setFilter] = useState<Filter>("all");
   // The staggered CSS entrance plays once; after a filter change, motion handles entries.
   const [intro, setIntro] = useState(true);
+  // Optimistic pick: highlight the clicked card at once, until the server's choice arrives.
+  const [pending, setPending] = useState<{ id: string; from?: string } | null>(null);
+  const activeId = pending && pending.from === selectedId ? pending.id : selectedId;
   const fits = (g: GameMeta) => playerCount !== undefined && playerCount >= g.minPlayers && playerCount <= g.maxPlayers;
   const shown = CATALOG.filter((g) =>
     filter === "all" ? true : filter === "fits" ? fits(g) : g.category === filter,
@@ -86,7 +89,7 @@ export function GameBrowser({
         <div className={`relative grid gap-3 ${columns}`}>
           <AnimatePresence mode="popLayout" initial={false}>
             {shown.map((g, i) => {
-              const selected = g.id === selectedId;
+              const selected = g.id === activeId;
               return (
                 <m.div
                   key={g.id}
@@ -106,16 +109,22 @@ export function GameBrowser({
                       game={g}
                       selected={selected}
                       disabled={disabled}
-                      onSelect={onSelect ? () => onSelect(g) : undefined}
+                      onSelect={
+                        onSelect
+                          ? () => {
+                              if (!disabled && g.id !== selectedId) setPending({ id: g.id, from: selectedId });
+                              onSelect(g);
+                            }
+                          : undefined
+                      }
                     />
                   </div>
                   {selected && (
-                    // Outside the card (which clips), so the frame can glide across the grid.
-                    <m.span
+                    // Outside the card (which clips). Keyed per game so it pops in on the new card.
+                    <span
+                      key={g.id}
                       aria-hidden
-                      layoutId={`${uid}-selected`}
-                      transition={GLIDE}
-                      className="pointer-events-none absolute -inset-px z-10 rounded-[0.75rem]"
+                      className="select-ring pointer-events-none absolute -inset-px z-10 rounded-[0.75rem]"
                       style={{
                         boxShadow: `0 0 0 1.5px ${g.accent}, 0 0 32px -6px ${g.accent}, inset 0 0 24px -12px ${g.accent}`,
                       }}

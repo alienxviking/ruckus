@@ -9,7 +9,12 @@ import { PlayerChip } from "../game-ui";
 import { GameBadge } from "../GameBadge";
 import { Magnetic } from "../Magnetic";
 import { Confetti } from "../Confetti";
-import { Component, useMemo, type ReactNode } from "react";
+import { Component, useMemo, useState, type ReactNode } from "react";
+import dynamic from "next/dynamic";
+
+// The animated confirm dialog is fetched on first hover/focus of "End game".
+const loadConfirmDialog = () => import("./ConfirmDialog");
+const ConfirmDialog = dynamic(loadConfirmDialog, { ssr: false });
 
 export function GameStage({
   room,
@@ -35,6 +40,8 @@ export function GameStage({
   // its own inputs change.
   const players = useMemo(() => room.participants.map((id) => byId[id]).filter(Boolean), [room.participants, byId]);
   const isPlayer = room.participants.includes(me);
+  const [confirming, setConfirming] = useState(false);
+  const [confirmMounted, setConfirmMounted] = useState(false);
 
   return (
     <div className="flex flex-col gap-3">
@@ -50,10 +57,25 @@ export function GameStage({
           {isHost && !room.result && (
             <button
               className="btn px-3 py-1.5 text-sm"
-              onClick={() => confirm("End this game for everyone?") && r.send({ t: "lobby" })}
+              onPointerEnter={loadConfirmDialog}
+              onFocus={loadConfirmDialog}
+              onClick={() => {
+                setConfirmMounted(true);
+                setConfirming(true);
+              }}
             >
               End game
             </button>
+          )}
+          {confirmMounted && (
+            <ConfirmDialog
+              open={confirming}
+              onOpenChange={setConfirming}
+              title="End this game?"
+              description="Everyone goes back to the lobby and this round's progress is lost."
+              confirmLabel="End game"
+              onConfirm={() => r.send({ t: "lobby" })}
+            />
           )}
           {headerExtra}
         </div>

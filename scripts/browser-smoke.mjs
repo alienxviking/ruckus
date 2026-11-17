@@ -27,7 +27,6 @@ async function player(name, viewport, isMobile = false) {
   page.on("console", (m) => {
     if (m.type() === "error" && !/hydrat/i.test(m.text())) errors.push(`[${name}] console: ${m.text().slice(0, 300)}`);
   });
-  page.on("dialog", (d) => d.accept()); // "End this game for everyone?"
   return page;
 }
 
@@ -75,7 +74,7 @@ try {
           errors.push(`[${who}] ${g.id}: game UI crashed (error boundary shown)`);
         }
       }
-      await host.getByRole("button", { name: "End game" }).click();
+      await endGame(host);
       await host.getByRole("heading", { name: "Pick a game" }).waitFor({ timeout: 10_000 });
       const fresh = errors.slice(before);
       console.log(`${fresh.length ? "✗" : "✓"} ${g.name}${fresh.length ? ` (${fresh.length} errors)` : ""}`);
@@ -84,7 +83,7 @@ try {
       console.log(`✗ ${g.name}: ${e.message.split("\n")[0]}`);
       await shot(host, `${tag}-FAILED-host`).catch(() => {});
       // Try to get back to the lobby for the next game.
-      await host.getByRole("button", { name: "End game" }).click({ timeout: 2000 }).catch(() => {});
+      await endGame(host, 2000).catch(() => {});
       await host.getByRole("button", { name: "Pick another" }).click({ timeout: 2000 }).catch(() => {});
     }
   }
@@ -99,4 +98,10 @@ try {
   await browser.close();
   console.log(failed ? "\n✗ smoke test found problems" : `\n✓ all ${games.length} games rendered cleanly on 3 devices (screenshots in ${OUT})`);
   process.exitCode = failed ? 1 : 0;
+}
+
+/** "End game" opens Ruckus's own confirm dialog; confirm it. */
+async function endGame(page, timeout = 10_000) {
+  await page.getByRole("button", { name: "End game" }).first().click({ timeout });
+  await page.getByRole("dialog").getByRole("button", { name: "End game" }).click({ timeout });
 }
