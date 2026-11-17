@@ -46,6 +46,10 @@ import flip from "./flip/server";
 import ladder from "./ladder/server";
 import stack from "./stack/server";
 import pairs from "./pairs/server";
+import codeword from "./codeword/server";
+import wordwheel from "./wordwheel/server";
+import ninebox from "./ninebox/server";
+import groupup from "./groupup/server";
 
 export const GAME_DEFS: Record<string, GameDef> = {
   sketch,
@@ -94,4 +98,8 @@ export const GAME_DEFS: Record<string, GameDef> = {
   ladder,
   stack,
   pairs,
+  codeword,
+  wordwheel,
+  ninebox,
+  groupup,
 };

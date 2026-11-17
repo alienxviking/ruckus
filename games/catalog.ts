@@ -12,6 +12,10 @@ import { meta as flipMeta } from "./flip/meta";
 import { meta as ladderMeta } from "./ladder/meta";
 import { meta as stackMeta } from "./stack/meta";
 import { meta as pairsMeta } from "./pairs/meta";
+import { meta as codewordMeta } from "./codeword/meta";
+import { meta as wordwheelMeta } from "./wordwheel/meta";
+import { meta as nineboxMeta } from "./ninebox/meta";
+import { meta as groupupMeta } from "./groupup/meta";
 
 export type GameCategory = "party" | "board" | "arena" | "brain";
 
@@ -632,6 +636,10 @@ export const CATALOG: GameMeta[] = [
   ladderMeta,
   stackMeta,
   pairsMeta,
+  codewordMeta,
+  wordwheelMeta,
+  nineboxMeta,
+  groupupMeta,
 ];
 
 export const CATALOG_BY_ID: Record<string, GameMeta> = Object.fromEntries(

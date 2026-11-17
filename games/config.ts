@@ -47,6 +47,10 @@ import { config as flip } from "./flip/config";
 import { config as ladder } from "./ladder/config";
 import { config as stack } from "./stack/config";
 import { config as pairs } from "./pairs/config";
+import { config as codeword } from "./codeword/config";
+import { config as wordwheel } from "./wordwheel/config";
+import { config as ninebox } from "./ninebox/config";
+import { config as groupup } from "./groupup/config";
 
 export const GAME_CONFIG: Record<string, GameConfig> = {
   sketch,
@@ -95,4 +99,8 @@ export const GAME_CONFIG: Record<string, GameConfig> = {
   ladder,
   stack,
   pairs,
+  codeword,
+  wordwheel,
+  ninebox,
+  groupup,
 };

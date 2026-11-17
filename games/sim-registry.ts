@@ -56,4 +56,8 @@ export const SIM_LOADERS: Record<string, () => Promise<Loaded>> = {
   ladder: () => Promise.all([import("./ladder/server"), import("./ladder/client")]),
   stack: () => Promise.all([import("./stack/server"), import("./stack/client")]),
   pairs: () => Promise.all([import("./pairs/server"), import("./pairs/client")]),
+  codeword: () => Promise.all([import("./codeword/server"), import("./codeword/client")]),
+  wordwheel: () => Promise.all([import("./wordwheel/server"), import("./wordwheel/client")]),
+  ninebox: () => Promise.all([import("./ninebox/server"), import("./ninebox/client")]),
+  groupup: () => Promise.all([import("./groupup/server"), import("./groupup/client")]),
 };

@@ -51,6 +51,10 @@ export const RULES: Record<string, Loader> = {
   ladder: () => import("./ladder/rules"),
   stack: () => import("./stack/rules"),
   pairs: () => import("./pairs/rules"),
+  codeword: () => import("./codeword/rules"),
+  wordwheel: () => import("./wordwheel/rules"),
+  ninebox: () => import("./ninebox/rules"),
+  groupup: () => import("./groupup/rules"),
 };
 
 export type { GameRules };

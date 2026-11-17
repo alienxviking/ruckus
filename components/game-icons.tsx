@@ -28,6 +28,10 @@ import {
   Snowflake,
   Sparkles,
   Vote,
+  SpellCheck,
+  Orbit,
+  Grid3x3,
+  LayoutGrid,
   MessageSquareOff,
   Armchair,
   BadgeCheck,
@@ -193,6 +197,10 @@ const GLYPHS: Record<string, Glyph> = {
   ladder: ListTree,
   stack: Layers,
   pairs: Copy,
+  codeword: SpellCheck,
+  wordwheel: Orbit,
+  ninebox: Grid3x3,
+  groupup: LayoutGrid,
 };
 
 export function GameGlyph({ id, className }: { id: string; className?: string }) {

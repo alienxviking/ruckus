@@ -69,6 +69,10 @@ const LOADERS: Record<string, () => Promise<{ default: AnyGameClient }>> = {
   ladder: () => import("./ladder/client"),
   stack: () => import("./stack/client"),
   pairs: () => import("./pairs/client"),
+  codeword: () => import("./codeword/client"),
+  wordwheel: () => import("./wordwheel/client"),
+  ninebox: () => import("./ninebox/client"),
+  groupup: () => import("./groupup/client"),
 };
 
 export const GAME_CLIENTS: Record<string, AnyGameClient> = Object.fromEntries(
