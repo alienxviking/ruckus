@@ -3,7 +3,8 @@
 import { AnimatePresence } from "motion/react";
 import * as m from "motion/react-m";
 import { useId, useState } from "react";
-import { Search, X } from "lucide-react";
+import { matchesSearch, searchTerms } from "@/lib/search-games";
+import { SearchBox } from "./SearchBox";
 import { CATALOG, CATEGORY_LABEL, type GameCategory, type GameMeta } from "@/games/catalog";
 import { GameCard } from "./GameCard";
 
@@ -46,25 +47,9 @@ export function GameBrowser({
   const activeId = pending && pending.from === selectedId ? pending.id : selectedId;
   const fits = (g: GameMeta) => playerCount !== undefined && playerCount >= g.minPlayers && playerCount <= g.maxPlayers;
   const group = GROUPS.find((x) => x.id === filter);
-  // Search: every word typed must appear in the game's name, tagline, type, how-to or player count.
   const [query, setQuery] = useState("");
-  const terms = query.toLowerCase().split(/\s+/).filter(Boolean);
-  const matches = (g: GameMeta) => {
-    if (!terms.length) return true;
-    const hay = [
-      g.name,
-      g.tagline,
-      CATEGORY_LABEL[g.category],
-      g.teams ? "teams team" : "",
-      g.call ? "call zoom meet video" : "",
-      g.minPlayers === 1 ? "solo single 1 player" : "",
-      g.maxPlayers <= 2 ? "2 player two duo 1v1" : "",
-      ...g.how,
-    ]
-      .join(" ")
-      .toLowerCase();
-    return terms.every((t) => hay.includes(t));
-  };
+  const terms = searchTerms(query);
+  const matches = (g: GameMeta) => matchesSearch(g, terms);
   const shown = CATALOG.filter(
     (g) => (filter === "all" ? true : filter === "fits" ? fits(g) : group ? group.test(g) : g.category === filter) && matches(g),
   );
@@ -80,32 +65,14 @@ export function GameBrowser({
 
   return (
     <div>
-      <label className="relative mb-3 block max-w-md">
-        <span className="sr-only">Search games</span>
-        <Search aria-hidden className="pointer-events-none absolute top-1/2 left-3.5 size-4 -translate-y-1/2 text-muted" strokeWidth={2.4} />
-        <input
-          type="search"
-          value={query}
-          onChange={(e) => {
-            setIntro(false);
-            setQuery(e.target.value);
-          }}
-          placeholder="Search games… (try “draw”, “word”, “2 player”)"
-          className="input rounded-full py-2.5 pr-10 pl-10"
-          autoComplete="off"
-          spellCheck={false}
-        />
-        {query && (
-          <button
-            type="button"
-            aria-label="Clear search"
-            onClick={() => setQuery("")}
-            className="absolute top-1/2 right-2 grid size-7 -translate-y-1/2 place-items-center rounded-full text-muted hover:bg-panel-2 hover:text-text"
-          >
-            <X aria-hidden className="size-4" strokeWidth={2.4} />
-          </button>
-        )}
-      </label>
+      <SearchBox
+        value={query}
+        onChange={(v) => {
+          setIntro(false);
+          setQuery(v);
+        }}
+        className="mb-3"
+      />
       <div
         className="mb-4 flex gap-1 overflow-x-auto rounded-xl border border-line bg-panel/70 p-1 [scrollbar-width:none] sm:inline-flex sm:max-w-full sm:flex-wrap"
         role="group"

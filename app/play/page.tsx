@@ -1,20 +1,16 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { CalendarDays, ChevronRight } from "lucide-react";
-import type { GameMeta } from "@/games/catalog";
-import { GameCard } from "@/components/GameCard";
+import { PlayShelves } from "@/components/play/PlayShelves";
 import { Rux } from "@/components/Rux";
 import { Logo } from "@/components/Logo";
 import { BackLink } from "@/components/play/BackLink";
-import { LOCAL_GAMES } from "@/lib/local-games";
 
 export const metadata: Metadata = {
   title: "Play solo or vs bots · Ruckus",
   description: "No room needed: play Ruckus games on your own or against practice bots, right in the browser.",
 };
 
-const SOLO = LOCAL_GAMES.filter((g) => g.minPlayers <= 1);
-const BOTS = LOCAL_GAMES.filter((g) => g.minPlayers > 1);
 
 export default function PlayIndex() {
   return (
@@ -54,34 +50,7 @@ export default function PlayIndex() {
         </Link>
       </section>
 
-      <Shelf id="solo" title="Solo" sub="Just you against the clock (bots optional where they fit)." games={SOLO} />
-      <Shelf id="bots" title="You vs bots" sub="Practice bots fill the other seats." games={BOTS} />
+      <PlayShelves />
     </main>
-  );
-}
-
-function Shelf({ id, title, sub, games }: { id: string; title: string; sub: string; games: GameMeta[] }) {
-  if (!games.length) return null;
-  return (
-    <section aria-labelledby={`${id}-heading`} className="mb-12">
-      <div className="mb-4 flex items-end justify-between gap-4">
-        <div>
-          <h2 id={`${id}-heading`} className="font-hero text-xl font-extrabold tracking-[-0.03em] sm:text-2xl">
-            {title}
-          </h2>
-          <p className="mt-1 text-sm text-muted">{sub}</p>
-        </div>
-        <span className="font-mono text-xs text-muted">{games.length} games</span>
-      </div>
-      <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        {games.map((g, i) => (
-          <li key={g.id} className="animate-rise" style={{ animationDelay: `${Math.min(i, 12) * 35}ms` }}>
-            <Link href={`/play/${g.id}`} className="badge-trigger block h-full rounded-[0.7rem]" aria-label={`Play ${g.name}`}>
-              <GameCard game={g} index={i} />
-            </Link>
-          </li>
-        ))}
-      </ul>
-    </section>
   );
 }
