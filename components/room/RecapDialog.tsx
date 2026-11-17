@@ -13,7 +13,7 @@ import {
 import { Download, Flame, Share2, X } from "lucide-react";
 import { useMemo, useState } from "react";
 import { CATALOG_BY_ID } from "@/games/catalog";
-import { buildRecap, type Recap } from "@/lib/recap";
+import { buildRecap, recapHistory, type Recap } from "@/lib/recap";
 import { avatarImage, preloadAvatars } from "@/lib/avatar-art";
 import type { RoomView } from "@/shared/types";
 import { Avatar } from "../Avatar";
@@ -139,7 +139,7 @@ export default function RecapDialog({
 
             <h3 className="label mt-5 mb-2">Games</h3>
             <ul className="space-y-1.5">
-              {[...room.history].reverse().map((h) => {
+              {[...recapHistory(room.history)].reverse().map((h) => {
                 const g = CATALOG_BY_ID[h.gameId];
                 return (
                   <li key={h.at} className="flex items-center gap-2.5 text-sm">

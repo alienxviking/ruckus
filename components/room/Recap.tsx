@@ -14,8 +14,8 @@ const RecapDialog = dynamic(loadRecapDialog, { ssr: false });
 export function RecapCard({ room }: { room: RoomView }) {
   const [open, setOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
-  if (room.history.length < 2) return null;
   const recap = buildRecap(room.history, room.players);
+  if (recap.games < 2) return null;
   const champ = recap.champions;
 
   return (

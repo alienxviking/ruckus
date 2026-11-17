@@ -21,7 +21,13 @@ export interface Recap {
   favourite: { gameId: string; n: number } | null;
 }
 
-export function buildRecap(history: HistoryEntry[], players: Player[]): Recap {
+/** Games for the recap: ones a practice bot won are left out. */
+export function recapHistory(history: HistoryEntry[]): HistoryEntry[] {
+  return history.filter((h) => !h.winners.some((id) => id.startsWith("bot-")));
+}
+
+export function buildRecap(allHistory: HistoryEntry[], players: Player[]): Recap {
+  const history = recapHistory(allHistory);
   const byId = new Map(players.map((p) => [p.id, p]));
   const stats = new Map<string, PlayerLine & { run: number }>();
   const line = (id: string) => {
