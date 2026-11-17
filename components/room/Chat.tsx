@@ -51,8 +51,8 @@ export function Chat({
             return (
               <li key={m.id} className="animate-chat flex justify-center py-0.5">
                 <span
-                  className="marker max-w-[92%] rounded-lg border-2 border-ink px-2.5 py-0.5 text-center text-[15px] leading-snug break-words text-ink shadow-[2px_3px_0_rgb(0_0_0/0.5)]"
-                  style={{ background: tone, transform: `rotate(${i % 2 ? 1.5 : -1.5}deg)` }}
+                  className="marker max-w-[92%] rounded-lg border border-l-[3px] border-line bg-panel-2 px-2.5 py-0.5 text-center text-[15px] leading-snug break-words text-muted"
+                  style={{ borderLeftColor: tone, transform: `rotate(${i % 2 ? 1 : -1}deg)` }}
                 >
                   {m.avatar && (
                     <>

@@ -1332,3 +1332,15 @@ body::after {
     display: none;
   }
 }
+
+/* Home: the game card's blurred backdrop fades in. */
+@layer components {
+  .play-backdrop {
+    animation: fade-in 0.2s ease-out both;
+  }
+}
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}

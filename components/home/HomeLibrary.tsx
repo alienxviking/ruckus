@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Bot, Dices, Users, X } from "lucide-react";
-import { CATALOG, type GameMeta } from "@/games/catalog";
+import { CATALOG, CATEGORY_LABEL, type GameMeta } from "@/games/catalog";
 import { useCreateRoom } from "@/lib/useCreateRoom";
 import { GameBrowser } from "../GameBrowser";
 import { CoverArt } from "../CoverArt";
@@ -218,53 +218,108 @@ function PlaySheet({ game, local, onClose }: { game: GameMeta; local: boolean; o
   const { create, busy, error } = useCreateRoom();
   const first = useRef<HTMLAnchorElement & HTMLButtonElement>(null);
 
+  // Focus the main action, close on Escape, and stop the page scrolling behind the card.
   useEffect(() => {
     first.current?.focus({ preventScroll: true });
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
     };
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    const overflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      document.body.style.overflow = overflow;
+    };
   }, [onClose]);
 
   const solo = game.minPlayers <= 1;
+  const players = game.minPlayers === game.maxPlayers ? `${game.minPlayers}` : `${game.minPlayers}–${game.maxPlayers}`;
+  const kind = game.call ? "On a call" : game.teams ? "Teams" : CATEGORY_LABEL[game.category];
   return (
-    <div
-      role="dialog"
-      aria-labelledby="play-sheet-title"
-      className="stk slap fixed inset-x-3 bottom-3 z-40 mx-auto max-w-md overflow-hidden p-0 sm:bottom-6"
-      style={{ "--stk-bg": "var(--color-panel)", "--accent": game.accent } as React.CSSProperties}
-    >
-      <div className="flex items-center gap-3 p-3">
-        <CoverArt game={game} className="w-28 shrink-0 rounded-lg border-2 border-ink" />
-        <div className="min-w-0 flex-1">
-          <p className="marker text-lg leading-none text-brand-2">kaise khelna hai?</p>
-          <h3 id="play-sheet-title" className="truncate font-hero text-xl font-extrabold">
+    <div className="fixed inset-0 z-50 grid place-items-center overflow-y-auto p-4">
+      {/* Blurred backdrop: tap it to close. */}
+      <button
+        type="button"
+        aria-label="Close"
+        tabIndex={-1}
+        onClick={onClose}
+        className="play-backdrop fixed inset-0 bg-ink/60 backdrop-blur-md"
+      />
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="play-sheet-title"
+        className="stk slap relative w-full max-w-lg overflow-hidden p-0"
+        style={
+          {
+            "--stk-bg": "var(--color-panel)",
+            "--accent": game.accent,
+            boxShadow: `7px 8px 0 color-mix(in oklab, ${game.accent} 55%, #000)`,
+          } as React.CSSProperties
+        }
+      >
+        <div className="relative">
+          <CoverArt game={game} className="border-b-[3px] border-paper [aspect-ratio:16/7]" />
+          <button
+            className="absolute top-3 right-3 grid size-9 place-items-center rounded-full border-2 border-ink bg-paper text-ink shadow-[2px_3px_0_#000] transition-transform hover:rotate-90"
+            aria-label="Close"
+            onClick={onClose}
+          >
+            <X aria-hidden className="size-4" strokeWidth={3} />
+          </button>
+        </div>
+        <div className="p-5">
+          <p className="marker text-xl leading-none" style={{ color: game.accent }}>
+            kaise khelna hai?
+          </p>
+          <h3 id="play-sheet-title" className="mt-1 font-hero text-3xl leading-tight font-extrabold tracking-[-0.03em]">
             {game.name}
           </h3>
+          <p className="mt-1 text-muted">{game.tagline}</p>
+          <div className="mt-3 flex flex-wrap gap-1.5 text-xs">
+            <span className="rounded-full bg-panel-2 px-2.5 py-1 font-semibold text-muted">
+              <b className="text-text">{players}</b> players
+            </span>
+            <span className="rounded-full bg-panel-2 px-2.5 py-1 font-semibold text-muted">~{game.minutes} min</span>
+            <span className="rounded-full bg-panel-2 px-2.5 py-1 font-semibold" style={{ color: game.accent }}>
+              {kind}
+            </span>
+            {game.isNew && <span className="marker rounded-full bg-sun px-2.5 text-sm text-ink">new!</span>}
+          </div>
+          <ol className="mt-4 space-y-2 text-sm text-text/90">
+            {game.how.map((line, i) => (
+              <li key={i} className="flex gap-2.5">
+                <span
+                  className="grid size-5 shrink-0 place-items-center rounded-full text-[11px] font-extrabold text-ink"
+                  style={{ background: game.accent }}
+                >
+                  {i + 1}
+                </span>
+                {line}
+              </li>
+            ))}
+          </ol>
+          <div className={`mt-5 grid gap-2 ${local ? "sm:grid-cols-2" : ""}`}>
+            <button ref={local ? undefined : first} className="stk-btn py-3 text-lg" onClick={() => create(game.id)} disabled={busy}>
+              <Users aria-hidden className="size-5" strokeWidth={2.6} />
+              {busy ? "Setting up…" : "Play with friends"}
+            </button>
+            {local && (
+              <Link ref={first} href={`/play/${game.id}`} className="btn border-2 py-3 text-base font-bold">
+                <Bot aria-hidden className="size-5" strokeWidth={2.2} />
+                {solo ? "Play solo" : "Play vs bots"}
+              </Link>
+            )}
+          </div>
+          {!local && <p className="mt-2 text-center text-xs text-muted">{game.minPlayers}+ players: opens a room with this game picked.</p>}
+          {error && (
+            <p role="alert" className="mt-2 text-sm text-brand">
+              {error}
+            </p>
+          )}
         </div>
-        <button className="btn shrink-0 p-2" aria-label="Close" onClick={onClose}>
-          <X aria-hidden className="size-4" strokeWidth={2.5} />
-        </button>
       </div>
-      <div className={`grid gap-2 px-3 pb-3 ${local ? "grid-cols-2" : ""}`}>
-        {local && (
-          <Link ref={first} href={`/play/${game.id}`} className="btn border-2 py-2.5 font-bold">
-            <Bot aria-hidden className="size-4" strokeWidth={2.2} />
-            {solo ? "Play solo" : "Play vs bots"}
-          </Link>
-        )}
-        <button ref={local ? undefined : first} className="btn btn-primary py-2.5" onClick={() => create(game.id)} disabled={busy}>
-          <Users aria-hidden className="size-4" strokeWidth={2.4} />
-          {busy ? "Setting up…" : "With friends"}
-        </button>
-      </div>
-      {!local && <p className="px-3 pb-3 text-xs text-muted">{game.minPlayers}+ players: opens a room with this game picked.</p>}
-      {error && (
-        <p role="alert" className="px-3 pb-3 text-sm text-brand">
-          {error}
-        </p>
-      )}
     </div>
   );
 }
