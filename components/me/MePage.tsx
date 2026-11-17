@@ -70,6 +70,7 @@ export function MePage() {
             <ProfileForm
               initial={me ? { name: me.name, color: me.color, avatar: me.avatar } : undefined}
               submitLabel={me ? "Save" : "Save my player"}
+              showTransfer={false}
               onSubmit={(v) => {
                 setOverride(saveIdentity(v));
                 setEditing(false);

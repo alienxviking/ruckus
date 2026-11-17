@@ -22,10 +22,13 @@ export function ProfileForm({
   initial,
   submitLabel,
   onSubmit,
+  showTransfer = true,
 }: {
   initial?: ProfileValues;
   submitLabel: string;
   onSubmit: (v: ProfileValues) => void;
+  /** The "move your unlocks" box (off where the page shows its own). */
+  showTransfer?: boolean;
 }) {
   const [look] = useState(randomLook);
   const [name, setName] = useState(initial?.name ?? "");
@@ -178,7 +181,7 @@ export function ProfileForm({
           })}
         </div>
         {hint && <p className="mt-2 font-mono text-[11px] text-brand-2">{hint}</p>}
-        <TransferProgress />
+        {showTransfer && <TransferProgress />}
       </fieldset>
 
       <fieldset>

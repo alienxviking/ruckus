@@ -1,11 +1,12 @@
 "use client";
 
-import { useState } from "react";
-import { exportCode, importCode } from "@/lib/progress";
+import { useSyncExternalStore, useState } from "react";
+import { exportCode, importCode, subscribeProgress } from "@/lib/progress";
 
 /** Move unlocks to another device: copy a code here, paste it there. No account needed. */
 export function TransferProgress({ open: startOpen = false }: { open?: boolean } = {}) {
-  const [code, setCode] = useState<string | null>(null);
+  // Your code, always up to date with your progress (made in this browser, so empty on the server).
+  const code = useSyncExternalStore(subscribeProgress, exportCode, () => "");
   const [input, setInput] = useState("");
   const [msg, setMsg] = useState<string | null>(null);
   return (
@@ -19,8 +20,8 @@ export function TransferProgress({ open: startOpen = false }: { open?: boolean }
           <input
             readOnly
             className="input min-w-0 flex-1 font-mono text-[11px]"
-            value={code ?? ""}
-            placeholder="Your transfer code"
+            value={code}
+            placeholder="Making your code…"
             aria-label="Your transfer code"
             onFocus={(e) => e.currentTarget.select()}
           />
@@ -28,10 +29,8 @@ export function TransferProgress({ open: startOpen = false }: { open?: boolean }
             type="button"
             className="btn px-3 py-1 text-xs"
             onClick={async () => {
-              const c = exportCode();
-              setCode(c);
               try {
-                await navigator.clipboard.writeText(c);
+                await navigator.clipboard.writeText(code);
                 setMsg("Copied!");
               } catch {
                 setMsg("Select the code and copy it.");
