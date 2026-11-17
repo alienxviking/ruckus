@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Chakra_Petch, Geist, Geist_Mono, Unbounded } from "next/font/google";
 import { preconnect, prefetchDNS } from "react-dom";
 import { MotionProvider } from "@/components/motion/MotionProvider";
+import { ServiceWorker } from "@/components/ServiceWorker";
 import "./globals.css";
 
 const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
@@ -21,6 +22,8 @@ export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
   title: "Ruckus — games with friends",
   description: "Make a room, share the link, play real-time party games together. No sign-up.",
+  applicationName: "Ruckus",
+  appleWebApp: { capable: true, title: "Ruckus", statusBarStyle: "black" },
 };
 
 export const viewport: Viewport = {
@@ -42,6 +45,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     >
       <body className="flex min-h-full flex-col">
         <MotionProvider>{children}</MotionProvider>
+        <ServiceWorker />
       </body>
     </html>
   );
