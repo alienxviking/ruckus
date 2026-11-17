@@ -5,6 +5,7 @@
 import { useLayoutEffect, useRef, type CSSProperties, type ReactNode } from "react";
 import type { Player } from "@/shared/types";
 import { CATEGORY_EMOJI, LETTERS, fmt, type Category, type Difficulty } from "./shared";
+import { Avatar } from "@/components/Avatar";
 
 /** Answer colours. Always paired with a letter so colour is never the only cue. */
 export const ANSWER_COLORS = ["#f43f5e", "#3b82f6", "#f59e0b", "#10b981"] as const;
@@ -170,7 +171,7 @@ export function Face({ player, size = "sm" }: { player: Player; size?: "sm" | "m
       }`}
       style={{ background: player.color + "33", boxShadow: `inset 0 0 0 1.5px ${player.color}` }}
     >
-      <span aria-hidden>{player.avatar}</span>
+      <span aria-hidden><Avatar id={player.avatar} /></span>
     </span>
   );
 }

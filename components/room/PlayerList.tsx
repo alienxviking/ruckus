@@ -1,6 +1,7 @@
 import { Crown } from "lucide-react";
 import type { RoomView } from "@/shared/types";
 import { RollingNumber } from "../RollingNumber";
+import { Avatar } from "@/components/Avatar";
 
 export function PlayerList({ room, me }: { room: RoomView; me: string }) {
   const players = room.players.slice().sort((a, b) => (room.wins[b.id] ?? 0) - (room.wins[a.id] ?? 0));
@@ -39,7 +40,7 @@ export function PlayerList({ room, me }: { room: RoomView; me: string }) {
                   boxShadow: `inset 0 0 0 1px ${p.color}aa, inset 0 0 12px -4px ${p.color}`,
                 }}
               >
-                {p.avatar}
+                <Avatar id={p.avatar} />
                 <span
                   className={`absolute -right-0.5 -bottom-0.5 size-2.5 rounded-full ring-2 ring-panel ${
                     p.connected ? "bg-green-400" : "bg-muted"

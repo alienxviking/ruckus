@@ -26,6 +26,7 @@ import {
 } from "./shared";
 import { buildReplay, tankAlive, tankHp, type Replay } from "./replay";
 import { Field } from "./field";
+import { Avatar } from "@/components/Avatar";
 
 type Props = GameClientProps<BarrageView, BarrageAction>;
 
@@ -696,7 +697,7 @@ function Roster({
               }}
             >
               <span aria-hidden className="text-lg leading-none">
-                {alive ? (p?.avatar ?? "🙂") : "💀"}
+                <Avatar id={alive ? (p?.avatar ?? "🙂") : "💀"} />
               </span>
               <div className="min-w-0 flex-1">
                 <div className="flex items-center justify-between gap-1 text-xs">
@@ -782,7 +783,7 @@ function Final({
             >
               <span className="w-5 shrink-0 text-center font-mono text-xs text-muted">{won ? "👑" : i + 1}</span>
               <span aria-hidden className="text-lg leading-none">
-                {p?.avatar ?? "🙂"}
+                <Avatar id={p?.avatar ?? "🙂"} />
               </span>
               <span className="min-w-0 flex-1 truncate font-semibold" style={{ color }}>
                 {p?.name ?? "Someone"}

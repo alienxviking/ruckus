@@ -7,6 +7,7 @@ import type { CSSProperties, ReactNode } from "react";
 import type { AuView, CrateView } from "./server";
 import { STAMPS, contents, money, signed } from "./shared";
 import { EASE, GAIN, GOLD, LOSS, Name, Panel, kindColor, pnlColor, type Who } from "./ui";
+import { Avatar } from "@/components/Avatar";
 
 // ---------- money ----------
 
@@ -104,7 +105,7 @@ export function LotsStrip({ view, who, live }: { view: AuView; who: Who; live: b
               <span className="block h-4 max-w-full truncate text-[10px] leading-4 text-muted">
                 {buyer ? (
                   <>
-                    <span aria-hidden>{buyer.avatar}</span> ${c.price}
+                    <span aria-hidden><Avatar id={buyer.avatar} /></span> ${c.price}
                   </>
                 ) : c.status === "unsold" ? (
                   "no sale"
@@ -352,7 +353,7 @@ export function Recap({ view, who }: { view: AuView; who: Who }) {
               </span>
               {c.peekers && (
                 <span className="w-full pl-12 text-[11px] text-muted @md:w-auto @md:pl-0" title="Peeked by">
-                  👁 {c.peekers.map((s) => who(s).avatar).join("")}
+                  👁 {c.peekers.map((s) => <Avatar key={s} id={who(s).avatar} />)}
                   <span className="sr-only"> peeked by {c.peekers.map((s) => who(s).name).join(" and ")}</span>
                 </span>
               )}
@@ -370,7 +371,7 @@ function Award({ icon, title, who: p, text, color }: { icon: string; title: stri
       <span aria-hidden>{icon}</span>
       <span className="text-muted">{title}:</span>
       <b className="truncate" style={{ color: p.color }}>
-        {p.avatar} {p.name}
+        <Avatar id={p.avatar} /> {p.name}
       </b>
       <b className="tabular-nums" style={{ color }}>
         {text}

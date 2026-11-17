@@ -18,6 +18,7 @@ import type { Player } from "@/shared/types";
 import type { FeedItem, Offer, SketchAction, SketchView } from "./server";
 import type { Level, SketchEvent } from "./shared";
 import { isTypingTarget, Thumb, type StrokeStore } from "./canvas";
+import { Avatar } from "@/components/Avatar";
 
 type ById = Record<string, Player>;
 type Act = (a: SketchAction) => void;
@@ -32,7 +33,7 @@ function Name({ p }: { p: Player | undefined }) {
   if (!p) return <>The artist</>;
   return (
     <span className="whitespace-nowrap">
-      <span aria-hidden>{p.avatar}</span> <span style={{ color: p.color }}>{p.name}</span>
+      <span aria-hidden><Avatar id={p.avatar} /></span> <span style={{ color: p.color }}>{p.name}</span>
     </span>
   );
 }
@@ -283,7 +284,7 @@ function Choosing({ artist, watching }: { artist: Player | undefined; watching: 
     <div className="sk-iris absolute inset-0 grid place-items-center rounded-xl p-4 text-center" style={BACKDROP}>
       <div className="animate-pop flex flex-col items-center gap-1">
         <div className="relative text-5xl @md:text-6xl" aria-hidden>
-          {artist?.avatar ?? "🎨"}
+          <Avatar id={artist?.avatar ?? "🎨"} />
           <span className="sk-wiggle absolute -right-6 -bottom-1 text-3xl">✏️</span>
         </div>
         <p className="mt-3 font-display text-base font-bold @md:text-lg">Choosing a secret word…</p>

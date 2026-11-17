@@ -24,6 +24,7 @@ import {
   isSnap,
 } from "./shared";
 import { ParkView, type ParkData } from "./park";
+import { Avatar } from "@/components/Avatar";
 
 type Props = GameClientProps<IncView, IncAction>;
 
@@ -502,7 +503,7 @@ function Overlay({
             <ul className="flex flex-wrap justify-center gap-x-3 gap-y-0.5 text-sm">
               {gained.map(({ p, slot }) => (
                 <li key={slot} className="font-semibold whitespace-nowrap">
-                  <span aria-hidden>{avatars[slot]}</span> <span style={{ color: colors[slot] }}>{name(slot)}</span>{" "}
+                  <span aria-hidden><Avatar id={avatars[slot]} /></span> <span style={{ color: colors[slot] }}>{name(slot)}</span>{" "}
                   <span className="font-mono text-emerald-300">+{p}</span>
                 </li>
               ))}
@@ -545,7 +546,7 @@ function ScoreRow({ view, players, me, colors, outSet }: { view: IncView; player
             className={`flex min-h-9 max-w-full items-center gap-1.5 rounded-full border px-2.5 py-1 text-sm transition-opacity ${out ? "opacity-55" : ""} ${id === me ? "ring-2 ring-white/60" : ""}`}
             style={{ borderColor: color + "88", background: color + "1c" }}
           >
-            <span aria-hidden>{p?.avatar ?? "🙂"}</span>
+            <span aria-hidden><Avatar id={p?.avatar ?? "🙂"} /></span>
             <span className="max-w-[7rem] truncate font-semibold" style={{ color }}>
               {p?.name ?? "Someone"}
             </span>
@@ -651,7 +652,7 @@ function FinalStandings({ view, byId, me, colors }: { view: IncView; byId: Recor
                 </span>
                 <span className="sr-only">Place {rank}:</span>
                 <span className="relative shrink-0 text-xl leading-none" aria-hidden>
-                  {p?.avatar ?? "🙂"}
+                  <Avatar id={p?.avatar ?? "🙂"} />
                   {isChamp && <span className="absolute -top-3 left-1/2 -translate-x-1/2 text-sm motion-safe:animate-bounce">👑</span>}
                 </span>
                 <span className="min-w-0 flex-1">

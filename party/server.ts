@@ -2,6 +2,8 @@ import { getServerByName, routePartykitRequest, Server, type Connection } from "
 import type { GameCtx, GameDef } from "../shared/game";
 import {
   AVATARS,
+  avatarText,
+  toAvatarId,
   MAX_NAME,
   MAX_PLAYERS,
   PLAYER_COLORS,
@@ -225,7 +227,7 @@ export class RuckusRoom extends Server<Env> {
     const color = (PLAYER_COLORS as readonly string[]).includes(msg.color)
       ? msg.color
       : PLAYER_COLORS[this.players.size % PLAYER_COLORS.length];
-    const avatar = (AVATARS as readonly string[]).includes(msg.avatar) ? msg.avatar : AVATARS[0];
+    const avatar = toAvatarId(msg.avatar) ?? AVATARS[0];
 
     // Only rooms someone created can be joined (a mistyped code shouldn't make a new room).
     if (!this.created && this.players.size === 0) {
@@ -258,7 +260,7 @@ export class RuckusRoom extends Server<Env> {
       }
     } else {
       this.players.set(conn.id, { id: conn.id, name, color, avatar, connected: true });
-      this.system(`${avatar} ${name} joined`);
+      this.system(`${avatarText(avatar)} ${name} joined`);
     }
 
     if (!this.hostId || !this.players.get(this.hostId)) this.hostId = conn.id;
@@ -528,7 +530,7 @@ export class RuckusRoom extends Server<Env> {
       this.keys.delete(id);
       this.chatTimes.delete(id);
       delete this.wins[id];
-      if (p) this.system(`${p.avatar} ${p.name} left`);
+      if (p) this.system(`${avatarText(p.avatar)} ${p.name} left`);
       removed = true;
     }
     if (removed && this.hostId && !this.players.has(this.hostId)) this.hostId = null;

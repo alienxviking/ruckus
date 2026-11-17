@@ -7,6 +7,7 @@ import type { FinalPage, FinalView, GarbleAction, GarbleView } from "./server";
 import { Drawing, useCacheVersion, useCached, type DrawingCache } from "./drawing";
 import { BADGE_NAMES, REACTIONS } from "./shared";
 import { who } from "./ui";
+import { Avatar } from "@/components/Avatar";
 
 interface FinalProps {
   view: GarbleView;
@@ -163,7 +164,7 @@ function BookBrowser({
                 background: on ? `${p.color}26` : "var(--color-panel-2)",
               }}
             >
-              <span aria-hidden>{p.avatar}</span>
+              <span aria-hidden><Avatar id={p.avatar} /></span>
               <span className="truncate" style={{ color: p.color }}>
                 {p.name}
               </span>

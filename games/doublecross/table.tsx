@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import type { Player } from "@/shared/types";
 import type { Choice, DcView, TableView } from "./shared";
 import { CHOICE_META, Card, Coin, Dots, GOLD, RepRow, STEAL, SPLIT, trustLine, vars, type Who } from "./ui";
+import { Avatar } from "@/components/Avatar";
 
 /** Per-seat status for the current phase: done talking, locked in, offline, or nothing yet. */
 export type SeatState = "ready" | "locked" | "offline" | "thinking" | null;
@@ -42,7 +43,7 @@ function SeatCard({ p, you, view, seat, state }: { p: Player; you: boolean; view
       style={{ borderColor: `${p.color}55`, background: `${p.color}10` }}
     >
       <span className="relative grid size-12 place-items-center rounded-full text-[28px] leading-none @lg:size-14 @lg:text-3xl" style={{ background: `${p.color}26` }}>
-        <span aria-hidden>{p.avatar}</span>
+        <span aria-hidden><Avatar id={p.avatar} /></span>
         <StateBadge state={state} className="absolute -right-1 -bottom-1" />
       </span>
       <span className="max-w-full truncate text-sm font-bold" style={{ color: p.color }}>
@@ -144,7 +145,7 @@ export function HeistHeader({ who, mySeat, table, state }: { who: Who; mySeat: n
               style={{ borderColor: `${p.color}66`, background: `${p.color}1a` }}
             >
               <span aria-hidden className="text-base">
-                {p.avatar}
+                <Avatar id={p.avatar} />
               </span>
               <span className="max-w-[6.5rem] truncate" style={{ color: p.color }}>
                 {s === mySeat ? "You" : p.name}
@@ -198,7 +199,7 @@ export function TablesOverview({
                       </span>
                     )}
                     <span className={`relative text-base leading-none ${p.connected ? "" : "opacity-50"}`} aria-hidden>
-                      {p.avatar}
+                      <Avatar id={p.avatar} />
                     </span>
                     <span className="max-w-[5.5rem] truncate text-xs font-semibold" style={{ color: p.color }}>
                       {s === mySeat ? "You" : p.name}

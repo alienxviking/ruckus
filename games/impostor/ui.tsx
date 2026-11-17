@@ -7,6 +7,7 @@ import { PlayerChip } from "@/components/game-ui";
 import type { Player } from "@/shared/types";
 import type { ClueEntry, ImpostorAction, ImpostorView, RoundSummary } from "./server";
 import { LAPS, POINTS } from "./shared";
+import { Avatar } from "@/components/Avatar";
 
 // Game-scoped keyframes (hoisted and de-duplicated by React). One easing family for the
 // whole game: entrances use cubic-bezier(.2,.8,.2,1), playful pops the overshooting
@@ -125,7 +126,7 @@ export function Who({ player, you }: { player: Player | undefined; you?: boolean
   if (!player) return <>Someone</>;
   return (
     <span className="whitespace-nowrap" style={{ color: player.color }}>
-      <span aria-hidden>{player.avatar} </span>
+      <span aria-hidden><Avatar id={player.avatar} /> </span>
       {you ? "You" : player.name}
     </span>
   );
@@ -173,7 +174,7 @@ export function BigChip({
       }}
     >
       <span aria-hidden className="text-3xl leading-none">
-        {player.avatar}
+        <Avatar id={player.avatar} />
       </span>
       <span className="truncate">{player.name}</span>
     </span>
@@ -722,7 +723,7 @@ function VoteTally({
                 <span className="relative flex h-full items-center gap-0.5 overflow-hidden px-1.5 text-sm" aria-hidden>
                   {voters.map((v, j) => (
                     <span key={v} title={byId[v]?.name} className="oo-pop" style={{ animationDelay: ms(at + 160 + Math.min(j, 8) * 45) }}>
-                      {byId[v]?.avatar ?? "?"}
+                      <Avatar id={byId[v]?.avatar ?? "?"} />
                     </span>
                   ))}
                 </span>

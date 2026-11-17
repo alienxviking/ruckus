@@ -19,6 +19,7 @@ import {
 } from "./shared";
 import { Rink, type InputState, type RinkData } from "./rink";
 import { SumoPredictor } from "./predict";
+import { Avatar } from "@/components/Avatar";
 
 /** Stick changes go out at once; only a burst of them (a thumb sweeping the stick) is spaced out. */
 const SEND_BURST = 3;
@@ -549,7 +550,7 @@ function Overlay({
           style={{ borderColor: color, background: "color-mix(in oklab, var(--color-panel) 88%, transparent)" }}
         >
           <span className="text-3xl @xl:text-5xl" aria-hidden>
-            {p ? p.avatar : "🤝"}
+            <Avatar id={p ? p.avatar : "🤝"} />
           </span>
           <span className="max-w-full truncate font-display text-lg font-extrabold @xl:text-3xl" style={{ color }}>
             {w ? (w === me ? "You!" : (p?.name ?? "Someone")) : "Draw"}
@@ -607,7 +608,7 @@ function ScoreRow({
             className={`flex min-h-9 max-w-full items-center gap-1.5 rounded-full border px-2.5 py-1 text-sm transition-opacity ${on ? "" : "opacity-55"} ${id === me ? "ring-2 ring-white/60" : ""}`}
             style={{ borderColor: color + "88", background: color + "1c" }}
           >
-            <span aria-hidden>{p?.avatar ?? "🙂"}</span>
+            <span aria-hidden><Avatar id={p?.avatar ?? "🙂"} /></span>
             <span className="max-w-[7.5rem] truncate font-semibold" style={{ color }}>
               {p?.name ?? "Someone"}
             </span>
@@ -717,7 +718,7 @@ function FinalStandings({
                 </span>
                 <span className="sr-only">Place {rank}:</span>
                 <span className="relative shrink-0 text-xl leading-none" aria-hidden>
-                  {p?.avatar ?? "🙂"}
+                  <Avatar id={p?.avatar ?? "🙂"} />
                   {isChamp && (
                     <span className="absolute -top-3 left-1/2 -translate-x-1/2 text-sm motion-safe:animate-bounce">
                       👑
@@ -764,7 +765,7 @@ function FinalStandings({
                   <span className="min-w-0 break-words">
                     {r.winner ? (
                       <>
-                        <span aria-hidden>{byId[r.winner]?.avatar ?? "🏆"}</span>{" "}
+                        <span aria-hidden><Avatar id={byId[r.winner]?.avatar ?? "🏆"} /></span>{" "}
                         <b style={{ color: colors[slot] }}>{byId[r.winner]?.name ?? "Someone"}</b>
                       </>
                     ) : (

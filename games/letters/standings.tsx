@@ -8,6 +8,7 @@ import type { Player } from "@/shared/types";
 import type { Cell, LettersView, RoundSummary } from "./shared";
 import { Board } from "./board";
 import { CountUp, playerOf } from "./ui";
+import { Avatar } from "@/components/Avatar";
 
 const MEDALS = ["🥇", "🥈", "🥉"];
 
@@ -206,7 +207,7 @@ export function FinalStandings({
                       <span key={k}>
                         {j > 0 && " & "}
                         <span className="font-semibold" style={{ color: p.color }}>
-                          {p.avatar} {p.name}
+                          <Avatar id={p.avatar} /> {p.name}
                         </span>
                       </span>
                     );

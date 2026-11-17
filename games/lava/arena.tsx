@@ -54,6 +54,8 @@ import {
   decodeStick,
 } from "./shared";
 import { Spring2D, Timeline, debugFrame } from "../snakes/netsmooth";
+import { avatarImage, drawAvatar } from "@/lib/avatar-art";
+import { isAvatarId } from "@/shared/types";
 
 const TAU = Math.PI * 2;
 const DELAY_MS = 100;
@@ -811,6 +813,8 @@ function avatarSprite(color: string, avatar: string): HTMLCanvasElement {
   const key = `${color}|${avatar}`;
   const hit = spriteCache.get(key);
   if (hit) return hit;
+  // Wait for the avatar art before baking it into a cached sprite.
+  const ready = !isAvatarId(avatar) || avatarImage(avatar) !== null;
   const size = (SPR + SPR_PAD) * 2;
   const c = makeCanvas(size, size);
   const g = c.getContext("2d");
@@ -831,12 +835,12 @@ function avatarSprite(color: string, avatar: string): HTMLCanvasElement {
   g.font = `${Math.round(SPR * 0.95)}px ${EMOJI_FONT}`;
   g.textAlign = "center";
   g.textBaseline = "middle";
-  g.fillText(avatar, m, m + SPR * 0.06);
+  drawAvatar(g, avatar, m, m, SPR * 1.3);
   g.beginPath();
   g.ellipse(m - SPR * 0.28, m - SPR * 0.42, SPR * 0.42, SPR * 0.2, -0.5, 0, TAU);
   g.fillStyle = "rgba(255, 255, 255, 0.28)";
   g.fill();
-  spriteCache.set(key, c);
+  if (ready) spriteCache.set(key, c);
   return c;
 }
 

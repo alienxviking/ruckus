@@ -2,6 +2,7 @@
 
 import type { ReactNode } from "react";
 import type { Player } from "@/shared/types";
+import { Avatar } from "@/components/Avatar";
 
 /** Look up the player in a seat (with a stand-in for someone who left the room). */
 export type Who = (seat: number) => Player;
@@ -81,7 +82,7 @@ export function joinNames(names: string[]): string {
 export function Name({ p, you }: { p: Player; you?: boolean }) {
   return (
     <>
-      <span aria-hidden>{p.avatar} </span>
+      <span aria-hidden><Avatar id={p.avatar} /> </span>
       <span style={{ color: p.color }}>{you ? "You" : p.name}</span>
     </>
   );

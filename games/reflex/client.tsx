@@ -16,6 +16,7 @@ import type { GameClientProps } from "@/shared/client-game";
 import type { Player } from "@/shared/types";
 import type { FoulKind, Phase, ReflexAction, ReflexView, RoundEntry, RoundSummary } from "./server";
 import { timeTap, type Painted } from "./timing";
+import { Avatar } from "@/components/Avatar";
 
 type Props = GameClientProps<ReflexView, ReflexAction>;
 type SignalPhase = Extract<Phase, "ready" | "wait" | "fake" | "go">;
@@ -617,7 +618,7 @@ function Spotlight({ last, byId, me }: { last: RoundSummary; byId: Record<string
             className="rx-hop grid size-16 place-items-center rounded-full border-2 text-4xl leading-none"
             style={{ borderColor: p.color, background: p.color + "30", animationDelay: `${i * 90}ms` }}
           >
-            {p.avatar}
+            <Avatar id={p.avatar} />
           </span>
         ))}
         {youWon && (
@@ -902,7 +903,7 @@ function Champions({ view, byId, me }: { view: ReflexView; byId: Record<string, 
             className="rx-hop grid size-16 place-items-center rounded-full border-2 text-4xl leading-none shadow-lg shadow-black/30"
             style={{ borderColor: p.color, background: p.color + "30", animationDelay: `${i * 90}ms` }}
           >
-            {p.avatar}
+            <Avatar id={p.avatar} />
           </span>
         ))}
         <span aria-hidden className="rx-hop absolute -top-5 text-2xl" style={{ animationDelay: "220ms" }}>
@@ -1028,7 +1029,7 @@ function Posse({ view, byId, me }: { view: ReflexView; byId: Record<string, Play
             style={{ borderColor: id === me ? p.color : p.color + "40", background: p.color + (won ? "30" : "12") }}
           >
             <span aria-hidden className="text-xl leading-none">
-              {p.avatar}
+              <Avatar id={p.avatar} />
             </span>
             <span className="flex min-w-0 flex-1 flex-col gap-1">
               <span className="flex min-w-0 items-center gap-1">

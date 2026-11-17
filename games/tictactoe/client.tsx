@@ -5,6 +5,7 @@ import type { GameClientProps } from "@/shared/client-game";
 import type { Player } from "@/shared/types";
 import { Note, StatusBanner, TimerBar, useSecondsLeft } from "@/components/game-ui";
 import type { TttAction, TttView } from "./server";
+import { Avatar } from "@/components/Avatar";
 
 type Mark = 0 | 1;
 const NAME = ["X", "O"];
@@ -145,7 +146,7 @@ function bannerColor(view: TttView, seats: readonly Player[]): string | undefine
 function Who({ p }: { p: Player }) {
   return (
     <>
-      <span aria-hidden>{p.avatar} </span>
+      <span aria-hidden><Avatar id={p.avatar} /> </span>
       <span style={{ color: p.color }}>{p.name}</span>
     </>
   );
@@ -235,7 +236,7 @@ function PlayerCard({ view, player: p, seat }: { view: TttView; player: Player; 
         className="relative grid size-10 shrink-0 place-items-center rounded-xl text-2xl leading-none"
         style={{ background: `${p.color}22` }}
       >
-        {p.avatar}
+        <Avatar id={p.avatar} />
         {won && <span className="ttt-crown absolute -top-3 text-lg">👑</span>}
         <span
           className={`absolute -bottom-1 grid size-5 place-items-center rounded-full border border-line bg-ink p-[3px] ${right ? "-left-1" : "-right-1"}`}
@@ -473,7 +474,7 @@ function Final({ view, seats }: { view: TttView; seats: readonly Player[] }) {
       {p && w !== null ? (
         <div className="flex items-center gap-3">
           <span aria-hidden className="ttt-pop relative text-4xl leading-none">
-            {p.avatar}
+            <Avatar id={p.avatar} />
             <span className="ttt-crown absolute -top-4 left-1/2 -ml-2.5 text-xl">👑</span>
           </span>
           <span className="text-left">

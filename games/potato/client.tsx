@@ -8,6 +8,7 @@ import type { Flight, PotatoAction, PotatoView, StatLine } from "./server";
 import { Arena, CSS, type Floater, type SeatInfo } from "./arena";
 import { NopeCard, PuzzleCard } from "./puzzle";
 import { FLIGHT_MS, HECKLES, checkAnswer } from "./shared";
+import { Avatar } from "@/components/Avatar";
 
 type Props = GameClientProps<PotatoView, PotatoAction>;
 
@@ -351,7 +352,7 @@ function Who({ p }: { p: Player | null }) {
   if (!p) return <>someone</>;
   return (
     <>
-      <span aria-hidden>{p.avatar} </span>
+      <span aria-hidden><Avatar id={p.avatar} /> </span>
       <span style={{ color: p.color }}>{p.name}</span>
     </>
   );
@@ -459,7 +460,7 @@ function WatchPill({
     <Pill key={`watch-${view.passes}`}>
       <span className="label block">{view.passes === 0 ? "Fresh potato" : `Pass ${view.passes}`}</span>
       <span className="block truncate text-lg font-black">
-        <span aria-hidden>{holder.avatar} </span>
+        <span aria-hidden><Avatar id={holder.avatar} /> </span>
         <span style={{ color: holder.color }}>{holder.name}</span>
       </span>
       <span className="block truncate text-xs font-semibold text-muted">

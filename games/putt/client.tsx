@@ -18,6 +18,7 @@ import { HOLE_BY_ID, HOLES } from "./holes";
 import { MAX_POWER, MAX_STROKES, PICKUP_SCORE, clamp, scoreName, type Hole } from "./shared";
 import { buildReplay, strokesAt, sunkBy, type Replay } from "./replay";
 import { Course, courseMaxWidth } from "./course";
+import { Avatar } from "@/components/Avatar";
 
 type Props = GameClientProps<PuttView, PuttAction>;
 
@@ -780,7 +781,7 @@ function Roster({
               style={{ borderColor: b.id === me ? color : color + "44", background: color + (b.id === me ? "1f" : "10") }}
             >
               <span aria-hidden className="relative text-lg leading-none">
-                {p?.avatar ?? "🙂"}
+                <Avatar id={p?.avatar ?? "🙂"} />
                 <span className="absolute -right-1 -bottom-1 size-2.5 rounded-full border border-black/40" style={{ background: color }} />
               </span>
               <div className="min-w-0 flex-1">
@@ -895,7 +896,7 @@ function Scorecard({
               >
                 <th scope="row" className="truncate px-1 py-1.5 text-left font-semibold" style={{ color }}>
                   <span aria-hidden className="mr-1">
-                    {won ? "👑" : (p?.avatar ?? "🙂")}
+                    <Avatar id={won ? "👑" : (p?.avatar ?? "🙂")} />
                   </span>
                   {p?.name ?? "Someone"}
                   {b.id === me && <span className="font-normal text-muted"><span className="hidden @md:inline"> (you)</span><span className="sr-only @md:hidden"> (you)</span></span>}

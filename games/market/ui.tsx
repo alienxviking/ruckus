@@ -5,6 +5,7 @@
 import { useLayoutEffect, useRef, type CSSProperties, type ReactNode } from "react";
 import type { Player } from "@/shared/types";
 import { HOUSE, signed } from "./shared";
+import { Avatar } from "@/components/Avatar";
 
 export const BID = "#4ade80";
 export const ASK = "#fb7185";
@@ -50,7 +51,7 @@ export function posWord(pos: number): string {
 export function Name({ p, you }: { p: Player; you?: boolean }) {
   return (
     <span className="inline-flex min-w-0 items-baseline gap-1">
-      <span aria-hidden>{p.avatar}</span>
+      <span aria-hidden><Avatar id={p.avatar} /></span>
       <span className="truncate font-semibold" style={{ color: p.color }}>
         {you ? "You" : p.name}
       </span>

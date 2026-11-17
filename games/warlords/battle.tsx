@@ -4,6 +4,7 @@ import { useEffect, useState, type CSSProperties } from "react";
 import { CASTLES, DRAGON_VERDICT_DELAY, VERDICT_DELAY, type CastleView, type WlView } from "./shared";
 import { RoundTable } from "./records";
 import { DRAGON, Name, Pts, joinNames, medal, ranks, type Who } from "./ui";
+import { Avatar } from "@/components/Avatar";
 
 interface BattleProps {
   view: WlView;
@@ -87,7 +88,7 @@ function CastleStrip({ view, who, current, accent }: { view: WlView; who: Who; c
             face = (
               <span className="flex items-center -space-x-1.5">
                 {c.winners.slice(0, 2).map((w) => (
-                  <span key={w}>{who(w).avatar}</span>
+                  <span key={w}><Avatar id={who(w).avatar} /></span>
                 ))}
                 {c.winners.length > 2 && <span className="pl-2 text-[10px] font-bold text-muted">+{c.winners.length - 2}</span>}
               </span>
@@ -155,7 +156,7 @@ function MarchOut({ view, who, accent }: { view: WlView; who: Who; accent: strin
               style={{ borderColor: `${p.color}66`, background: `${p.color}17` }}
             >
               <span className="wl-march" style={{ animationDelay: `${(seat % 4) * 0.12}s` }} aria-hidden>
-                {p.avatar}
+                <Avatar id={p.avatar} />
               </span>
               <span className="max-w-[7rem] truncate" style={{ color: p.color }}>
                 {p.name}
@@ -280,7 +281,7 @@ function CastleBattle({
               dimDelay={delay}
               label={
                 <span className="flex min-w-0 items-center gap-1">
-                  <span aria-hidden>{p.avatar}</span>
+                  <span aria-hidden><Avatar id={p.avatar} /></span>
                   <span className="truncate font-semibold" style={{ color: p.color }}>
                     {seat === me ? "You" : p.name}
                   </span>
@@ -429,7 +430,7 @@ function LiveScores({
                 {!compact && (
                   <span className="w-5 shrink-0 text-center text-xs text-muted tabular-nums">{scores[seat] > 0 ? medal(rank.get(seat) ?? 0) : "–"}</span>
                 )}
-                <span aria-hidden>{p.avatar}</span>
+                <span aria-hidden><Avatar id={p.avatar} /></span>
                 <span className="truncate font-semibold" style={{ color: p.color }}>
                   {p.name}
                 </span>

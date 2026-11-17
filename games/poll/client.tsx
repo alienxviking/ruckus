@@ -17,6 +17,7 @@ import {
   splitOption,
   type PollKind,
 } from "./shared";
+import { Avatar as AvatarArt } from "@/components/Avatar";
 
 type Props = GameClientProps<PollView, PollAction>;
 type Who = (id: string) => Player;
@@ -131,7 +132,7 @@ function Avatar({ p, size = 26 }: { p: Player; size?: number }) {
       className="grid shrink-0 place-items-center rounded-full border-2 bg-panel-2 leading-none"
       style={{ width: size, height: size, borderColor: p.color, fontSize: size * 0.55 }}
     >
-      <span aria-hidden>{p.avatar}</span>
+      <span aria-hidden><AvatarArt id={p.avatar} /></span>
       <span className="sr-only">{p.name}</span>
     </span>
   );

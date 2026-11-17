@@ -7,6 +7,7 @@ import type { DrawStroke, GarbleAction, GarbleEvent, GarbleView, PageView, Revea
 import { Drawing, useCacheVersion, useCached, type DrawingCache } from "./drawing";
 import { REACTIONS, REACTION_NAMES } from "./shared";
 import { LandingText, isTypingTarget, who } from "./ui";
+import { Avatar } from "@/components/Avatar";
 
 interface RevealProps {
   view: GarbleView;
@@ -317,7 +318,7 @@ function PrevMini({ page, strokes, byId }: { page: PageView; strokes: DrawStroke
           )}
         </div>
         <figcaption className="text-xs text-muted">
-          {p.avatar} {p.name}&apos;s drawing
+          <Avatar id={p.avatar} /> {p.name}&apos;s drawing
         </figcaption>
       </figure>
     );
@@ -326,7 +327,7 @@ function PrevMini({ page, strokes, byId }: { page: PageView; strokes: DrawStroke
     <div className="gb-paper max-w-full rounded-xl px-3 py-1.5 text-center opacity-90">
       <p className="text-sm font-bold break-words @md:text-base">{page.blank ? "🤐 (blank)" : `“${page.text}”`}</p>
       <p className="text-[11px]" style={{ color: page.auto ? "#7a6e93" : shade(p.color) }}>
-        {page.auto ? "🎲 picked by the game" : `${p.avatar} ${p.name}`}
+        {page.auto ? "🎲 picked by the game" : <><Avatar id={p.avatar} /> {p.name}</>}
       </p>
     </div>
   );
@@ -405,7 +406,7 @@ export function Tile({
           <span className="truncate">🎲 the game</span>
         ) : (
           <>
-            <span aria-hidden>{p.avatar}</span>
+            <span aria-hidden><Avatar id={p.avatar} /></span>
             <span className="truncate" style={{ color: p.color }}>
               {p.name}
             </span>

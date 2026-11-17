@@ -5,6 +5,7 @@
 import { useEffect, useEffectEvent, type CSSProperties, type ReactNode } from "react";
 import type { Player } from "@/shared/types";
 import type { Expr } from "./shared";
+import { Avatar } from "@/components/Avatar";
 
 export const GREEN = "#4ade80";
 export const ROSE = "#fb7185";
@@ -88,7 +89,7 @@ export function Face({ player, size = "sm", title = true }: { player: Player; si
       className={`grid shrink-0 place-items-center rounded-full ${cls} ${player.connected ? "" : "opacity-50"}`}
       style={{ background: player.color + "33", boxShadow: `inset 0 0 0 1.5px ${player.color}` }}
     >
-      <span aria-hidden>{player.avatar}</span>
+      <span aria-hidden><Avatar id={player.avatar} /></span>
     </span>
   );
 }

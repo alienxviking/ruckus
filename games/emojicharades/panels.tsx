@@ -8,6 +8,7 @@ import type { Player } from "@/shared/types";
 import type { CharadesAction, CharadesView, FeedItem, Offer } from "./server";
 import { CATS, isLetter, type Cat, type CharadesEvent } from "./shared";
 import { emojiName } from "./emoji";
+import { Avatar } from "@/components/Avatar";
 
 type ById = Record<string, Player>;
 type Act = (a: CharadesAction) => void;
@@ -19,7 +20,7 @@ function Name({ p }: { p: Player | undefined }) {
   if (!p) return <>The clue-giver</>;
   return (
     <span className="whitespace-nowrap">
-      <span aria-hidden>{p.avatar}</span> <span style={{ color: p.color }}>{p.name}</span>
+      <span aria-hidden><Avatar id={p.avatar} /></span> <span style={{ color: p.color }}>{p.name}</span>
     </span>
   );
 }
@@ -256,7 +257,7 @@ export function Stage({
         ) : (
           <div className="animate-pop flex flex-col items-center gap-1 text-center">
             <div className="relative text-5xl" aria-hidden>
-              {giver?.avatar ?? "🎬"}
+              <Avatar id={giver?.avatar ?? "🎬"} />
               <span className="ec-wiggle absolute -right-7 -bottom-1 text-3xl">🤔</span>
             </div>
             <p className="mt-3 font-display text-base font-bold @md:text-lg">Picking a secret phrase…</p>

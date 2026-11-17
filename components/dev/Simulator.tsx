@@ -19,6 +19,7 @@ import { SIM_LOADERS } from "@/games/sim-registry";
 import type { GameDef } from "@/shared/game";
 import type { Player } from "@/shared/types";
 import { SimEngine, SPECTATOR, type AnyClient } from "./sim-engine";
+import { Avatar } from "@/components/Avatar";
 
 /** The simulator has no network. */
 const simRtt = () => 0;
@@ -158,7 +159,7 @@ export function Simulator({ gameId, initialPlayers }: { gameId: string; initialP
               <div key={`${engine.id}:${v.id}`} data-viewer={v.id} className="card flex max-w-full shrink-0 flex-col gap-2 p-2" style={{ width }}>
                 <div className="flex items-center justify-between gap-2 px-1 text-xs">
                   <span className="font-semibold" style={{ color: v.color }}>
-                    {v.avatar} {v.name} <span className="text-muted">({v.id})</span>
+                    <Avatar id={v.avatar} /> {v.name} <span className="text-muted">({v.id})</span>
                   </span>
                   {isPlayer && (
                     <button

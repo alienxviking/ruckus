@@ -20,6 +20,7 @@ import { DX, DY, POWER_INFO, POWER_KINDS, type PowerKind } from "./shared";
 import type { Head, TurfPredictor } from "./predict";
 import { TurfPlayback, type TurfSnap } from "./playback";
 import { debugFrame } from "../snakes/netsmooth";
+import { drawAvatar } from "@/lib/avatar-art";
 
 export interface Painter {
   id: string;
@@ -797,7 +798,7 @@ function drawFrame(
     }
     g.font = headFont;
     g.fillStyle = "#fff";
-    g.fillText(d.avatars[i] ?? "🖌️", cx, cy + rr * 0.07);
+    drawAvatar(g, d.avatars[i] ?? "🖌️", cx, cy);
 
     if (frozen) {
       g.beginPath();

@@ -8,6 +8,7 @@ import type { PixelsAction, PixelsView } from "./server";
 import { COLORS, EMBLEM, EMBLEM_CELLS, PERFECT_BONUS, digits, type PixelsEvent } from "./shared";
 import { Board, CanvasStore } from "./board";
 import { HiddenArt, PixelArt, cropBoard, inkOn, painterColors, playerOr } from "./parts";
+import { Avatar } from "@/components/Avatar";
 
 type Props = GameClientProps<PixelsView, PixelsAction>;
 
@@ -496,7 +497,7 @@ function SpotBoxes({ view, players }: { view: PixelsView; players: Player[] }) {
                 className="pix-pop inline-flex items-center gap-0.5 rounded-full border border-ink/40 px-1.5 py-0.5 text-[11px] leading-none font-bold text-ink shadow-md"
                 style={{ background: p.color, animationDelay: delay }}
               >
-                <span aria-hidden>{p.avatar}</span>
+                <span aria-hidden><Avatar id={p.avatar} /></span>
                 {emblem && <span aria-hidden>{emblem.icon}</span>}
                 <span className="tabular-nums">{n}</span>
               </span>

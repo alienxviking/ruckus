@@ -7,6 +7,7 @@ import { PlayerChip, useTicker } from "@/components/game-ui";
 import type { Player } from "@/shared/types";
 import type { Awards, FibView, RevealOption, RoundSummary } from "./server";
 import { POINTS, formatPoints, splitPrompt } from "./shared";
+import { Avatar } from "@/components/Avatar";
 
 // Small, game-scoped keyframes (hoisted and de-duplicated by React). Motion follows the
 // app-wide conventions: entrances use cubic-bezier(.2,.8,.2,1) on transform + opacity,
@@ -74,7 +75,7 @@ export function Who({ player, you }: { player: Player | undefined; you?: boolean
   if (!player) return <>Someone</>;
   return (
     <span className="whitespace-nowrap" style={{ color: player.color }}>
-      <span aria-hidden>{player.avatar} </span>
+      <span aria-hidden><Avatar id={player.avatar} /> </span>
       {you ? "You" : player.name}
     </span>
   );
@@ -562,7 +563,7 @@ function OptionRow({
             {o.pickers.length ? (
               <>
                 {o.kind === "truth" ? "found by " : "fooled "}
-                <span aria-hidden>{o.pickers.map((p) => byId[p]?.avatar ?? "?").join(" ")}</span>
+                <span aria-hidden className="inline-flex gap-1">{o.pickers.map((p) => <Avatar key={p} id={byId[p]?.avatar ?? "?"} />)}</span>
                 <span className="sr-only">{o.pickers.map((p) => (p === me ? "you" : nameOf(byId, p))).join(", ")}</span>
               </>
             ) : o.kind === "truth" ? (

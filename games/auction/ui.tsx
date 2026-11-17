@@ -5,6 +5,7 @@
 import { useEffect, useLayoutEffect, useReducer, useRef, type CSSProperties, type ReactNode } from "react";
 import type { Player } from "@/shared/types";
 import { kindOf } from "./shared";
+import { Avatar } from "@/components/Avatar";
 
 export const GOLD = "#fbbf24";
 export const CURSE = "#c084fc";
@@ -52,7 +53,7 @@ export function usePassed(at: number, serverNow: () => number): boolean {
 export function Name({ p, you, className = "" }: { p: Player; you?: boolean; className?: string }) {
   return (
     <span className={`inline-flex min-w-0 items-baseline gap-1 ${className}`}>
-      <span aria-hidden>{p.avatar}</span>
+      <span aria-hidden><Avatar id={p.avatar} /></span>
       <span className="truncate font-semibold" style={{ color: p.color }}>
         {you ? "You" : p.name}
       </span>

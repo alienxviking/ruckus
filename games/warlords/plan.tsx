@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent, type KeyboardEvent, type PointerEvent } from "react";
 import { CASTLES, DRAGON_MAX, DRAGON_MIN, TROOPS, sum, type WlAction, type WlView } from "./shared";
 import { Pts, type Who } from "./ui";
+import { Avatar } from "@/components/Avatar";
 
 const clamp = (v: number) => Math.max(0, Math.min(TROOPS, Math.round(v)));
 const ZERO = () => Array.from({ length: CASTLES }, () => 0);
@@ -401,7 +402,7 @@ export function LockRow({ view, who, accent }: { view: WlView; who: Who; accent:
                 background: on ? `${p.color}22` : "transparent",
               }}
             >
-              <span aria-hidden>{p.avatar}</span>
+              <span aria-hidden><Avatar id={p.avatar} /></span>
               <span className="max-w-[7rem] truncate" style={{ color: p.color }}>
                 {p.name}
               </span>

@@ -15,6 +15,7 @@ import { Lobby } from "./Lobby";
 import { PlayerList } from "./PlayerList";
 import type { ProfileValues } from "./ProfileForm";
 import { InviteButton } from "./InviteButton";
+import { Avatar } from "@/components/Avatar";
 
 // The animated profile dialog is fetched on first hover/focus of the profile button.
 const loadProfileDialog = () => import("./ProfileDialog");
@@ -85,7 +86,7 @@ export function Room({
             aria-label="Edit your name and look"
             title="Edit profile"
           >
-            <span aria-hidden>{identity.avatar}</span>
+            <span aria-hidden><Avatar id={identity.avatar} /></span>
             <span className="hidden max-w-24 truncate text-sm sm:inline" style={{ color: identity.color }}>
               {identity.name}
             </span>

@@ -5,6 +5,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import type { Player } from "@/shared/types";
 import { RollingNumber } from "./RollingNumber";
+import { Avatar } from "@/components/Avatar";
 
 export function PlayerChip({
   player,
@@ -29,7 +30,7 @@ export function PlayerChip({
         background: `linear-gradient(180deg, ${player.color}24, ${player.color}10)`,
       }}
     >
-      <span aria-hidden>{player.avatar}</span>
+      <span aria-hidden><Avatar id={player.avatar} /></span>
       <span style={{ color: player.color }} className="max-w-[9rem] truncate">
         {player.name}
       </span>

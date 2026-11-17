@@ -9,6 +9,8 @@ import { DIRS, FREEZE_MS, PLAY_MS, POWER_INFO } from "./shared";
 import { TurfBoard, parsePainters, rgba, textureCss, type Painter } from "./board";
 import { TurfPredictor } from "./predict";
 import { hear, isTurfWire, nothingHeard, rebuild, type Heard } from "./delta";
+import { avatarText } from "@/shared/types";
+import { Avatar } from "@/components/Avatar";
 
 type Props = GameClientProps<TurfView, TurfAction>;
 
@@ -253,7 +255,7 @@ function TurfGame({
 
   const boardLabel =
     `Turf map, ${view.w} by ${view.h} tiles. ` +
-    (mine ? `You are the ${avatars[meIdx]} painter at column ${mine.x + 1}, row ${mine.y + 1}, heading ${DIRS[mine.dir]}. ` : "") +
+    (mine ? `You are the ${avatarText(avatars[meIdx])} painter at column ${mine.x + 1}, row ${mine.y + 1}, heading ${DIRS[mine.dir]}. ` : "") +
     (leaderIdx >= 0 ? `${names[leaderIdx]} leads with ${pctText(painters[leaderIdx].n, total)}% of the map.` : "");
 
   return (
@@ -437,7 +439,7 @@ function DPad({
         className="grid size-12 place-items-center rounded-full text-2xl"
         style={{ gridArea: "c", background: rgba(color, 0.18), boxShadow: `inset 0 0 0 2px ${rgba(color, 0.5)}` }}
       >
-        {avatar}
+        <Avatar id={avatar} />
       </span>
       {button(1, "r")}
       {button(2, "d")}
@@ -476,7 +478,7 @@ function MyStats({
           className="grid size-11 shrink-0 place-items-center rounded-xl text-2xl"
           style={{ background: textureCss(idx, color), boxShadow: "inset 0 0 0 2px rgba(0,0,0,0.25)" }}
         >
-          {avatar}
+          <Avatar id={avatar} />
         </span>
         <div className="min-w-0">
           {/* Re-keyed per whole percent so the number pops as your turf grows or shrinks. */}
@@ -586,7 +588,7 @@ function Standings({
                   boxShadow: i === me ? "0 0 0 2px #fff" : undefined,
                 }}
               >
-                {away[i] ? "💤" : avatars[i]}
+                <Avatar id={away[i] ? "💤" : avatars[i]} />
               </span>
               <div className="min-w-0 flex-1">
                 <div className="flex items-baseline justify-between gap-2">

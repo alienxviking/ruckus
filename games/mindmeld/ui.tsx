@@ -6,6 +6,7 @@
 import type { CSSProperties } from "react";
 import type { Player } from "@/shared/types";
 import { RATINGS, rating, type RoundEntry, type RoundRecord } from "./shared";
+import { Avatar } from "@/components/Avatar";
 
 export type Who = (id: string) => Player;
 
@@ -116,7 +117,7 @@ const CHIP_SIZE = {
 
 /** Overlapping avatar bubbles for a group chip (up to 4, then "+N"). */
 function Avatars({ ids, who, size }: { ids: string[]; who: Who; size: keyof typeof CHIP_SIZE }) {
-  if (ids.length === 1) return <span aria-hidden>{who(ids[0]).avatar}</span>;
+  if (ids.length === 1) return <span aria-hidden><Avatar id={who(ids[0]).avatar} /></span>;
   const shown = ids.length > 4 ? ids.slice(0, 3) : ids;
   const extra = ids.length - shown.length;
   return (
@@ -129,7 +130,7 @@ function Avatars({ ids, who, size }: { ids: string[]; who: Who; size: keyof type
             className={`grid place-items-center rounded-full leading-none ${CHIP_SIZE[size].av} ${i ? "-ml-1.5" : ""}`}
             style={{ background: `color-mix(in oklab, ${p.color} 30%, var(--color-panel))`, boxShadow: "0 0 0 1.5px var(--color-panel)" }}
           >
-            {p.avatar}
+            <Avatar id={p.avatar} />
           </span>
         );
       })}
@@ -374,7 +375,7 @@ export function FlipCard({
         >
           <span className="flex items-center justify-between gap-1 text-xs font-semibold">
             <span className="flex min-w-0 items-center gap-1" style={{ color }}>
-              <span aria-hidden>{player.avatar}</span>
+              <span aria-hidden><Avatar id={player.avatar} /></span>
               <span className="truncate">{player.name}</span>
             </span>
             {entry.size >= 2 && (
@@ -409,7 +410,7 @@ export function FlipCard({
           }}
         >
           <span className="flex flex-col items-center gap-0.5">
-            <span className="text-lg leading-none">{player.avatar}</span>
+            <span className="text-lg leading-none"><Avatar id={player.avatar} /></span>
             <span className="font-display text-2xl leading-none font-extrabold" style={{ color }}>
               ?
             </span>

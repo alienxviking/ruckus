@@ -21,6 +21,7 @@ import {
   mapOf,
 } from "./shared";
 import { ArenaView, type ArenaData, type UseButton } from "./arena";
+import { Avatar } from "@/components/Avatar";
 
 type Props = GameClientProps<OBView, OBAction>;
 
@@ -372,7 +373,7 @@ function Overlay({
               {gained.slice(0, 8).map(({ p, slot }) => (
                 <li key={slot} className="font-semibold whitespace-nowrap">
                   <span aria-hidden>{r.survivors.includes(slot) ? "🏃" : "🧟"}</span>{" "}
-                  <span aria-hidden>{avatars[slot]}</span> <span style={{ color: colors[slot] }}>{name(slot)}</span>{" "}
+                  <span aria-hidden><Avatar id={avatars[slot]} /></span> <span style={{ color: colors[slot] }}>{name(slot)}</span>{" "}
                   <span className="font-mono text-emerald-300">+{p}</span>
                 </li>
               ))}
@@ -410,7 +411,7 @@ function ScoreRow({ view, players, me, colors, flags }: { view: OBView; players:
             }}
           >
             <span aria-hidden className={zombie ? "ob-shamble" : undefined}>
-              {zombie ? "🧟" : (p?.avatar ?? "🙂")}
+              <Avatar id={zombie ? "🧟" : (p?.avatar ?? "🙂")} />
             </span>
             <span className="max-w-[7rem] truncate font-semibold" style={{ color }}>
               {p?.name ?? "Someone"}
@@ -511,7 +512,7 @@ function FinalStandings({ view, byId, me, colors }: { view: OBView; byId: Record
                 </span>
                 <span className="sr-only">Place {rank}:</span>
                 <span className="relative shrink-0 text-xl leading-none" aria-hidden>
-                  {p?.avatar ?? "🙂"}
+                  <Avatar id={p?.avatar ?? "🙂"} />
                   {isChamp && <span className="absolute -top-3 left-1/2 -translate-x-1/2 text-sm motion-safe:animate-bounce">👑</span>}
                 </span>
                 <span className="min-w-0 flex-1">

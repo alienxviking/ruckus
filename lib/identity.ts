@@ -1,4 +1,4 @@
-import { AVATARS, PLAYER_COLORS } from "@/shared/types";
+import { AVATARS, PLAYER_COLORS, toAvatarId } from "@/shared/types";
 
 export interface Identity {
   /** Public player id (everyone in a room sees it). */
@@ -46,9 +46,10 @@ export function loadIdentity(): Identity | null {
     key: typeof v.key === "string" && v.key.length >= 16 ? v.key : randomString(32),
     name: v.name,
     color: typeof v.color === "string" ? v.color : PLAYER_COLORS[0],
-    avatar: typeof v.avatar === "string" ? v.avatar : AVATARS[0],
+    avatar: toAvatarId(v.avatar) ?? AVATARS[Math.floor(Math.random() * AVATARS.length)],
   };
-  if (identity.key !== v.key) write(identity); // upgrade identities saved before keys existed
+  // Upgrade identities saved before keys existed, or with the old emoji avatars.
+  if (identity.key !== v.key || identity.avatar !== v.avatar) write(identity);
   return identity;
 }
 

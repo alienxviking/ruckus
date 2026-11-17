@@ -23,6 +23,7 @@ import {
 } from "react";
 import type { PixelsView } from "./server";
 import { BLANK, CLIENT_BURST, CLIENT_PACE_MS, COLORS, EMBLEM, MAX_BATCH, bestMatch, type PixelsEvent } from "./shared";
+import { drawAvatar } from "@/lib/avatar-art";
 
 const SEND_GAP_MS = 100;
 const QUEUE_MAX = 64;
@@ -523,7 +524,7 @@ export function Board({ store, w, h, zoomable, canPaint, color, colors, avatars,
       g.font = `${Math.round(r * 1.15)}px "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", sans-serif`;
       g.textAlign = "center";
       g.textBaseline = "middle";
-      g.fillText(avatars[who] ?? "🙂", cx, cy + r * 0.08);
+      drawAvatar(g, avatars[who] ?? "🙂", cx, cy);
     }
     g.globalAlpha = 1;
 

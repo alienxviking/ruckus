@@ -3,6 +3,7 @@
 import { SendHorizontal } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { ClientMsg, Player, RoomView } from "@/shared/types";
+import { Avatar } from "@/components/Avatar";
 
 export function Chat({
   room,
@@ -49,7 +50,7 @@ export function Chat({
           return (
             <li key={m.id} className="animate-chat break-words">
               <span className="font-semibold" style={{ color: p?.color }}>
-                {p ? `${p.avatar} ${p.name}` : "someone"}
+                {p ? <><Avatar id={p.avatar} /> {p.name}</> : "someone"}
               </span>
               <span className={m.from === me ? "text-text" : "text-text/85"}>: {m.text}</span>
             </li>

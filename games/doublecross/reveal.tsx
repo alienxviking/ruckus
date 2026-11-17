@@ -5,6 +5,7 @@ import type { Player } from "@/shared/types";
 import { msgText } from "./chat";
 import { HEIST_STAGGER_MS, HEIST_VERDICT_MS, PAIR_VERDICT_MS, type Choice, type DcView, type Msg, type Outcome, type TableRec, type TableView } from "./shared";
 import { BUST, CHOICE_META, Card, Coin, GOLD, SPLIT, STEAL, vars, type Who } from "./ui";
+import { Avatar } from "@/components/Avatar";
 
 /** Server time when this round's flip started (only meaningful in reveal step 1). */
 export const flipStart = (view: DcView) => (view.endsAt ?? 0) - view.phaseMs;
@@ -44,7 +45,7 @@ function FlipCard({ p, choice, flipped, delay, drum, size }: { p: Player; choice
           <span className={`font-display font-black text-white/85 ${z.q}`}>?</span>
           {z.avatar && (
             <span aria-hidden className={`absolute top-1 left-1.5 ${z.avatar}`}>
-              {p.avatar}
+              <Avatar id={p.avatar} />
             </span>
           )}
         </div>

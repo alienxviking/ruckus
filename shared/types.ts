@@ -85,10 +85,39 @@ export const PLAYER_COLORS = [
   "#e2e8f0",
 ] as const;
 
+/** Avatar ids. The art lives in lib/avatar-art.ts; text-only spots use AVATAR_EMOJI. */
 export const AVATARS = [
-  "🦊", "🐸", "🐙", "🦄", "🐼", "🐯", "🦉", "🐢",
-  "🐧", "🦖", "👾", "🤖", "👻", "🍕", "🌵", "🍄",
+  "fox", "frog", "cat", "bear", "panda", "bunny", "owl", "penguin",
+  "robot", "alien", "ghost", "octo", "dino", "slime", "tiger", "shroom",
 ] as const;
+export type AvatarId = (typeof AVATARS)[number];
+
+/** Each avatar's emoji, for chat lines, labels and other plain text. */
+export const AVATAR_EMOJI: Record<AvatarId, string> = {
+  fox: "🦊", frog: "🐸", cat: "🐱", bear: "🐻", panda: "🐼", bunny: "🐰", owl: "🦉", penguin: "🐧",
+  robot: "🤖", alien: "👽", ghost: "👻", octo: "🐙", dino: "🦖", slime: "💧", tiger: "🐯", shroom: "🍄",
+};
+
+/** The old emoji avatars (saved profiles, stale tabs) mapped onto the new set. */
+const LEGACY_AVATAR: Record<string, AvatarId> = {
+  "🦊": "fox", "🐸": "frog", "🐙": "octo", "🦄": "bunny", "🐼": "panda", "🐯": "tiger", "🦉": "owl", "🐢": "bear",
+  "🐧": "penguin", "🦖": "dino", "👾": "alien", "🤖": "robot", "👻": "ghost", "🍕": "cat", "🌵": "slime", "🍄": "shroom",
+};
+
+export function isAvatarId(v: unknown): v is AvatarId {
+  return typeof v === "string" && (AVATARS as readonly string[]).includes(v);
+}
+
+/** A valid avatar id for anything a client sends or a browser saved. */
+export function toAvatarId(v: unknown): AvatarId | null {
+  if (isAvatarId(v)) return v;
+  return typeof v === "string" ? (LEGACY_AVATAR[v] ?? null) : null;
+}
+
+/** Plain-text form of an avatar (ids become emoji; anything else, like a fallback emoji, passes through). */
+export function avatarText(v: string | undefined): string {
+  return v === undefined ? "" : isAvatarId(v) ? AVATAR_EMOJI[v] : v;
+}
 
 export const MAX_PLAYERS = 12;
 export const MAX_NAME = 16;

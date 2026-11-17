@@ -9,6 +9,7 @@ import { HIST, INTRO_MS, LOTS, NO_BID_MS, STAGE_MS, STAMPS, STEPS, contents, isA
 import { AuStyles, GAIN, GOLD, LOSS, Name, kindColor, makeWho, pnlColor, useLatest, usePassed, type Who } from "./ui";
 import { CrateArt, Burst, Contents, Rays, RevealBack, RevealFront, Smoke, Stamp } from "./crate";
 import { FinalStandings, Leaderboard, LotsStrip, PeekGrid, Recap, giftOf, standings } from "./panels";
+import { Avatar } from "@/components/Avatar";
 
 type Props = GameClientProps<AuView, AuAction>;
 
@@ -179,7 +180,7 @@ function SpectatorNote() {
 function Who_({ p, you }: { p: Player; you?: boolean }) {
   return (
     <>
-      <span aria-hidden>{p.avatar} </span>
+      <span aria-hidden><Avatar id={p.avatar} /> </span>
       <span style={{ color: p.color }}>{you ? "you" : p.name}</span>
     </>
   );
@@ -590,7 +591,7 @@ function Ticker({ hist, who }: { hist: Bid[]; who: Who }) {
             className={`flex shrink-0 items-center gap-0.5 rounded-full border px-1.5 py-0.5 text-xs tabular-nums ${last ? "au-pop font-bold" : "opacity-60"}`}
             style={{ borderColor: `${p.color}${last ? "aa" : "44"}`, background: `${p.color}${last ? "22" : "0d"}` }}
           >
-            <span aria-hidden>{p.avatar}</span>
+            <span aria-hidden><Avatar id={p.avatar} /></span>
             <span style={{ color: p.color }}>${b.a}</span>
             <span className="sr-only">{p.name}</span>
           </li>

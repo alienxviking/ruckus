@@ -46,6 +46,7 @@ import {
   type Snap,
 } from "./shared";
 import { Timeline, Trail, debugFrame, reconcile } from "../snakes/netsmooth";
+import { drawAvatar } from "@/lib/avatar-art";
 
 const TAU = Math.PI * 2;
 const DELAY_MS = 100;
@@ -553,7 +554,7 @@ function drawSurvivor(g: CanvasRenderingContext2D, b: Body, a: Anim, r: number, 
   g.font = `${Math.round(r * 1.25)}px ${EMOJI_FONT}`;
   g.textAlign = "center";
   g.textBaseline = "middle";
-  g.fillText(avatar, x, y + r * 0.06);
+  drawAvatar(g, avatar, x, y, r * 1.3);
   return y;
 }
 

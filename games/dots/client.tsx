@@ -14,6 +14,7 @@ import {
   type DotsView,
   type LineRef,
 } from "./shared";
+import { Avatar, SvgAvatar } from "@/components/Avatar";
 
 // ---------- board geometry (SVG user units) ----------
 
@@ -259,7 +260,7 @@ function describe(
   return {
     main: (
       <>
-        <span aria-hidden>{mover.avatar} </span>
+        <span aria-hidden><Avatar id={mover.avatar} /> </span>
         <span style={{ color: mover.color }}>{mover.name}</span>
         {moverAway ? " is away" : "’s move"}
       </>
@@ -303,7 +304,7 @@ function SeatList({ view, seats, you }: { view: DotsView; seats: Player[]; you: 
           >
             <span className="flex min-w-0 items-center gap-1.5 @3xl:flex-1">
               <span aria-hidden className="text-lg leading-none">
-                {p.avatar}
+                <Avatar id={p.avatar} />
               </span>
               <span className="min-w-0 @3xl:flex-1">
                 <span className="block truncate text-sm font-semibold" style={{ color: p.color }}>
@@ -521,17 +522,14 @@ function Board({
               className="transition-[fill-opacity,stroke-opacity] duration-700"
             />
             <g className="dots-avatar">
-              <text
+              <SvgAvatar
+                id={p.avatar}
                 x={cx}
-                y={cy + 2}
-                textAnchor="middle"
-                dominantBaseline="central"
-                fontSize={44}
+                y={cy}
+                size={46}
                 opacity={dim ? 0.4 : 1}
                 className="transition-opacity duration-700"
-              >
-                {p.avatar}
-              </text>
+              />
             </g>
           </g>
         );

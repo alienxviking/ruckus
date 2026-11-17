@@ -19,6 +19,7 @@ import {
 } from "./shared";
 import { HIDDEN, MineStore } from "./store";
 import { Board, FIELD_CSS, type Mode } from "./field";
+import { Avatar } from "@/components/Avatar";
 
 type Props = GameClientProps<MrView, MrAction>;
 
@@ -458,7 +459,7 @@ function Scores({
             }}
           >
             <span aria-hidden className="relative grid size-7 shrink-0 place-items-center rounded-lg text-lg leading-none" style={{ background: `${c}22` }}>
-              {p?.avatar ?? "🙂"}
+              <Avatar id={p?.avatar ?? "🙂"} />
               {lead && <span className="absolute -top-2.5 -right-1.5 text-xs">👑</span>}
               {state && (
                 <span className="absolute -right-1.5 -bottom-1.5 text-xs">{away ? "📡" : stunned ? "😵" : "🥶"}</span>

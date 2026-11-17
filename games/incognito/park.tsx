@@ -40,6 +40,7 @@ import {
   type Snap,
 } from "./shared";
 import { Timeline, Trail, debugFrame, reconcile } from "../snakes/netsmooth";
+import { avatarText } from "@/shared/types";
 
 const TAU = Math.PI * 2;
 /** Playback sits this far behind the newest frame the network could have delivered. */
@@ -1100,7 +1101,7 @@ function drawScene(g: CanvasRenderingContext2D, sc: Scene, S: Surface, d: ParkDa
       }
       if (pop > 0)
         tags.push(() =>
-          drawTag(g, w.sx, w.sy - u * 3.5 + (1 - pop) * 6 * dpr, `${d.avatars[slot] ?? ""} ${d.names[slot] ?? "?"}`, rgba(color, 0.95), tagPx, pop),
+          drawTag(g, w.sx, w.sy - u * 3.5 + (1 - pop) * 6 * dpr, `${avatarText(d.avatars[slot])} ${d.names[slot] ?? "?"}`, rgba(color, 0.95), tagPx, pop),
         );
     } else if (exp) {
       const p = rt - exp.at - DART_MS;

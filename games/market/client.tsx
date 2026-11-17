@@ -22,6 +22,7 @@ import { CSS, ASK, BID, CountUp, EASE, LOSS, GAIN, Name, Panel, makeWho, pnlColo
 import { PlayingCard, ValuePill, cardShort } from "./cards";
 import { OrderBook } from "./book";
 import { PriceChart, Tape, pnlLine } from "./chart";
+import { Avatar } from "@/components/Avatar";
 
 type Props = GameClientProps<MkView, MkAction>;
 
@@ -1083,7 +1084,7 @@ function Settlement({ view, who, accent }: { view: MkView; who: WhoFn; accent: s
               <div key={i} className="flex flex-col items-center gap-1" style={{ width: cw }}>
                 <PlayingCard code={c} size={cs} accent={accent} className="mk-reveal" style={{ animationDelay: `${i * 120}ms` }} label={`${p.name}'s card`} />
                 <span className="flex max-w-full items-center gap-0.5 text-[11px]">
-                  <span aria-hidden>{p.avatar}</span>
+                  <span aria-hidden><Avatar id={p.avatar} /></span>
                   <span className="truncate font-semibold" style={{ color: p.color }}>
                     {i === view.me ? "You" : p.name}
                   </span>

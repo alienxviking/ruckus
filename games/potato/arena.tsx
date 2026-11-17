@@ -18,6 +18,7 @@ import {
 import type { Player } from "@/shared/types";
 import type { Boom, Flight, PotatoView } from "./server";
 import { FLIGHT_MS, HEAT_FULL_MS } from "./shared";
+import { Avatar } from "@/components/Avatar";
 
 // ---------- small hooks ----------
 
@@ -310,7 +311,7 @@ function Seat({
         }}
       >
         <span aria-hidden className="leading-none">
-          {seat.out ? "👻" : p.avatar}
+          <Avatar id={seat.out ? "👻" : p.avatar} />
         </span>
         {isMe && !crowned && (
           <span
@@ -700,7 +701,7 @@ export function Arena({
                 style={{ left: x, top: y, ...vars({ "--fx": `${f.fx}px` }) }}
               >
                 <span className="text-3xl">{f.e}</span>
-                {who && !seatPt && <span className="text-sm opacity-80">{who.avatar}</span>}
+                {who && !seatPt && <span className="text-sm opacity-80"><Avatar id={who.avatar} /></span>}
               </span>
             );
           })}

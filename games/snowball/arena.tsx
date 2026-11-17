@@ -56,6 +56,7 @@ import {
   type Snap,
 } from "./shared";
 import { Timeline, Trail, debugFrame, reconcile } from "../snakes/netsmooth";
+import { drawAvatar } from "@/lib/avatar-art";
 
 const TAU = Math.PI * 2;
 /** Playback sits this far behind the newest frame the network could have delivered. */
@@ -732,7 +733,7 @@ function drawKid(
     g.font = `${Math.round(u * 1.2)}px ${EMOJI_FONT}`;
     g.textAlign = "center";
     g.textBaseline = "middle";
-    g.fillText(lie > 0.5 ? "😵" : avatar, x, y - u * (0.9 - lie * 0.6));
+    drawAvatar(g, lie > 0.5 ? "😵" : avatar, x, y - u * (0.9 - lie * 0.6));
     if (lie > 0.5) {
       // Dizzy stars circling.
       g.font = `${Math.round(u * 0.6)}px ${EMOJI_FONT}`;
@@ -775,7 +776,7 @@ function drawKid(
   g.font = `${Math.round(u * 1.35)}px ${EMOJI_FONT}`;
   g.textAlign = "center";
   g.textBaseline = "middle";
-  g.fillText(avatar, x, y - u * 0.75 + bob);
+  drawAvatar(g, avatar, x, y - u * 0.75 + bob);
   // Hit flash.
   const ha = now - k.hitAt;
   if (ha >= 0 && ha < 320) {

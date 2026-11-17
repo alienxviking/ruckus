@@ -7,6 +7,7 @@ import type { CSSProperties } from "react";
 import type { Player } from "@/shared/types";
 import type { Cell, LiveCell } from "./shared";
 import { playerOf } from "./ui";
+import { Avatar } from "@/components/Avatar";
 
 const isLive = (c: Cell | LiveCell): c is LiveCell => "need" in c;
 
@@ -95,7 +96,7 @@ function Blanks({
         const p = playerOf(byId, order[k]);
         return (
           <span key={order[k] ?? k} className="inline-flex items-center gap-1 font-semibold" style={{ color: p.color }}>
-            <span aria-hidden>{p.avatar}</span>
+            <span aria-hidden><Avatar id={p.avatar} /></span>
             {k === you ? "You" : p.name}
           </span>
         );
@@ -165,7 +166,7 @@ function AnswerRow({
         className="grid size-8 shrink-0 place-items-center rounded-full text-base"
         style={{ background: `${player.color}22`, boxShadow: `inset 0 0 0 2px ${player.color}99` }}
       >
-        {player.avatar}
+        <Avatar id={player.avatar} />
       </span>
       <div className="min-w-0 flex-1">
         <p className={`leading-snug font-semibold wrap-break-word transition-colors duration-300 ${scored ? "" : "text-muted"}`}>

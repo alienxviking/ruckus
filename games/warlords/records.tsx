@@ -4,6 +4,7 @@ import { useState, type CSSProperties } from "react";
 import type { RoundRecord, WlView } from "./shared";
 import { allocText, plural } from "./shared";
 import { DRAGON, Pts, joinNames, medal, ranks, type Who } from "./ui";
+import { Avatar } from "@/components/Avatar";
 
 const LOST = "#5d5689";
 
@@ -82,7 +83,7 @@ export function RoundTable({
               <tr key={seat} className={seat === me ? "bg-panel-2/60" : undefined}>
                 <th scope="row" className="rounded-l-md py-0.5 pr-1 text-left font-normal">
                   <span className="flex min-w-0 items-center gap-1">
-                    <span aria-hidden>{p.avatar}</span>
+                    <span aria-hidden><Avatar id={p.avatar} /></span>
                     <span className="truncate text-xs font-semibold @md:text-sm" style={{ color: p.color }}>
                       {p.name}
                     </span>
@@ -169,7 +170,7 @@ function TendencyGrid({ history, who, me }: { history: RoundRecord[]; who: Who; 
             <tr key={seat} className={seat === me ? "bg-panel-2/60" : undefined}>
               <th scope="row" className="rounded-l-md py-1 pr-1 text-left font-normal">
                 <span className="flex min-w-0 items-center gap-1">
-                  <span aria-hidden>{p.avatar}</span>
+                  <span aria-hidden><Avatar id={p.avatar} /></span>
                   <span className="truncate text-xs font-semibold @md:text-sm" style={{ color: p.color }}>
                     {p.name}
                   </span>
@@ -330,7 +331,7 @@ export function Final({ view, who, accent }: { view: WlView; who: Who; accent: s
                 >
                   <span className={`w-6 shrink-0 text-center leading-none ${compact ? "text-sm" : "text-lg"}`}>{medal(r)}</span>
                   <span aria-hidden className={`relative leading-none ${compact ? "text-lg" : "text-2xl"}`}>
-                    {p.avatar}
+                    <Avatar id={p.avatar} />
                     {top && <span className="wl-crown absolute -top-3 left-1/2 -ml-2 text-sm">👑</span>}
                   </span>
                   {compact ? (
@@ -427,7 +428,7 @@ function ConquestMap({ view, who, accent }: { view: WlView; who: Who; accent: st
                       <>
                         <span className="flex -space-x-1.5">
                           {c.winners.slice(0, 2).map((w) => (
-                            <span key={w}>{who(w).avatar}</span>
+                            <span key={w}><Avatar id={who(w).avatar} /></span>
                           ))}
                         </span>
                         {c.winners.length > 2 && <span className="ml-0.5 text-[10px] font-bold text-muted">+{c.winners.length - 2}</span>}

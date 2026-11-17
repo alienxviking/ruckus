@@ -3,6 +3,7 @@
 import { useTicker } from "@/components/game-ui";
 import type { Player } from "@/shared/types";
 import { GLYPHS, SWATCH } from "./shared";
+import { Avatar } from "@/components/Avatar";
 
 export const CSS = `
 .df-shake { animation: df-shake .45s cubic-bezier(.36,.07,.19,.97) both; }
@@ -119,7 +120,7 @@ export function Name({ p }: { p: Player | undefined }) {
   if (!p) return <>Someone</>;
   return (
     <span className="whitespace-nowrap">
-      <span aria-hidden>{p.avatar} </span>
+      <span aria-hidden><Avatar id={p.avatar} /> </span>
       <span style={{ color: p.color }}>{p.name}</span>
     </span>
   );

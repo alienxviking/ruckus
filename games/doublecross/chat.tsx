@@ -3,6 +3,7 @@
 import { useEffect, useId, useRef, useState, type FormEvent } from "react";
 import { MAX_MSG, QUICK, QUICK_HEIST, QUICK_PAIR, cleanText, type Choice, type DcEvent, type Msg } from "./shared";
 import type { Who } from "./ui";
+import { Avatar } from "@/components/Avatar";
 
 /** A line we sent that the server hasn't echoed yet. */
 export interface Pending {
@@ -238,7 +239,7 @@ function Bubble({
     <div className={`dc-fade flex max-w-full items-end gap-1.5 ${mine ? "flex-row-reverse" : ""} ${first ? "mt-1" : ""}`}>
       {!mine && (
         <span aria-hidden className={`grid size-7 shrink-0 place-items-center rounded-full text-base ${first ? "" : "invisible"}`} style={{ background: `${p.color}22` }}>
-          {p.avatar}
+          <Avatar id={p.avatar} />
         </span>
       )}
       <div className={`flex min-w-0 max-w-[80%] flex-col ${mine ? "items-end" : "items-start"}`}>

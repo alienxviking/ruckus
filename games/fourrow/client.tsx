@@ -7,6 +7,7 @@ import { Note, StatusBanner, TimerBar, useSecondsLeft } from "@/components/game-
 import type { FourAction, FourView, HoverEvent, Seat } from "./server";
 import { COLS } from "./shared";
 import { BOARD_CSS, Board, DiscSwatch, discPalette, type BoardPreview } from "./board";
+import { Avatar } from "@/components/Avatar";
 
 type Props = GameClientProps<FourView, FourAction>;
 
@@ -443,7 +444,7 @@ function SeatCard({
       </div>
       <div className="min-w-0 flex-1">
         <div className={`flex min-w-0 items-center gap-1 ${mirror ? "flex-row-reverse" : ""}`}>
-          <span aria-hidden>{player.avatar}</span>
+          <span aria-hidden><Avatar id={player.avatar} /></span>
           <span className="truncate text-sm font-semibold" style={{ color: player.color }}>
             {player.name}
           </span>
@@ -565,7 +566,7 @@ function Standings({
                 {champ ? <span aria-label="Winner">🏆</span> : i + 1}
               </span>
               <DiscSwatch seat={seat} color={colors[seat]} size={22} />
-              <span aria-hidden>{people[seat].avatar}</span>
+              <span aria-hidden><Avatar id={people[seat].avatar} /></span>
               <span className="min-w-0 flex-1 truncate font-semibold" style={{ color: people[seat].color }}>
                 {people[seat].name}
                 {seat === you && <span className="ml-1 text-xs font-normal text-muted">(you)</span>}

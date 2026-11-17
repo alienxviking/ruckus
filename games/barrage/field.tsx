@@ -44,6 +44,7 @@ import {
   turretAngle,
   type Replay,
 } from "./replay";
+import { avatarText } from "@/shared/types";
 
 const TAU = Math.PI * 2;
 const DEG = Math.PI / 180;
@@ -1254,7 +1255,7 @@ function drawLabels(
     .filter((d) => d.alpha > 0.05 && d.slot >= 0)
     .map((d) => {
       const pl = byId[d.id];
-      const text = pl ? (narrow ? pl.avatar : `${pl.avatar} ${shortName(pl.name)}`) : "?";
+      const text = pl ? (narrow ? avatarText(pl.avatar) : `${avatarText(pl.avatar)} ${shortName(pl.name)}`) : "?";
       const w = g.measureText(text).width + (d.mine ? 12 : 4) * dpr;
       const x = clamp(d.x * u, w / 2 + 2 * dpr, s.W - w / 2 - 2 * dpr);
       const top = (d.gy - 26 * s.sc) * u;

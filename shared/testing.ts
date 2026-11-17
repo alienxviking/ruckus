@@ -27,7 +27,7 @@ export function makeTestCtx(playerCount: number, seed = 42) {
     id: `p${i}`,
     name: `Player${i}`,
     color: "#fff",
-    avatar: "🦊",
+    avatar: "fox",
     connected: true,
   }));
   const events: { event: unknown; to?: string; except?: string }[] = [];

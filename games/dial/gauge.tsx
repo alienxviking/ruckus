@@ -12,6 +12,7 @@
 
 import { useId, useImperativeHandle, useLayoutEffect, useRef, useState, type Ref } from "react";
 import { BANDS } from "./shared";
+import { SvgAvatar } from "@/components/Avatar";
 
 export const VB_W = 400;
 export const VB_H = 224;
@@ -583,9 +584,7 @@ export function Gauge({
               )}
               {n.me && <circle cx={CX} cy={CY} r={BADGE_R + 3.5} fill="none" stroke="#ffffff" strokeWidth={1.75} />}
               <circle cx={CX} cy={CY} r={BADGE_R} fill="#17142b" stroke={n.color} strokeWidth={3} />
-              <text x={CX} y={CY + 1} textAnchor="middle" dominantBaseline="central" fontSize={15}>
-                {n.avatar}
-              </text>
+              <SvgAvatar id={n.avatar} x={CX} y={CY} size={20} />
               {n.locked && n.pts == null && (
                 <g className="dial-pop">
                   <circle cx={CX + 11} cy={CY - 11} r={7.5} fill="#0e0c1d" />

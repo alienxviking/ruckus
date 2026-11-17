@@ -5,6 +5,7 @@ import type { Player } from "@/shared/types";
 import { GLYPHS, MAX_MSG, QUICK_LINES, TALK_COLORS, cleanText, type Msg } from "./shared";
 import type { DefuseAction } from "./server";
 import { Glyph, Swatch, cap } from "./ui";
+import { Avatar } from "@/components/Avatar";
 
 /** Server snapshot + live lines, deduplicated and in order. */
 export function mergeMsgs(base: Msg[], extra: Msg[]): Msg[] {
@@ -95,7 +96,7 @@ export function Talk({
           return (
             <li key={m.i} className="animate-rise flex items-start gap-1.5">
               <span className="shrink-0 text-xs font-bold whitespace-nowrap" style={{ color: p?.color }}>
-                {p?.avatar ?? "🙂"} {p?.name ?? "?"}
+                <Avatar id={p?.avatar ?? "🙂"} /> {p?.name ?? "?"}
               </span>
               <Body m={m} />
             </li>
@@ -104,7 +105,7 @@ export function Talk({
         {waiting.map((m) => (
           <li key={`p${m.n}`} className="flex items-start gap-1.5 opacity-55">
             <span className="shrink-0 text-xs font-bold whitespace-nowrap" style={{ color: who(me)?.color }}>
-              {who(me)?.avatar ?? "🙂"} {who(me)?.name ?? "You"}
+              <Avatar id={who(me)?.avatar ?? "🙂"} /> {who(me)?.name ?? "You"}
             </span>
             <Body m={m} />
           </li>

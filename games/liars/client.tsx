@@ -7,6 +7,7 @@ import { Note, StatusBanner, TimerBar, useSecondsLeft } from "@/components/game-
 import type { Bid, LiarsAction, LiarsView, PlayerStats, Showdown, ShowdownSummary } from "./server";
 import { AWAY_MS, FACES, MAX_FACE, MIN_FACE, isLegalBid, matches, minQtyFor, minRaise, revealTiming } from "./shared";
 import { Cup, DICE_CSS, Die, FACE_NAME, FACE_PLURAL } from "./dice";
+import { Avatar } from "@/components/Avatar";
 
 type Props = GameClientProps<LiarsView, LiarsAction>;
 type Lookup = (id: string) => Player;
@@ -180,7 +181,7 @@ function Who({ id, you, P, lower }: { id: string; you: string | null; P: Lookup;
   const p = P(id);
   return (
     <span className="font-bold whitespace-nowrap">
-      <span aria-hidden>{p.avatar} </span>
+      <span aria-hidden><Avatar id={p.avatar} /> </span>
       <span style={{ color: p.color }}>{p.name}</span>
     </span>
   );
@@ -510,7 +511,7 @@ function Seat({
       )}
       <div aria-hidden className="flex min-w-0 items-center gap-1.5">
         <span className="relative shrink-0 text-lg leading-none">
-          {p.avatar}
+          <Avatar id={p.avatar} />
           {won && <span className="ld-stamp absolute -top-3 -left-1 text-sm">👑</span>}
         </span>
         <span className="min-w-0 flex-1 truncate text-sm font-bold" style={{ color: p.color }}>
@@ -1129,7 +1130,7 @@ function RoundLog({ view, P, you, accent }: { view: LiarsView; P: Lookup; you: s
                 className={`inline-flex items-center gap-1 rounded-full border py-0.5 pr-2 pl-1.5 text-sm font-bold ${latest ? "animate-pop" : "opacity-70"}`}
                 style={{ borderColor: latest ? p.color : `${p.color}55`, background: `${p.color}${latest ? "26" : "12"}` }}
               >
-                <span aria-hidden>{p.avatar}</span>
+                <span aria-hidden><Avatar id={p.avatar} /></span>
                 <span className="sr-only">{b.by === you ? "You" : p.name} bid</span>
                 <span className="tabular-nums">{b.qty}</span>
                 <span className="text-xs text-muted">×</span>
@@ -1230,7 +1231,7 @@ function Final({ view, P, you, accent }: { view: LiarsView; P: Lookup; you: stri
             >
               <span className="w-5 text-right text-sm font-bold text-muted tabular-nums">{i + 1}</span>
               <span aria-hidden className="text-lg leading-none">
-                {p.avatar}
+                <Avatar id={p.avatar} />
               </span>
               <span className="min-w-0 flex-1 truncate text-sm font-bold" style={{ color: p.color }}>
                 {p.name}

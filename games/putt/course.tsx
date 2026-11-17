@@ -35,6 +35,7 @@ import {
   type Shape,
 } from "./shared";
 import { ballAt, DROP_MS, strokesAt, type BallPose, type Replay } from "./replay";
+import { drawAvatar } from "@/lib/avatar-art";
 
 const TAU = Math.PI * 2;
 const SANS = "ui-sans-serif, system-ui, sans-serif";
@@ -1220,7 +1221,7 @@ function draw(g: CanvasRenderingContext2D, s: Surface, sc: Scene, p: CourseProps
     if (!placed) continue;
     sc.labels.push(placed);
     g.globalAlpha = q.alpha;
-    g.fillText(pl?.avatar ?? "🙂", (placed[0] + placed[2]) / 2, (placed[1] + placed[3]) / 2);
+    drawAvatar(g, pl?.avatar ?? "🙂", (placed[0] + placed[2]) / 2, (placed[1] + placed[3]) / 2);
     g.globalAlpha = 1;
   }
   g.restore();

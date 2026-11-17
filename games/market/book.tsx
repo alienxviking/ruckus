@@ -6,6 +6,7 @@
 import type { BookRow } from "./server";
 import { HOUSE, HOUSE_SPREAD, SIZE_MAX } from "./shared";
 import { ASK, BID, Panel, type WhoFn } from "./ui";
+import { Avatar } from "@/components/Avatar";
 
 const MAX_ROWS = 6;
 
@@ -152,7 +153,7 @@ function Row({
       />
       <span className={`relative flex min-w-0 flex-1 items-center gap-1 ${flip ? "flex-row-reverse" : ""}`}>
         <span aria-hidden className="text-sm leading-none">
-          {p.avatar}
+          <Avatar id={p.avatar} />
         </span>
         <span className="min-w-0 truncate text-xs font-semibold" style={{ color: owner === HOUSE ? "var(--color-muted)" : p.color }}>
           {mine ? "You" : p.name}

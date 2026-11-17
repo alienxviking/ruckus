@@ -4,6 +4,7 @@ import type { DcView, RoundRec } from "./shared";
 import { awards, joinNames, plural } from "./shared";
 import { OUTCOME_META } from "./reveal";
 import { Card, GOLD, RepRow, medal, trustLine, type Who } from "./ui";
+import { Avatar } from "@/components/Avatar";
 
 /** Competition ranks (1,1,3...) for seats already sorted by score. */
 function ranks(scores: number[], order: number[]): number[] {
@@ -90,7 +91,7 @@ export function Ledger({
             >
               <span className="w-4 shrink-0 text-right text-xs text-muted tabular-nums">{rk[i] + 1}</span>
               <span className={`flex min-w-0 flex-1 items-center gap-1.5 ${p.connected ? "" : "opacity-50"}`}>
-                <span aria-hidden>{p.avatar}</span>
+                <span aria-hidden><Avatar id={p.avatar} /></span>
                 <span className="truncate text-sm font-semibold" style={{ color: p.color }}>
                   {seat === mySeat ? "You" : p.name}
                 </span>
@@ -157,7 +158,7 @@ export function Final({ view, who, mySeat }: { view: DcView; who: Who; mySeat: n
                 <span className="w-6 shrink-0 text-center text-lg leading-none">{medal(rk[i])}</span>
                 <span className="flex min-w-0 flex-1 flex-col">
                   <span className="flex min-w-0 items-center gap-1.5">
-                    <span aria-hidden>{p.avatar}</span>
+                    <span aria-hidden><Avatar id={p.avatar} /></span>
                     <span className="truncate font-semibold" style={{ color: p.color }}>
                       {seat === mySeat ? "You" : p.name}
                     </span>

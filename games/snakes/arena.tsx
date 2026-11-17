@@ -23,6 +23,7 @@ import { DELTA, GHOST_MS, GOLDEN_VALUE, ROUND_MS, type Dir } from "./shared";
 import { LUNGE, emptyShape, type Shape, type SnakePredictor } from "./predict";
 import { SnakePlayback as Playback, type SnakeSnap as Snap } from "./playback";
 import { debugFrame } from "./netsmooth";
+import { drawAvatar } from "@/lib/avatar-art";
 
 const TAU = Math.PI * 2;
 const POP_MS = 850;
@@ -841,7 +842,7 @@ function drawScene(g: CanvasRenderingContext2D, sc: Scene, s: Surface, p: Props,
         g.textAlign = "center";
         g.textBaseline = "middle";
         const [vx, vy] = PLACE[place];
-        g.fillText(p.byId[sn.id]?.avatar ?? "🐍", (hx + 0.5 + vx * 1.3) * cell, (hy + 0.5 + vy * 1.2) * cell);
+        drawAvatar(g, p.byId[sn.id]?.avatar ?? "🐍", (hx + 0.5 + vx * 1.3) * cell, (hy + 0.5 + vy * 1.2) * cell);
         g.globalAlpha = 1;
       }
     }

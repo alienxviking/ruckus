@@ -7,6 +7,7 @@ import type { PlayerLine, TriviaView } from "./server";
 import { CATEGORY_EMOJI, fmt } from "./shared";
 import { byRank } from "./standings";
 import { CountUp, MEDALS, cssVars, ordinal, personOf, seconds } from "./ui";
+import { Avatar } from "@/components/Avatar";
 
 const PODIUM_HEIGHT = ["h-28 @lg:h-32", "h-20 @lg:h-24", "h-14 @lg:h-16"];
 
@@ -26,7 +27,7 @@ function Podium({ top, byId }: { top: PlayerLine[]; byId: Record<string, Player>
             style={cssVars({ "--d": `${(3 - place) * 180 + 100}ms` })}
           >
             <span className="text-3xl @lg:text-4xl" aria-hidden>
-              {p.avatar}
+              <Avatar id={p.avatar} />
             </span>
             <span className="max-w-full truncate text-sm font-bold" style={{ color: p.color }}>
               {p.name}
@@ -152,7 +153,7 @@ export function FinalScreen({
                     )}
                   </span>
                   <span className="text-xl" aria-hidden>
-                    {p.avatar}
+                    <Avatar id={p.avatar} />
                   </span>
                   <div className="min-w-0 flex-1">
                     <div className="truncate font-semibold" style={{ color: p.color }}>
