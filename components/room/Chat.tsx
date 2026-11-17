@@ -41,9 +41,19 @@ export function Chat({
         {room.chat.map((m, i) => {
           if (!m.from) {
             // Room news (joins, starts, wins): a small marker note in the middle.
+            const tone = /\bleft\b|removed/.test(m.text)
+              ? "var(--color-pink)"
+              : /won|wins|🏆|started|🎮/.test(m.text)
+                ? "var(--color-sun)"
+                : /quick play|⏭️|⏸️|paused|▶️|host|locked|🔒|🔓/i.test(m.text)
+                  ? "var(--color-cyan)"
+                  : "var(--color-volt)";
             return (
               <li key={m.id} className="animate-chat flex justify-center py-0.5">
-                <span className="marker max-w-full rounded-full bg-panel-2 px-2.5 py-0.5 text-center text-[15px] leading-snug break-words text-muted">
+                <span
+                  className="marker max-w-[92%] rounded-lg border-2 border-ink px-2.5 py-0.5 text-center text-[15px] leading-snug break-words text-ink shadow-[2px_3px_0_rgb(0_0_0/0.5)]"
+                  style={{ background: tone, transform: `rotate(${i % 2 ? 1.5 : -1.5}deg)` }}
+                >
                   {m.avatar && (
                     <>
                       <Avatar id={m.avatar} />{" "}

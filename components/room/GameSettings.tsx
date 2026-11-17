@@ -52,13 +52,14 @@ export function GameSettings({
 
   return (
     <div className="card animate-rise p-4">
-      <h2 className="label mb-3 flex items-center gap-2">
-        <SlidersHorizontal aria-hidden className="size-3.5" strokeWidth={2} /> Settings
+      <h2 className="mb-3 flex items-baseline gap-2">
+        <span className="font-hero text-lg font-extrabold">Settings</span>
+        <span className="marker text-base text-muted">apne hisaab se set karo · ⭐ = default</span>
       </h2>
       <div className="grid gap-3 sm:grid-cols-2">
         {choices.map((d) => (
           <div key={d.key}>
-            <div id={`set-${d.key}`} className="mb-1.5 text-sm font-semibold">
+            <div id={`set-${d.key}`} className="mb-2 text-sm font-bold">
               {d.label}
             </div>
             <div role="radiogroup" aria-labelledby={`set-${d.key}`} className="flex flex-wrap gap-1.5">
@@ -70,18 +71,22 @@ export function GameSettings({
                     type="button"
                     role="radio"
                     aria-checked={on}
-                    className={`rounded-md border px-2.5 py-1 font-mono text-xs transition-colors ${
-                      on ? "border-brand-2/60 bg-brand-2/15 text-text" : "border-line text-muted hover:border-text/30 hover:text-text"
+                    className={`relative rounded-full border-2 px-3.5 py-1.5 text-sm font-bold transition-[transform,background-color,border-color] duration-150 active:scale-95 ${
+                      on ? "border-ink bg-brand-2 text-ink shadow-[2px_3px_0_#14101f]" : "border-line bg-panel text-muted hover:border-text/40 hover:text-text"
                     }`}
                     onClick={() => !on && send({ t: "setting", gameId: room.gameId, key: d.key, value: o.value })}
                   >
                     {o.label}
-                    {o.value === d.default && <span className="ml-1 opacity-50">·default</span>}
+                    {o.value === d.default && (
+                      <span aria-label="(default)" className="absolute -top-1.5 -right-1.5 text-[11px] leading-none" title="default">
+                        ⭐
+                      </span>
+                    )}
                   </button>
                 );
               })}
             </div>
-            {d.hint && <p className="mt-1 font-mono text-[10px] text-muted">{d.hint}</p>}
+            {d.hint && <p className="mt-1.5 text-xs text-muted">{d.hint}</p>}
           </div>
         ))}
       </div>
@@ -120,7 +125,7 @@ function WordsEditor({
       <summary className="flex cursor-pointer list-none items-center gap-2 text-xs text-muted hover:text-text">
         <ChevronDown aria-hidden className="size-3.5 transition-transform group-open:rotate-180" strokeWidth={2} />
         Use your own {def.label.toLowerCase()} <span className="opacity-60">(optional)</span>
-        {active && <span className="ml-auto rounded-sm bg-brand-2/15 px-1.5 font-mono text-[10px] text-brand-2">{count} in use</span>}
+        {active && <span className="ml-auto rounded-full bg-brand-2 px-2 text-[11px] font-bold text-ink">{count} in use</span>}
       </summary>
       <textarea
         className="input mt-2 min-h-28 w-full resize-y font-mono text-sm"
@@ -130,7 +135,7 @@ function WordsEditor({
         aria-label={`Custom ${def.label.toLowerCase()}`}
       />
       <div className="mt-2 flex flex-wrap items-center gap-2">
-        <span className="min-w-0 flex-1 font-mono text-[10px] text-muted">
+        <span className="min-w-0 flex-1 text-xs text-muted">
           {parsed.length} {parsed.length === 1 ? "entry" : "entries"}
           {parsed.length > 0 && parsed.length < def.min ? ` · need ${def.min}+ or ours are used` : ""}
           {def.hint ? ` · ${def.hint}` : ""}

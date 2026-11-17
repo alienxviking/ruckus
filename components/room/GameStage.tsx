@@ -9,7 +9,6 @@ import { QuickPlaySwitch } from "./Lobby";
 import { HowToPlay, markRulesSeen } from "./HowToPlay";
 import { GameBadge } from "../GameBadge";
 import { Component, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { ReactionBar, ReactionLayer } from "./Reactions";
 import { PauseOverlay } from "./PauseOverlay";
 import { ResultPodium } from "./ResultPodium";
 import { GameStart } from "./GameStart";
@@ -135,12 +134,10 @@ export function GameStage({
         </div>
       </div>
 
-      <ReactionBar send={send} />
       {room.result && <ResultBanner room={room} byId={byId} me={me} isHost={isHost} r={r} accent={meta?.accent} />}
       {room.result && (room.next || (isHost && room.autoNext)) && <UpNext room={room} isHost={isHost} r={r} />}
       {!isPlayer && !room.result && <SpectatorNote full={!!meta && room.participants.length >= meta.maxPlayers} max={meta?.maxPlayers} />}
 
-      <ReactionLayer onReact={r.onReact} byId={byId} />
       <div className="relative min-h-[60vh]">
         {!room.result && <GameStart key={`start-${room.gameSeq}`} seq={room.gameSeq} />}
         {room.pause && !room.result && (

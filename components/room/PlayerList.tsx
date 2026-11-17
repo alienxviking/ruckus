@@ -1,6 +1,6 @@
 "use client";
 
-import { Bot, ChevronDown, Crown, Lock, LockOpen, Minus, Plus } from "lucide-react";
+import { ChevronDown, Crown, Lock, LockOpen, Minus, Plus } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { MAX_PLAYERS, type ClientMsg, type RoomView } from "@/shared/types";
 import { GAME_CONFIG } from "@/games/config";
@@ -48,75 +48,70 @@ export function PlayerList({
 
   return (
     <div className="card p-3">
-      <div className="mb-2 flex items-center justify-between gap-2 px-1">
-        <span className="label flex items-center gap-1.5">
-          Players
-          <span className="rounded-sm border border-line bg-ink px-1.5 py-px text-text">
+      <div className="mb-2.5 flex items-center justify-between gap-2 px-1">
+        <span className="flex items-center gap-2">
+          <span className="font-hero text-base font-extrabold">Players</span>
+          <span className="grid h-6 min-w-6 place-items-center rounded-full border-2 border-ink bg-brand-2 px-1.5 text-xs font-extrabold text-ink">
             <RollingNumber value={online} />
           </span>
-          {room.locked && !isHost && <Lock aria-label="Room locked" className="size-3 text-brand-2" strokeWidth={2.2} />}
+          {room.locked && !isHost && <Lock aria-label="Room locked" className="size-3.5 text-brand-2" strokeWidth={2.4} />}
         </span>
-        <span className="flex items-center gap-2">
-          {isHost && (
-            <button
-              type="button"
-              className={`flex items-center gap-1 rounded-md border px-1.5 py-0.5 font-mono text-[10px] tracking-wide uppercase transition-colors ${
-                room.locked ? "border-brand-2/50 bg-brand-2/10 text-brand-2" : "border-line text-muted hover:text-text"
-              }`}
-              aria-pressed={room.locked}
-              title={room.locked ? "Locked: nobody new can join. Click to open." : "Lock the room so nobody new can join"}
-              onClick={() => send({ t: "lock", on: !room.locked })}
-            >
-              {room.locked ? <Lock aria-hidden className="size-3" strokeWidth={2.2} /> : <LockOpen aria-hidden className="size-3" strokeWidth={2.2} />}
-              {room.locked ? "locked" : "lock"}
-            </button>
-          )}
-          <span className="label text-[10px]">wins</span>
-        </span>
+        {isHost && (
+          <button
+            type="button"
+            className={`flex items-center gap-1 rounded-full border-2 px-2.5 py-0.5 text-xs font-bold transition-colors ${
+              room.locked ? "border-ink bg-brand-2 text-ink" : "border-line text-muted hover:text-text"
+            }`}
+            aria-pressed={room.locked}
+            title={room.locked ? "Locked: nobody new can join. Click to open." : "Lock the room so nobody new can join"}
+            onClick={() => send({ t: "lock", on: !room.locked })}
+          >
+            {room.locked ? <Lock aria-hidden className="size-3" strokeWidth={2.4} /> : <LockOpen aria-hidden className="size-3" strokeWidth={2.4} />}
+            {room.locked ? "Locked" : "Lock room"}
+          </button>
+        )}
       </div>
-      <ul ref={listRef} className="space-y-1">
-        {players.map((p) => {
+      <ul ref={listRef} className="space-y-1.5">
+        {players.map((p, i) => {
           const playing = room.phase === "playing" && room.participants.includes(p.id);
           const watching = room.phase === "playing" && !playing;
           const status = p.bot
             ? !p.connected
-              ? "leaving"
+              ? "ja raha hai…"
               : playing
-                ? "playing"
+                ? "khel raha 🎮"
                 : watching
-                  ? "sitting out"
-                  : "practice bot"
+                  ? "baitha hai"
+                  : "practice bot 🤖"
             : !p.connected
-              ? "reconnecting…"
+              ? "net gaya… 📡"
               : watching
-                ? "watching"
+                ? "dekh raha 👀"
                 : playing
-                  ? "playing"
-                  : "in lobby";
+                  ? "khel raha 🎮"
+                  : "ready hai ✌️";
           const canManage = isHost && p.id !== me;
+          const wins = room.wins[p.id] ?? 0;
           return (
             <li
               key={p.id}
-              className={`animate-rise relative flex items-center gap-2.5 rounded-md px-2 py-1.5 transition-opacity duration-300 ${
-                p.id === me ? "bg-panel-2" : ""
-              } ${p.connected ? "" : "opacity-45"} ${menu === p.id ? "z-20" : ""}`}
+              className={`animate-rise relative flex items-center gap-2.5 rounded-xl border-2 px-2 py-1.5 transition-opacity duration-300 ${
+                p.connected ? "" : "opacity-45"
+              } ${menu === p.id ? "z-20" : ""}`}
+              style={{
+                borderColor: p.id === me ? p.color : `${p.color}40`,
+                background: `linear-gradient(90deg, ${p.color}22, transparent 70%)`,
+              }}
             >
-              {p.id === me && (
-                <span aria-hidden className="absolute inset-y-1.5 left-0 w-0.5 rounded-full" style={{ background: p.color }} />
-              )}
               <span
                 aria-hidden
-                className="relative grid size-8 shrink-0 place-items-center rounded-md text-lg"
-                style={{
-                  background: `linear-gradient(180deg, ${p.color}30, ${p.color}12)`,
-                  boxShadow: `inset 0 0 0 1px ${p.color}aa, inset 0 0 12px -4px ${p.color}`,
-                }}
+                className="relative grid size-10 shrink-0 place-items-center rounded-xl border-2 border-paper text-2xl shadow-[2px_3px_0_rgb(0_0_0/0.5)]"
+                style={{ background: `${p.color}55`, transform: `rotate(${i % 2 ? 5 : -5}deg)` }}
               >
                 <Avatar id={p.avatar} />
+                {p.id === room.hostId && <span className="absolute -top-3 -left-2 rotate-[-18deg] text-base leading-none">👑</span>}
                 <span
-                  className={`absolute -right-0.5 -bottom-0.5 size-2.5 rounded-full ring-2 ring-panel ${
-                    p.connected ? "bg-green-400" : "bg-muted"
-                  }`}
+                  className={`absolute -right-1 -bottom-1 size-3 rounded-full border-2 border-panel ${p.connected ? "bg-green-400" : "bg-muted"}`}
                 />
               </span>
               <span className="relative min-w-0 flex-1" data-menu={menu === p.id ? "" : undefined}>
@@ -124,7 +119,7 @@ export function PlayerList({
                   // Host: the name opens this player's menu (keeps the wins column lined up).
                   <button
                     type="button"
-                    className="-mx-1 flex max-w-full items-center gap-1 rounded px-1 text-left font-semibold transition-colors hover:bg-panel-2"
+                    className="-mx-1 flex max-w-full items-center gap-1 rounded px-1 text-left font-hero font-extrabold transition-colors hover:bg-panel-2"
                     style={{ color: p.color }}
                     aria-haspopup="menu"
                     aria-expanded={menu === p.id}
@@ -142,24 +137,19 @@ export function PlayerList({
                     />
                   </button>
                 ) : (
-                  <span className="block truncate font-semibold" style={{ color: p.color }}>
+                  <span className="block truncate font-hero font-extrabold" style={{ color: p.color }}>
                     {p.name}
-                    {p.id === me && <span className="ml-1 text-xs font-normal text-muted">(you)</span>}
+                    {p.id === me && <span className="ml-1 font-sans text-xs font-semibold text-muted">(you)</span>}
                   </span>
                 )}
-                <span className="flex items-center gap-1 font-mono text-[10px] tracking-wide text-muted uppercase">
-                  {p.id === room.hostId && (
-                    <>
-                      <Crown aria-hidden className="size-3 text-brand-2" strokeWidth={2} />
-                      <span className="text-brand-2">host</span> ·
-                    </>
-                  )}
-                  {p.bot && <Bot aria-hidden className="size-3" strokeWidth={2} />} {status}
+                <span className="marker block truncate text-[15px] leading-tight text-muted">
+                  {p.id === room.hostId ? <span className="text-brand-2">host · </span> : null}
+                  {status}
                 </span>
                 {menu === p.id && (
                   <span
                     role="menu"
-                    className="absolute top-6 left-0 z-30 flex w-48 flex-col overflow-hidden rounded-lg border border-line bg-panel shadow-lg shadow-black/50"
+                    className="absolute top-6 left-0 z-30 flex w-48 flex-col overflow-hidden rounded-xl border-2 border-paper bg-panel shadow-[4px_5px_0_rgb(0_0_0/0.6)]"
                   >
                     {!p.bot && p.connected && (
                       <button
@@ -188,17 +178,26 @@ export function PlayerList({
                   </span>
                 )}
               </span>
-              <RollingNumber value={room.wins[p.id] ?? 0} className="w-6 text-right font-mono text-sm font-bold" />
+              <span
+                title={`${wins} ${wins === 1 ? "win" : "wins"} this session`}
+                className={`flex shrink-0 items-center gap-0.5 rounded-lg border-2 px-1.5 py-0.5 text-xs font-extrabold ${
+                  wins ? "border-ink bg-sun text-ink" : "border-line text-muted"
+                }`}
+              >
+                🏆 <RollingNumber value={wins} />
+              </span>
             </li>
           );
         })}
       </ul>
       {isHost && room.phase === "lobby" && (
-        <div className="mt-2 flex items-center gap-2 border-t border-line px-1 pt-2">
-          <Bot aria-hidden className="size-4 shrink-0 text-muted" strokeWidth={2} />
-          <span className="min-w-0 flex-1 text-xs text-muted">
+        <div className="mt-2.5 flex items-center gap-2 rounded-xl border-2 border-dashed border-line px-2 py-1.5">
+          <span aria-hidden className="text-xl leading-none">
+            🤖
+          </span>
+          <span className="min-w-0 flex-1 text-xs font-bold text-text">
             Practice bots{" "}
-            <span className="block font-mono text-[10px]">
+            <span className="marker block text-[14px] font-normal text-muted">
               {botsPlay ? `they play ${game?.name ?? "this game"}` : `can't play ${game?.name ?? "this game"}`}
             </span>
           </span>
@@ -211,7 +210,7 @@ export function PlayerList({
           >
             <Minus aria-hidden className="size-3.5" strokeWidth={2.4} />
           </button>
-          <span className="w-4 text-center font-mono text-sm">{bots}</span>
+          <span className="w-4 text-center font-hero text-base font-extrabold">{bots}</span>
           <button
             type="button"
             className="btn p-1.5"
