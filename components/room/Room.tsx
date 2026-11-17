@@ -112,7 +112,7 @@ export function Room({
         <Logo small />
         <div className="flex items-center gap-2">
           <ConnDot status={r.status} ping={r.ping} />
-          <InviteButton code={code} />
+          <InviteButton code={code} gameId={room?.gameId} name={identity.name} />
           <SoundToggle />
           <button
             className="btn px-2.5 py-1.5"

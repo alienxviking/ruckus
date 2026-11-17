@@ -8,13 +8,13 @@ export const meta: GameMeta = {
   "category": "brain",
   "minPlayers": 1,
   "maxPlayers": 12,
-  "minutes": 4,
+  "minutes": 5,
   "emoji": "🔐",
   "accent": "#4ade80",
   "how": [
-    "Guess any five-letter word. Each tile turns green, yellow or grey to show how close you are.",
-    "Green: right letter, right spot. Yellow: in the word, wrong spot.",
-    "Crack it in as few guesses as you can. Solo, or race friends on the same word."
+    "Guess a real five-letter word. Each tile flips to show how close you are.",
+    "Lime: right letter, right spot. Cyan: in the word, wrong spot. Dark: not in it.",
+    "Crack it in fewer guesses for more points. Solo, or race friends on the same words."
   ],
   "original": true,
   "isNew": true

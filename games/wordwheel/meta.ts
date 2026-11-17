@@ -12,9 +12,9 @@ export const meta: GameMeta = {
   "emoji": "🎡",
   "accent": "#f59e0b",
   "how": [
-    "Make words of 4+ letters from the seven on the wheel. The centre letter must be in every word.",
-    "Longer words score more. Use all seven letters for a big bonus.",
-    "Most points when the clock runs out wins."
+    "Make words of 4+ letters from the wheel. The centre letter must be in every word; letters can repeat.",
+    "Longer words score more. A word using all seven letters gets a big bonus.",
+    "Most points when the clock runs out wins. Solo, or race friends on the same wheel."
   ],
   "original": true,
   "isNew": true
