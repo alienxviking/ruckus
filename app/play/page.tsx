@@ -47,10 +47,10 @@ export default function PlayIndex() {
             <CalendarDays aria-hidden className="size-5" strokeWidth={1.75} />
           </span>
           <span className="min-w-0 flex-1">
-            <span className="block font-display text-lg font-bold">Daily challenge</span>
-            <span className="block text-sm text-muted">3 games, same puzzles for everyone, new every day.</span>
+            <span className="block font-hero text-lg font-extrabold">Daily challenge</span>
+            <span className="block text-sm font-semibold text-ink/75">3 games, same puzzles for everyone, new every day.</span>
           </span>
-          <ChevronRight aria-hidden className="size-5 text-muted transition-transform group-hover:translate-x-0.5" />
+          <ChevronRight aria-hidden className="size-5 text-ink/70 transition-transform group-hover:translate-x-0.5" />
         </Link>
       </section>
 

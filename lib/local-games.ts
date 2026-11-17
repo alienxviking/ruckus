@@ -23,8 +23,10 @@ export function botRange(meta: GameMeta): { min: number; max: number } {
   return { min: Math.max(0, meta.minPlayers - 1), max: Math.min(MAX_BOTS, meta.maxPlayers - 1) };
 }
 
-/** A sensible first pick: a lively table without being crowded. */
+/**
+ * The first pick: as few bots as the game allows. Games you can play alone start with none;
+ * games that need an opponent start with just enough (usually one). More is one tap away.
+ */
 export function defaultBots(meta: GameMeta): number {
-  const { min, max } = botRange(meta);
-  return Math.min(max, Math.max(min, 3));
+  return botRange(meta).min;
 }

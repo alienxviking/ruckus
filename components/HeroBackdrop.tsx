@@ -71,15 +71,7 @@ export function HeroBackdrop({
       aria-hidden
       className={`hero-field bd-mix ${variant === "room" ? "bd-room" : ""} ${calm ? "bd-calm" : ""}`}
     >
-      {/* 1. Lava-lamp colour wash under a print halftone. */}
-      {[0, 1, 2, 3].map((i) => (
-        <span
-          key={`b${i}`}
-          className={`bd-blob bd-blob-${i}`}
-          style={{ backgroundColor: C[i] }}
-        />
-      ))}
-      <span className="bd-halftone" />
+      {/* The colour blobs live in the site-wide BlobBackdrop (layout). */}
       {/* 2. Stage lights sweeping through, and a few twinkles (landing page only). */}
       {variant === "hero" && (
         <>

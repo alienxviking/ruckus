@@ -3,6 +3,7 @@ import { Bricolage_Grotesque, Caveat_Brush, Chakra_Petch, Geist, Geist_Mono } fr
 import { preconnect, prefetchDNS } from "react-dom";
 import { MotionProvider } from "@/components/motion/MotionProvider";
 import { ServiceWorker } from "@/components/ServiceWorker";
+import { BlobBackdrop } from "@/components/BlobBackdrop";
 import "./globals.css";
 
 const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
@@ -48,6 +49,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       className={`${geistSans.variable} ${geistMono.variable} ${display.variable} ${hero.variable} ${marker.variable} h-full antialiased`}
     >
       <body className="flex min-h-full flex-col">
+        <BlobBackdrop />
         <MotionProvider>{children}</MotionProvider>
         <ServiceWorker />
       </body>

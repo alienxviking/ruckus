@@ -10,7 +10,6 @@ import type { Identity } from "@/lib/identity";
 import { useRoom, type PingStore } from "@/lib/useRoom";
 import type { Player } from "@/shared/types";
 import { Logo } from "../Logo";
-import { HeroBackdrop } from "../HeroBackdrop";
 import { Chat } from "./Chat";
 import { GameStage } from "./GameStage";
 import { Lobby } from "./Lobby";
@@ -74,6 +73,16 @@ export function Room({
     setEditing(true);
   };
 
+  // The site-wide colour blobs fade right down while a game is on (the board stays calm).
+  useEffect(() => {
+    const root = document.documentElement;
+    if (playing) root.dataset.playing = "1";
+    else delete root.dataset.playing;
+    return () => {
+      delete root.dataset.playing;
+    };
+  }, [playing]);
+
   // A link like /r/CODE?game=sumo (e.g. "Play this with friends" from solo play) picks that
   // game for the host once, then the address is tidied up.
   const linkGame = useRef<string | null | undefined>(undefined);
@@ -97,9 +106,6 @@ export function Room({
 
   return (
     <div className="mx-auto flex w-full max-w-7xl flex-1 flex-col px-3 sm:px-5">
-      {/* The landing page's party backdrop, behind the whole room: full in the lobby, a faint
-          hint during a game (the board stays calm). */}
-      <HeroBackdrop variant="room" calm={playing} />
       <header className="flex items-center justify-between gap-3 py-3">
         <Logo small />
         <div className="flex items-center gap-2">
