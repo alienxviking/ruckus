@@ -10,6 +10,7 @@ import {
   currentStreak,
   dailyGames,
   dailyNumber,
+  dailyResultText,
   dailySeed,
   msToNextDay,
   readDaily,
@@ -162,7 +163,7 @@ export function DailyChallenge() {
                       <span>Unfinished: your first try counts</span>
                     ) : (
                       <>
-                        Score <span className="text-brand-2">{e.score === null ? "done" : fmt(e.score)}</span>
+                        Score <span className="text-brand-2">{dailyResultText(id, e.score, e.headline)}</span>
                       </>
                     )
                   ) : (
@@ -369,7 +370,7 @@ function DailyResult({
         <div className="min-w-0 flex-1">
           <div className="label mb-1 text-brand-2">{run.official ? "Official score" : "Replay (just for fun)"}</div>
           <div className="font-display text-3xl font-bold tracking-tight tabular-nums">
-            {typeof score === "number" ? fmt(score) : "Done"}
+            {typeof score === "number" ? dailyResultText(run.gameId, score, result.headline) : "Done"}
           </div>
           <div className="mt-1 text-sm text-muted">{result.headline}</div>
           <div className="mt-1 font-mono text-[11px] text-muted">

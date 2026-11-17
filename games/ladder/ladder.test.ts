@@ -2,7 +2,7 @@ import { assert, makeTestCtx } from "../../shared/testing";
 import type { Settings } from "../../shared/settings";
 import game, { type LadderState } from "./server";
 import { bfs, isWord, makePuzzle, nextStep } from "./dict";
-import { BETWEEN_MS, READY_MS, limitFor, oneApart, puzzlePoints, type LadderView } from "./shared";
+import { BETWEEN_MS, MISS_EXTRA, READY_MS, countedSteps, limitFor, oneApart, raceScore, type LadderView } from "./shared";
 
 function start(n: number, seed = 7, settings: Settings = {}, bots = 0) {
   const t = makeTestCtx(n, seed, settings, bots);
@@ -42,25 +42,30 @@ function solve(g: G, id: string) {
 
 // ---------- dictionary ----------
 assert(isWord("cold") && isWord("warm") && isWord("stone"), "common words known");
-assert(!isWord("zzzz") && !isWord("fuck") && !isWord("john"), "junk, rude words and names refused");
+assert(!isWord("zzzz") && !isWord("fuck") && !isWord("bitch"), "junk and rude words refused");
+assert(isWord("cuss") && isWord("cusp") && isWord("fjord"), "everyday and rarer real words accepted");
 for (const len of [4, 5]) {
   for (let par = 3; par <= 7; par++) {
     let x = 99 + par * len;
     const r = () => ((x = (x * 16807) % 2147483647), x / 2147483647);
     const pz = makePuzzle(len, par, r);
-    assert(pz.par === par, `par ${par} for ${len} letters`);
-    assert(pz.best.length === par + 1 && pz.best[0] === pz.start && pz.best[par] === pz.goal, "best ladder shape");
+    // Long ones can fall back a step when every candidate has a shortcut through rarer words.
+    assert(pz.par === par || (par >= 6 && pz.par === par - 1), `par ${par} for ${len} letters (got ${pz.par})`);
+    assert(pz.best.length === pz.par + 1 && pz.best[0] === pz.start && pz.best[pz.par] === pz.goal, "best ladder shape");
     for (let i = 1; i < pz.best.length; i++) assert(oneApart(pz.best[i - 1], pz.best[i]) && isWord(pz.best[i]), "best ladder valid");
-    assert(bfs(pz.start).dist.get(pz.goal) === par, "no shortcut via rarer words");
+    assert(bfs(pz.start).dist.get(pz.goal) === pz.par, "no shortcut via rarer words");
   }
 }
 assert(nextStep("cold", "warm") !== null, "hint exists");
 
 // ---------- scoring ----------
-assert(puzzlePoints(true, 4, 4, 0, 90_000, 90_000) === 150, "max points");
-assert(puzzlePoints(true, 6, 4, 1, 0, 90_000) === 100 - 40 - 30, "over par and hint");
-assert(puzzlePoints(true, 20, 4, 3, 0, 90_000) === 10, "floor");
-assert(puzzlePoints(false, 4, 4, 0, 90_000, 90_000) === 0, "unsolved");
+// The race: fewest counted steps wins; hints add one, giving up counts shortest + MISS_EXTRA.
+assert(countedSteps(true, 4, 4, 0) === 4, "solved at the shortest");
+assert(countedSteps(true, 6, 4, 1) === 7, "extra steps and a hint");
+assert(countedSteps(false, 2, 4, 0) === 4 + MISS_EXTRA, "gave up");
+// One step always beats any amount of time; time breaks ties.
+assert(raceScore(20, 20, 5, 600_000, 600_000) > raceScore(21, 20, 5, 0, 600_000), "a step outweighs time");
+assert(raceScore(20, 20, 5, 1_000, 600_000) > raceScore(20, 20, 5, 300_000, 600_000), "faster breaks a tie");
 
 // ---------- determinism: same seed, same puzzles ----------
 {
@@ -95,8 +100,10 @@ assert(puzzlePoints(false, 4, 4, 0, 90_000, 90_000) === 0, "unsolved");
   assert(r.done && r.results.every((x) => x.ok && x.steps === x.par), "all solved at par");
   assert(result(g), "game ended");
   assert(result(g)!.winners[0] === id, "solo winner");
-  assert(result(g)!.scores![id] === r.score && r.score >= n * 100, "score reported");
-  assert(/scored/.test(result(g)!.headline), "solo headline");
+  const best = g.s.puzzles.reduce((t, p) => t + p.par, 0);
+  assert(r.total === best, "steps counted");
+  assert(result(g)!.scores![id] >= 10 * 10 * n, "score reported");
+  assert(/in \d+ steps/.test(result(g)!.headline), "solo headline");
 }
 
 // ---------- invalid actions ----------
@@ -146,7 +153,7 @@ assert(puzzlePoints(false, 4, 4, 0, 90_000, 90_000) === 0, "unsolved");
   const [a, b] = g.t.ids;
   go(g);
   assert(act(g, a, { type: "skip", p: 0 }) === true, "skip");
-  assert(g.s.runs[a].results[0].pts === 0 && g.s.runs[a].idx === 1, "skip scores 0");
+  assert(g.s.runs[a].results[0].counted === g.s.puzzles[0].par + MISS_EXTRA && g.s.runs[a].idx === 1, "skip counts shortest + penalty");
   assert(act(g, a, { type: "hint", p: 1 }) === false, "no moves during the pause");
   g.t.advance(BETWEEN_MS);
   assert(act(g, a, { type: "hint", p: 1 }) === true, "moves after the pause");

@@ -170,6 +170,18 @@ export function recordDaily(day: string, gameId: string, entry: DailyEntry): boo
   return true;
 }
 
+/**
+ * How a daily result reads. Most games show their score; Word Ladder is a race for the fewest
+ * steps, so it shows those (its score only ranks them).
+ */
+export function dailyResultText(gameId: string, score: number | null, headline: string): string {
+  if (gameId === "ladder") {
+    const m = / in (\d+) steps/.exec(headline);
+    if (m) return `${m[1]} steps`;
+  }
+  return score === null ? "done" : score.toLocaleString("en-US");
+}
+
 /** Wordle-style summary: game names and scores only, nothing personal. */
 export function shareText(day: string, d: DailyData, url: string): string {
   const today = d.days[day] ?? {};
@@ -180,9 +192,7 @@ export function shareText(day: string, d: DailyData, url: string): string {
       ? "not played"
       : e.pending
         ? "unfinished"
-        : e.score === null
-          ? "done"
-          : e.score.toLocaleString("en-US");
+        : dailyResultText(id, e.score, e.headline);
     return `${meta?.emoji ?? "🎮"} ${meta?.name ?? id}: ${score}`;
   });
   const streak = currentStreak(d, day);

@@ -7,10 +7,8 @@ import { RollingNumber } from "@/components/RollingNumber";
 import type { Player } from "@/shared/types";
 import { feedback, sfx } from "@/lib/feedback";
 import {
-  BASE_POINTS,
-  EXTRA_STEP_COST,
-  HINT_COST,
-  SPEED_POINTS,
+  HINT_EXTRA,
+  MISS_EXTRA,
   type BoardRow,
   type LadderAction,
   type LadderEvent,
@@ -28,45 +26,33 @@ const BAD = "#ff5d73";
 const CSS = `
 .wl-tile { display: grid; place-items: center; aspect-ratio: 1; border-radius: .6rem; font-family: var(--font-display); font-weight: 800;
   text-transform: uppercase; border: 1.5px solid var(--color-line); background: var(--color-panel-2); color: var(--color-text);
-  transition: transform .15s ease, border-color .15s ease, background .15s ease, box-shadow .15s ease; user-select: none; }
+  transition: transform .15s ease, border-color .15s ease, background .15s ease; user-select: none; }
 .wl-word { display: grid; gap: .4rem; width: 100%; }
 .wl-cur .wl-tile { cursor: pointer; }
-.wl-cur .wl-tile:hover { transform: translateY(-2px); }
-.wl-tile[data-sel="true"] { border-color: var(--acc); box-shadow: 0 0 0 3px color-mix(in oklab, var(--acc) 35%, transparent), 0 8px 24px -10px var(--acc);
-  transform: translateY(-3px); background: color-mix(in oklab, var(--acc) 16%, var(--color-panel-2)); }
-.wl-tile[data-hit="true"] { background: color-mix(in oklab, ${GOOD} 22%, var(--color-panel-2)); border-color: color-mix(in oklab, ${GOOD} 60%, transparent); color: #d9ffe6; }
-.wl-tile[data-changed="true"] { animation: wl-flip .42s cubic-bezier(.2,1.4,.4,1) both; }
-@keyframes wl-flip { 0% { transform: rotateX(90deg) scale(.9); } 100% { transform: none; } }
-.wl-goal .wl-tile { border-color: color-mix(in oklab, var(--acc) 70%, transparent); background: linear-gradient(180deg, color-mix(in oklab, var(--acc) 28%, transparent), color-mix(in oklab, var(--acc) 10%, transparent));
-  color: #fff; text-shadow: 0 0 14px var(--acc); }
-.wl-old .wl-tile { background: transparent; color: color-mix(in oklab, var(--color-text) 62%, transparent); border-style: dashed; }
-.wl-rails { position: relative; padding: 0 .9rem; }
-.wl-rails::before, .wl-rails::after { content: ""; position: absolute; top: 0; bottom: 0; width: 5px; border-radius: 3px;
-  background: linear-gradient(180deg, var(--acc), color-mix(in oklab, var(--acc) 25%, transparent)); opacity: .55; }
-.wl-rails::before { left: 0; } .wl-rails::after { right: 0; }
-.wl-rung { position: relative; }
-.wl-rung::before { content: ""; position: absolute; left: -.9rem; right: -.9rem; top: 50%; height: 3px; background: color-mix(in oklab, var(--acc) 30%, transparent); z-index: 0; border-radius: 2px; }
-.wl-rung > * { position: relative; z-index: 1; }
-.wl-in { animation: wl-in .38s cubic-bezier(.2,1.3,.4,1) both; }
-@keyframes wl-in { from { transform: translateY(16px) scale(.96); opacity: 0; } to { transform: none; opacity: 1; } }
+.wl-cur .wl-tile:hover { border-color: color-mix(in oklab, var(--acc) 45%, var(--color-line)); }
+.wl-tile[data-sel="true"] { border-color: var(--acc); background: color-mix(in oklab, var(--acc) 14%, var(--color-panel-2)); transform: translateY(-2px); }
+.wl-tile[data-hit="true"] { color: ${GOOD}; }
+.wl-tile[data-changed="true"] { animation: wl-flip .35s cubic-bezier(.2,1.3,.4,1) both; }
+@keyframes wl-flip { 0% { transform: rotateX(90deg); } 100% { transform: none; } }
+.wl-goal .wl-tile { border-color: color-mix(in oklab, var(--acc) 55%, transparent); background: transparent; color: var(--acc); }
+.wl-old .wl-tile { background: transparent; color: var(--color-muted); border-style: dashed; }
+.wl-in { animation: wl-in .3s cubic-bezier(.2,1.2,.4,1) both; }
+@keyframes wl-in { from { transform: translateY(10px); opacity: 0; } to { transform: none; opacity: 1; } }
 .wl-shake { animation: wl-shake .4s ease both; }
 @keyframes wl-shake { 0%,100% { transform: none; } 20% { transform: translateX(-8px); } 40% { transform: translateX(7px); } 60% { transform: translateX(-5px); } 80% { transform: translateX(3px); } }
 .wl-key { min-width: 0; flex: 1 1 0; height: 3rem; border-radius: .5rem; background: var(--color-panel-2); border: 1px solid var(--color-line);
   font-weight: 700; text-transform: uppercase; font-size: 1.05rem; transition: transform .08s ease, background .15s ease; touch-action: manipulation; }
 .wl-key:active:not(:disabled) { transform: scale(.92); background: color-mix(in oklab, var(--acc) 30%, var(--color-panel-2)); }
-.wl-key[data-goal="true"] { border-color: color-mix(in oklab, var(--acc) 55%, transparent); color: color-mix(in oklab, var(--acc) 70%, white); }
-.wl-key:disabled { opacity: .35; }
+.wl-key:disabled { opacity: .3; }
 .wl-count { animation: wl-count .9s cubic-bezier(.2,1.6,.4,1) both; }
 @keyframes wl-count { 0% { transform: scale(2); opacity: 0; } 30% { transform: scale(1); opacity: 1; } 100% { transform: scale(.9); opacity: .85; } }
-.wl-glow { animation: wl-glow 1.2s ease-out both; }
-@keyframes wl-glow { 0% { box-shadow: 0 0 0 0 var(--acc); } 100% { box-shadow: 0 0 0 22px transparent; } }
-.wl-dot { width: .7rem; height: .7rem; border-radius: 999px; background: var(--color-line); }
-.wl-dot[data-s="cur"] { background: var(--acc); box-shadow: 0 0 10px var(--acc); animation: wl-pulse 1.2s ease-in-out infinite; }
+.wl-dot { width: .55rem; height: .55rem; border-radius: 999px; background: var(--color-line); }
+.wl-dot[data-s="cur"] { background: var(--acc); }
 .wl-dot[data-s="ok"] { background: ${GOOD}; } .wl-dot[data-s="bad"] { background: ${BAD}; }
-@keyframes wl-pulse { 50% { transform: scale(1.3); } }
 `;
 
-const sizeFor = (len: number) => (len === 4 ? "max-w-[17rem] text-[1.75rem]" : "max-w-[21rem] text-[1.6rem]");
+const sizeFor = (len: number, small?: boolean) =>
+  small ? (len === 4 ? "max-w-[11rem] text-lg" : "max-w-[13.5rem] text-base") : len === 4 ? "max-w-[17rem] text-[1.75rem]" : "max-w-[21rem] text-[1.6rem]";
 
 function Word({
   word,
@@ -75,8 +61,10 @@ function Word({
   sel,
   changedAt = -1,
   onPick,
+  small,
 }: {
   word: string;
+  small?: boolean;
   goal?: string;
   kind: "goal" | "cur" | "old" | "start";
   sel?: number;
@@ -86,7 +74,7 @@ function Word({
   const cls = kind === "goal" ? "wl-goal" : kind === "cur" ? "wl-cur" : kind === "old" ? "wl-old" : "";
   return (
     <div
-      className={`wl-word ${cls} mx-auto ${sizeFor(word.length)}`}
+      className={`wl-word ${cls} mx-auto ${sizeFor(word.length, small)}`}
       style={{ gridTemplateColumns: `repeat(${word.length}, minmax(0, 1fr))` }}
       role={kind === "cur" ? "radiogroup" : undefined}
       aria-label={kind === "cur" ? `Current word ${word.toUpperCase()}: pick the letter to change` : `${kind === "goal" ? "Goal" : "Word"} ${word.toUpperCase()}`}
@@ -260,35 +248,29 @@ export default function WordLadder({ view, me, byId, isPlayer, act, serverNow, o
                 </div>
               )}
               <Header view={view} run={shown} />
-              <div className="mt-2">
+              <div className="mt-2 opacity-60">
                 <TimerBar endsAt={between ? null : shown.endsAt} total={shown.limit} serverNow={serverNow} color={accent} />
               </div>
               {between && last ? (
                 <Between result={last} startsAt={shown.startedAt} serverNow={serverNow} next={shown} />
               ) : (
-                <div className="mt-4 flex flex-col gap-3">
-                  <div className="wl-rails flex flex-col gap-2 py-1">
-                    <div className="wl-rung">
-                      <Word word={shown.goal} kind="goal" />
-                    </div>
-                    <div className="py-0.5 text-center font-mono text-[11px] uppercase tracking-widest text-muted">
-                      {shown.away > 0 ? (
-                        <>
-                          ▲ <span className="text-text">{shown.away}</span> step{shown.away === 1 ? "" : "s"} to the goal · par {shown.par}
-                        </>
-                      ) : (
-                        <>par {shown.par}</>
-                      )}
-                    </div>
-                    <Ladder
-                      run={shown}
-                      sel={sel}
-                      setSel={setSel}
-                      pending={live ? pending : null}
-                      errN={err?.n ?? 0}
-                      editable={live}
-                    />
+                <div className="mt-4 flex flex-col gap-4">
+                  <div className="flex flex-col items-center gap-1.5">
+                    <span className="label">Goal</span>
+                    <Word word={shown.goal} kind="goal" small />
                   </div>
+                  <p className="text-center text-sm text-muted">
+                    {shown.away > 0 ? (
+                      <>
+                        You&apos;re <b className="text-text">{shown.away}</b> step{shown.away === 1 ? "" : "s"} away · shortest route{" "}
+                        <b className="text-text">{shown.par}</b>
+                      </>
+                    ) : (
+                      <>Shortest route: {shown.par} steps</>
+                    )}
+                  </p>
+                  <Current run={shown} sel={sel} setSel={setSel} pending={live ? pending : null} errN={err?.n ?? 0} editable={live} />
+                  <Path words={shown.ladder} />
                   {live && (
                     <>
                       <p
@@ -296,9 +278,9 @@ export default function WordLadder({ view, me, byId, isPlayer, act, serverNow, o
                         className={`min-h-5 text-center text-sm ${err ? "wl-shake text-[#ff8da0]" : "text-muted"}`}
                         aria-live="polite"
                       >
-                        {err?.text ?? (pending ? "Checking…" : "Tap a letter tile, then a new letter.")}
+                        {err?.text ?? (pending ? "Checking…" : "Tap a letter, then pick its new letter.")}
                       </p>
-                      <Keyboard goal={shown.goal} cur={cur} sel={sel} onKey={send} disabled={!!pending} />
+                      <Keyboard cur={cur} sel={sel} onKey={send} disabled={!!pending} />
                       <div className="flex flex-wrap justify-center gap-2">
                         <button
                           className="btn min-h-10 px-4"
@@ -308,7 +290,7 @@ export default function WordLadder({ view, me, byId, isPlayer, act, serverNow, o
                           ↶ Step back
                         </button>
                         <button className="btn min-h-10 px-4" onClick={() => act({ type: "hint", p: shown.idx })}>
-                          💡 Hint <span className="font-mono text-xs text-muted">−{HINT_COST}</span>
+                          💡 Hint <span className="font-mono text-xs text-muted">+{HINT_EXTRA} step</span>
                         </button>
                         <button
                           className="btn min-h-10 px-4"
@@ -318,7 +300,7 @@ export default function WordLadder({ view, me, byId, isPlayer, act, serverNow, o
                             else setSkipArm(true);
                           }}
                         >
-                          {skipArm ? "Tap again to give up" : "Give up"}
+                          {skipArm ? `Give up? Counts as ${shown.par + MISS_EXTRA}` : "Give up"}
                         </button>
                       </div>
                     </>
@@ -356,27 +338,32 @@ function Ready({ view, serverNow }: { view: LadderView; serverNow: () => number 
 }
 
 function Header({ view, run }: { view: LadderView; run: MyRun }) {
+  // Live count: finished ladders plus this one so far (a hint's extra step included).
+  const onThis = Math.max(0, run.ladder.length - 1) + HINT_EXTRA * run.hints;
   return (
     <div className="flex items-center justify-between gap-3">
       <div className="min-w-0">
         <div className="label">
-          Ladder {Math.min(run.idx + 1, view.n)} / {view.n}
+          Ladder {Math.min(run.idx + 1, view.n)} of {view.n}
         </div>
-        <div className="mt-1 flex gap-1.5" aria-hidden>
+        <div className="mt-1.5 flex gap-1.5" aria-hidden>
           {Array.from({ length: view.n }, (_, i) => (
             <span key={i} className="wl-dot" data-s={i < run.results.length ? (run.results[i].ok ? "ok" : "bad") : i === run.idx ? "cur" : ""} />
           ))}
         </div>
       </div>
       <div className="text-right">
-        <div className="label">Score</div>
-        <RollingNumber value={run.score} className="font-mono text-2xl font-bold" />
+        <div className="label">Your steps</div>
+        <div className="font-mono text-2xl font-bold">
+          <RollingNumber value={run.total + onThis} />
+          {run.bestTotal > 0 && <span className="ml-1 text-xs font-normal text-muted">best {run.bestTotal}+</span>}
+        </div>
       </div>
     </div>
   );
 }
 
-function Ladder({
+function Current({
   run,
   sel,
   setSel,
@@ -395,44 +382,44 @@ function Ladder({
   const cur = words[words.length - 1] ?? "";
   const prevWord = words[words.length - 2];
   const changedAt = prevWord ? diffAt(prevWord, cur) : -1;
-  // Newest at the top, just under the goal; the start word sits at the bottom.
-  const older = words.slice(0, -1).reverse();
-  const MAX_OLD = 5;
-  const hidden = Math.max(0, older.length - MAX_OLD);
-  const visible = hidden ? [...older.slice(0, MAX_OLD - 1), older[older.length - 1]] : older;
   return (
-    <div className="flex flex-col gap-2">
-      <div key={`${words.length}:${errN}`} className={`wl-rung ${errN ? "wl-shake" : "wl-in"}`}>
-        {pending ? (
-          <div className="opacity-60">
-            <Word word={pending} goal={run.goal} kind="old" />
-          </div>
-        ) : editable ? (
-          <Word word={cur} goal={run.goal} kind="cur" sel={sel} changedAt={changedAt} onPick={setSel} />
-        ) : (
-          <Word word={cur} goal={run.goal} kind="start" />
-        )}
-      </div>
-      {visible.map((w, i) => {
-        const isStart = w === words[0];
-        return (
-          <div key={`${w}${i}`} className="wl-rung">
-            {hidden > 0 && i === MAX_OLD - 1 && (
-              <div className="mb-2 text-center font-mono text-[11px] text-muted">⋮ {hidden} more</div>
-            )}
-            <Word word={w} goal={run.goal} kind="old" />
-            {isStart && <div className="mt-1 text-center font-mono text-[10px] uppercase tracking-widest text-muted">start</div>}
-          </div>
-        );
-      })}
-      {words.length === 1 && editable && (
-        <div className="text-center font-mono text-[10px] uppercase tracking-widest text-muted">start word</div>
+    <div key={`${words.length}:${errN}`} className={errN ? "wl-shake" : "wl-in"}>
+      {pending ? (
+        <div className="opacity-60">
+          <Word word={pending} goal={run.goal} kind="old" />
+        </div>
+      ) : editable ? (
+        <Word word={cur} goal={run.goal} kind="cur" sel={sel} changedAt={changedAt} onPick={setSel} />
+      ) : (
+        <Word word={cur} goal={run.goal} kind="start" />
       )}
     </div>
   );
 }
 
-function Keyboard({ goal, cur, sel, onKey, disabled }: { goal: string; cur: string; sel: number; onKey: (k: string) => void; disabled: boolean }) {
+/** Where you've been on this ladder: start → … → now, small and quiet. */
+function Path({ words }: { words: string[] }) {
+  const steps = words.length - 1;
+  const MAX = 6;
+  const shown = words.length > MAX ? [words[0], "…", ...words.slice(-(MAX - 2))] : words;
+  return (
+    <div className="flex flex-col items-center gap-1">
+      <div className="flex max-w-full flex-wrap items-center justify-center gap-1 font-mono text-xs uppercase text-muted">
+        {shown.map((w, i) => (
+          <span key={`${w}${i}`} className="flex items-center gap-1">
+            {i > 0 && <span aria-hidden>→</span>}
+            <span className={i === shown.length - 1 ? "text-text" : ""}>{w}</span>
+          </span>
+        ))}
+      </div>
+      <span className="font-mono text-[10px] tracking-widest text-muted uppercase">
+        {steps === 0 ? "start word" : `${steps} step${steps === 1 ? "" : "s"} on this ladder`}
+      </span>
+    </div>
+  );
+}
+
+function Keyboard({ cur, sel, onKey, disabled }: { cur: string; sel: number; onKey: (k: string) => void; disabled: boolean }) {
   return (
     <div className="mx-auto flex w-full max-w-[34rem] flex-col gap-1.5" aria-label="Letters">
       {KEYS.map((row, r) => (
@@ -441,7 +428,6 @@ function Keyboard({ goal, cur, sel, onKey, disabled }: { goal: string; cur: stri
             <button
               key={k}
               className="wl-key"
-              data-goal={goal[sel] === k && cur[sel] !== k}
               disabled={disabled || cur[sel] === k}
               onClick={() => onKey(k)}
               aria-label={`Change letter ${sel + 1} to ${k.toUpperCase()}`}
@@ -460,12 +446,12 @@ function Between({ result, startsAt, serverNow, next }: { result: PuzzleResult; 
   return (
     <div className="wl-in mt-4 flex flex-col items-center gap-3 py-2 text-center">
       <div className="font-display text-3xl font-black" style={{ color: result.ok ? GOOD : BAD }}>
-        {result.ok ? (result.steps <= result.par && result.hints === 0 ? "Perfect climb!" : "Solved!") : "Out of rungs"}
+        {result.ok ? (result.counted <= result.par ? "Shortest route!" : "Solved!") : "No luck this time"}
       </div>
       <div className="font-mono text-sm text-muted">
-        {result.ok ? `${result.steps} steps (par ${result.par})` : `best was ${result.par} steps`}
-        {result.hints ? ` · ${result.hints} hint${result.hints === 1 ? "" : "s"}` : ""} ·{" "}
-        <span className="font-bold text-text">+{result.pts}</span>
+        {result.ok ? `${result.steps} steps · shortest ${result.par}` : `shortest was ${result.par} steps`}
+        {result.hints ? ` · ${result.hints} hint${result.hints === 1 ? "" : "s"}` : ""} · counts as{" "}
+        <span className="font-bold text-text">{result.counted}</span>
       </div>
       <PathChips words={result.best} label="A best ladder" />
       <div className="label mt-2">
@@ -505,10 +491,11 @@ function Summary({ run, over, who }: { run: MyRun; over: boolean; who?: Player }
           </div>
         </div>
         <div className="text-right">
-          <div className="label">Score</div>
+          <div className="label">Steps</div>
           <div className="font-mono text-3xl font-bold" style={{ color: "var(--acc)" }}>
-            {run.score}
+            {run.total}
           </div>
+          <div className="font-mono text-[11px] text-muted">shortest possible {run.bestTotal}</div>
         </div>
       </div>
       <ol className="mt-4 flex flex-col gap-2">
@@ -519,7 +506,7 @@ function Summary({ run, over, who }: { run: MyRun; over: boolean; who?: Player }
                 <span style={{ color: r.ok ? GOOD : BAD }}>{r.ok ? "✓" : "✗"}</span> {r.best[0]} → {r.best[r.best.length - 1]}
               </span>
               <span className="whitespace-nowrap font-mono text-xs text-muted">
-                {r.ok ? `${r.steps} steps · par ${r.par}` : "unsolved"}{r.hints ? ` · ${r.hints}💡` : ""} · {r.secs}s · <b className="text-text">+{r.pts}</b>
+                {r.ok ? `${r.steps} steps · shortest ${r.par}` : "gave up"}{r.hints ? ` · ${r.hints}💡` : ""} · {r.secs}s · counts <b className="text-text">{r.counted}</b>
               </span>
             </div>
             {(!r.ok || r.steps > r.par) && (
@@ -534,10 +521,11 @@ function Summary({ run, over, who }: { run: MyRun; over: boolean; who?: Player }
 }
 
 function Board({ view, byId, me }: { view: LadderView; byId: Record<string, Player>; me: string }) {
-  const rows = view.board.slice().sort((a, b) => b.score - a.score || b.idx - a.idx);
+  // Who's ahead: more ladders finished, then fewer steps, then less time.
+  const rows = view.board.slice().sort((a, b) => b.idx - a.idx || a.total - b.total || a.secs - b.secs);
   return (
     <aside className="card flex flex-col gap-2 p-3 @3xl:w-72 @3xl:shrink-0">
-      <div className="label">Race</div>
+      <div className="label">Race · fewest steps wins</div>
       <ol className="flex flex-col gap-1.5">
         {rows.map((r: BoardRow, i) => (
           <li
@@ -549,7 +537,10 @@ function Board({ view, byId, me }: { view: LadderView; byId: Record<string, Play
                 <span className="w-4 font-mono text-[11px] text-muted">{i + 1}</span>
                 <PlayerChip player={byId[r.id]} size="sm" dim={!byId[r.id]?.connected} />
               </span>
-              <RollingNumber value={r.score} className="font-mono font-bold" />
+              <span className="font-mono font-bold">
+                <RollingNumber value={r.total} />
+                <span className="ml-0.5 text-[10px] font-normal text-muted">steps</span>
+              </span>
             </div>
             <div className="flex items-center gap-2 pl-6">
               <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-panel-2">
@@ -559,7 +550,7 @@ function Board({ view, byId, me }: { view: LadderView; byId: Record<string, Play
                 />
               </div>
               <span className="w-20 text-right font-mono text-[10px] text-muted">
-                {r.done ? "done ✓" : `#${r.idx + 1} · ${r.steps} step${r.steps === 1 ? "" : "s"}`}
+                {r.done ? `done · ${r.secs}s` : `ladder ${r.idx + 1} · +${r.steps}`}
               </span>
             </div>
           </li>
@@ -572,16 +563,16 @@ function Board({ view, byId, me }: { view: LadderView; byId: Record<string, Play
 function ScoringCard() {
   return (
     <aside className="card p-3 text-sm @3xl:w-64 @3xl:shrink-0">
-      <div className="label mb-1.5">Points per ladder</div>
+      <div className="label mb-1.5">How it&apos;s scored</div>
       <ul className="space-y-1 text-muted">
         <li>
-          Solve: <b className="text-text">+{BASE_POINTS}</b>, speed up to <b className="text-text">+{SPEED_POINTS}</b>
+          Fewest steps over all the ladders wins. <b className="text-text">Time</b> only breaks ties.
         </li>
         <li>
-          Each step over par: <b className="text-text">−{EXTRA_STEP_COST}</b>
+          A hint plays the next step: <b className="text-text">+{HINT_EXTRA}</b> extra step.
         </li>
         <li>
-          Each hint: <b className="text-text">−{HINT_COST}</b>
+          Giving up counts as the shortest route <b className="text-text">+{MISS_EXTRA}</b>.
         </li>
       </ul>
     </aside>

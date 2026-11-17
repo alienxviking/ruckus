@@ -7,11 +7,10 @@ export const BETWEEN_MS = 3_000;
 /** A participant gone this long no longer holds up the end of the game. */
 export const AWAY_MS = 30_000;
 
-export const BASE_POINTS = 100;
-export const SPEED_POINTS = 50;
-export const EXTRA_STEP_COST = 20;
-export const HINT_COST = 30;
-export const MIN_SOLVED_POINTS = 10;
+/** It's a race for the fewest steps. A hint plays a step for you and adds this many on top. */
+export const HINT_EXTRA = 1;
+/** A ladder you give up on (or run out of time on) counts as the shortest route plus this. */
+export const MISS_EXTRA = 5;
 
 export type Difficulty = "easy" | "normal" | "hard";
 
@@ -22,15 +21,23 @@ export const PLANS: Record<Difficulty, [number, number][]> = {
   hard: [[4, 5], [5, 5], [4, 6], [5, 6], [4, 7], [5, 6], [5, 7], [4, 7]],
 };
 
-/** Time allowed for a puzzle whose best solution takes `par` steps. */
-export const limitFor = (par: number) => 30_000 + 15_000 * par;
+/** Time allowed for a puzzle whose shortest route takes `par` steps (generous: it's a backstop). */
+export const limitFor = (par: number) => 60_000 + 20_000 * par;
 
-/** Points for a finished puzzle. */
-export function puzzlePoints(solved: boolean, steps: number, par: number, hints: number, msLeft: number, limit: number): number {
-  if (!solved) return 0;
-  const speed = Math.round(SPEED_POINTS * Math.max(0, Math.min(1, msLeft / limit)));
-  const raw = BASE_POINTS + speed - EXTRA_STEP_COST * Math.max(0, steps - par) - HINT_COST * hints;
-  return Math.max(MIN_SOLVED_POINTS, raw);
+/** Steps a finished ladder counts for in the race. */
+export function countedSteps(ok: boolean, steps: number, par: number, hints: number): number {
+  return ok ? steps + HINT_EXTRA * hints : par + MISS_EXTRA;
+}
+
+/**
+ * The game's score (higher is better, for the room and the daily challenge): fewest counted
+ * steps first, time only breaks ties. 10 points per step under (best possible + 10 a ladder),
+ * plus up to 9 for speed, so a step always outweighs any amount of time.
+ */
+export function raceScore(counted: number, best: number, ladders: number, ms: number, limitMs: number): number {
+  const steps = Math.max(0, 10 * (best + 10 * ladders - counted));
+  const speed = Math.round(9 * Math.max(0, Math.min(1, 1 - ms / Math.max(1, limitMs))));
+  return steps + speed;
 }
 
 /** True when a and b (same length) differ in exactly one position. */
@@ -52,11 +59,12 @@ export type LadderAction =
 export interface PuzzleResult {
   /** Solved (else timed out or skipped). */
   ok: boolean;
-  /** Steps taken (solved) / par. */
+  /** Steps you climbed, and what the ladder counts for in the race (hints and misses add). */
   steps: number;
+  counted: number;
+  /** The shortest possible route. */
   par: number;
   hints: number;
-  pts: number;
   /** Seconds taken. */
   secs: number;
   /** One best ladder, start to goal. */
@@ -80,13 +88,17 @@ export interface MyRun {
   limit: number;
   hints: number;
   results: PuzzleResult[];
-  score: number;
+  /** Counted steps over finished ladders, and the shortest possible total for them. */
+  total: number;
+  bestTotal: number;
   done: boolean;
 }
 
 export interface BoardRow {
   id: string;
-  score: number;
+  /** Counted steps over finished ladders (fewest wins), and seconds used. */
+  total: number;
+  secs: number;
   /** Puzzle they're on (n = done). */
   idx: number;
   /** Steps on their current ladder. */

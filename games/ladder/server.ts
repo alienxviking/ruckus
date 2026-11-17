@@ -7,9 +7,10 @@ import {
   BETWEEN_MS,
   PLANS,
   READY_MS,
+  countedSteps,
   limitFor,
   oneApart,
-  puzzlePoints,
+  raceScore,
   type BoardRow,
   type Difficulty,
   type LadderView,
@@ -22,8 +23,9 @@ export type { LadderAction, LadderView, LadderEvent } from "./shared";
 
 // Word Ladder (Ruckus original take on the classic word puzzle).
 // Everyone gets the same seeded set of puzzles and races through them at their own pace:
-// change one letter per step, every step a real word, reach the goal. Points for solving,
-// for speed and for matching par; hints play the next step for you at a cost.
+// change one letter per step, every step a real word, reach the goal. Fewest steps over all
+// the ladders wins (time breaks ties); a hint plays a step for you and adds one, giving up
+// counts as the shortest route plus five.
 
 interface Run {
   idx: number;
@@ -31,7 +33,9 @@ interface Run {
   startedAt: number;
   hints: number;
   results: PuzzleResult[];
-  score: number;
+  /** Counted steps and ms used over finished ladders. */
+  total: number;
+  ms: number;
   done: boolean;
   /** When they disconnected (null = here). */
   awaySince: number | null;
@@ -58,18 +62,19 @@ function finishPuzzle(s: LadderState, run: Run, ok: boolean, ctx: GameCtx) {
   const limit = limitFor(pz.par);
   const used = Math.max(0, Math.min(limit, now - run.startedAt));
   const steps = run.ladder.length - 1;
-  const pts = puzzlePoints(ok, steps, pz.par, run.hints, limit - used, limit);
+  const counted = countedSteps(ok, steps, pz.par, run.hints);
   run.results.push({
     ok,
     steps,
+    counted,
     par: pz.par,
     hints: run.hints,
-    pts,
     secs: Math.round(used / 1000),
     best: pz.best,
     mine: run.ladder.slice(),
   });
-  run.score += pts;
+  run.total += counted;
+  run.ms += used;
   run.idx += 1;
   run.hints = 0;
   if (run.idx >= s.puzzles.length) {
@@ -97,19 +102,29 @@ function maybeEnd(s: LadderState, ctx: GameCtx): boolean {
   });
   if (waiting) return false;
   s.phase = "over";
-  const scores: Record<string, number> = {};
-  for (const id of s.ids) scores[id] = s.runs[id].score;
-  const winners = topScorers(scores);
   const n = s.puzzles.length;
-  const solved = (id: string) => s.runs[id].results.filter((r) => r.ok).length;
+  const best = s.puzzles.reduce((t, p) => t + p.par, 0);
+  const limitMs = s.puzzles.reduce((t, p) => t + limitFor(p.par), 0);
+  // Ladders someone never got to (they left) count as given up.
+  for (const id of s.ids) {
+    const r = s.runs[id];
+    if (r.done) continue;
+    for (let i = r.idx; i < n; i++) r.total += countedSteps(false, 0, s.puzzles[i].par, 0);
+    r.ms = limitMs;
+  }
+  const scores: Record<string, number> = {};
+  for (const id of s.ids) scores[id] = raceScore(s.runs[id].total, best, n, s.runs[id].ms, limitMs);
+  const anySolved = s.ids.some((id) => s.runs[id].results.some((r) => r.ok));
+  const winners = anySolved ? topScorers(scores) : [];
+  const steps = (id: string) => s.runs[id].total;
   let headline: string;
   if (s.ids.length === 1) {
     const id = s.ids[0];
-    headline = `${nameOf(ctx, id)} scored ${scores[id]} at ${GAME} (${solved(id)}/${n} solved)`;
+    headline = `${nameOf(ctx, id)} climbed ${n} ladder${n === 1 ? "" : "s"} in ${steps(id)} steps (shortest possible: ${best})`;
   } else if (winners.length === 1) {
-    headline = `${nameOf(ctx, winners[0])} wins ${GAME} with ${scores[winners[0]]} points`;
+    headline = `${nameOf(ctx, winners[0])} wins ${GAME} in ${steps(winners[0])} steps (shortest possible: ${best})`;
   } else if (winners.length > 1) {
-    headline = `${winners.map((id) => nameOf(ctx, id)).join(" & ")} tie at ${GAME} on ${scores[winners[0]]}`;
+    headline = `${winners.map((id) => nameOf(ctx, id)).join(" & ")} tie at ${GAME} on ${steps(winners[0])} steps`;
   } else {
     headline = `Nobody climbed a ladder this time`;
   }
@@ -131,7 +146,8 @@ function toMyRun(s: LadderState, r: Run): MyRun {
     limit,
     hints: r.hints,
     results: r.results,
-    score: r.score,
+    total: r.total,
+    bestTotal: r.results.reduce((t, x) => t + x.par, 0),
     done: r.done,
   };
 }
@@ -196,7 +212,8 @@ export const ladder: GameDef<LadderState, unknown> = {
         startedAt: startsAt,
         hints: 0,
         results: [],
-        score: 0,
+        total: 0,
+        ms: 0,
         done: false,
         awaySince: ctx.player(id)?.connected === false ? ctx.now() : null,
       };
@@ -295,7 +312,8 @@ export const ladder: GameDef<LadderState, unknown> = {
       const r = s.runs[id];
       return {
         id,
-        score: r.score,
+        total: r.total,
+        secs: Math.round(r.ms / 1000),
         idx: r.idx,
         steps: Math.max(0, r.ladder.length - 1),
         solved: r.results.filter((x) => x.ok).length,
@@ -305,10 +323,10 @@ export const ladder: GameDef<LadderState, unknown> = {
     const mine = s.runs[viewerId];
     let watch: LadderView["watch"] = null;
     if (!mine && s.ids.length) {
-      // Spectators follow whoever leads (most points, then furthest along).
+      // Spectators follow whoever leads (furthest along, then fewest steps).
       const lead = s.ids
         .slice()
-        .sort((a, b) => s.runs[b].score - s.runs[a].score || s.runs[b].idx - s.runs[a].idx)[0];
+        .sort((a, b) => s.runs[b].idx - s.runs[a].idx || s.runs[a].total - s.runs[b].total)[0];
       watch = { id: lead, run: toMyRun(s, s.runs[lead]) };
     }
     return {

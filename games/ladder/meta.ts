@@ -13,8 +13,8 @@ export const meta: GameMeta = {
   "accent": "#c084fc",
   "how": [
     "Turn the start word into the goal word, one letter at a time.",
-    "Every step must be a real word. Match par for full points.",
-    "Solve fast to score more. Play solo or race friends on the same ladders."
+    "Every step must be a real word. Use as few steps as you can.",
+    "Fewest steps over all the ladders wins. Play solo or race friends on the same ladders."
   ],
   "original": true,
   "isNew": true

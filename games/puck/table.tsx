@@ -2,13 +2,11 @@
 
 // Canvas renderer, prediction and controls for Puck.
 //
-// ONE MOMENT. Everything is drawn at the sim time a move you make now reaches the server
-// (`serverNow + lead`, lead ~ one round trip). Your paddle sits right under your finger (it runs
-// the server's own paddle rule locally, so zero lag), and the puck is run forward from the newest
-// snapshot through the shared physics (physics.ts) to that moment, colliding with your paddle's
-// actual recent path and the other paddles' extrapolated ones. So when you smack the puck, it
-// flies off on screen at once, and the server (which gets your move just in time) agrees. When a
-// new snapshot disagrees (someone else's hit), the difference is eased out with a short spring.
+// Playback: the puck and the other paddles are drawn a moment behind the newest snapshot,
+// following the shared physics (physics.ts) between snapshots, so they only ever move along what
+// the server really did (smooth, never snapping back). Your own paddle sits right under your
+// finger (it runs the server's paddle rule locally, so zero lag); the puck is kept from being
+// drawn inside it while your hit is on its way to the server.
 
 import { useEffect, useEffectEvent, useRef, type PointerEvent, type ReactNode } from "react";
 import { drawAvatar, preloadAvatars } from "@/lib/avatar-art";
@@ -337,7 +335,7 @@ function renderBackground(S: Surface, colors: [string, string], bottomTeam: numb
   return c;
 }
 
-// ---------- prediction ----------
+// ---------- playback ----------
 
 interface Contact {
   kind: number;
@@ -348,58 +346,43 @@ interface Contact {
   t: number;
 }
 
-/** The longest the puck is run past its newest snapshot (ms). */
-const MAX_AHEAD = 700;
-/** Other paddles are extrapolated at most this far (ms). */
-const OTHERS_AHEAD = 120;
+/** How far past the newest snapshot playback may run (a late frame) before things just wait. */
+const MAX_PAST_NEWEST = 120;
 
-function paddleVel(frames: Frame[], f: Frame, slot: number): [number, number] {
-  const prev = frames[frames.length - 2];
-  if (!prev || prev.n !== f.n || f.t - prev.t < 10 || f.t - prev.t > 200) return [0, 0];
-  const dt = f.t - prev.t;
-  return [(f.d[slot * 2] - prev.d[slot * 2]) / dt, (f.d[slot * 2 + 1] - prev.d[slot * 2 + 1]) / dt];
+/** The snapshots either side of time t (b is null past the newest, or across a faceoff). */
+function framesAround(frames: Frame[], t: number): [Frame, Frame | null] {
+  let i = frames.length - 1;
+  while (i > 0 && frames[i].t > t) i--;
+  const a = frames[i];
+  const b = frames[i + 1];
+  return [a, b && b.n === a.n && b.t > a.t ? b : null];
 }
 
-/** Your paddle at sim time `t`, from where you've had it on screen. */
-function histAt(sc: Scene, t: number, fx: number, fy: number): [number, number] {
-  const h = sc.hist;
-  if (!h.length || t <= h[0].T) return h.length ? [h[0].x, h[0].y] : [fx, fy];
-  for (let i = h.length - 1; i >= 0; i--) {
-    if (h[i].T <= t) {
-      const a = h[i];
-      const b = h[i + 1];
-      if (!b) return [a.x, a.y];
-      const k = (t - a.T) / Math.max(1e-6, b.T - a.T);
-      return [a.x + (b.x - a.x) * k, a.y + (b.y - a.y) * k];
-    }
+/** Paddle `slot` at time t: between two snapshots, or a short glide past the newest one. */
+function paddleAt(a: Frame, b: Frame | null, slot: number, t: number): [number, number] {
+  const ax = a.d[slot * 2];
+  const ay = a.d[slot * 2 + 1];
+  if (b) {
+    const k = Math.min(1, Math.max(0, (t - a.t) / (b.t - a.t)));
+    return [ax + (b.d[slot * 2] - ax) * k, ay + (b.d[slot * 2 + 1] - ay) * k];
   }
-  return [h[0].x, h[0].y];
+  return [ax, ay];
 }
 
 const sweeps: Sweep[] = [];
 
-/** The puck at sim time T, run forward from frame `f`. */
-function predictPuck(sc: Scene, f: Frame, T: number, d: TableData, contacts: Contact[] | null): Kin {
-  const p: Kin = { x: f.p[0], y: f.p[1], vx: f.p[2], vy: f.p[3] };
+/** Runs the shared puck physics from snapshot `a` to time `to`, paddles moving as the snapshots say. */
+function simulate(a: Frame, b: Frame | null, to: number, d: TableData, contacts: Contact[] | null): Kin {
+  const p: Kin = { x: a.p[0], y: a.p[1], vx: a.p[2], vy: a.p[3] };
   const view = d.view;
-  if (view.phase !== "live") return p;
   const sp = SPEEDS[view.speed] ?? SPEEDS.normal;
   const n = view.ids.length;
-  const vel: [number, number][] = [];
-  for (let i = 0; i < n; i++) vel.push(paddleVel(sc.frames, f, i));
-  const rects = view.ids.map((_, i) => zoneRect(view.team[i], view.zone[i], view.r[i]));
-  const at = (i: number, t: number): [number, number] => {
-    if (i === d.mySlot) return histAt(sc, t, f.d[i * 2], f.d[i * 2 + 1]);
-    const e = Math.min(OTHERS_AHEAD, Math.max(0, t - f.t));
-    return clampTo(rects[i], f.d[i * 2] + vel[i][0] * e, f.d[i * 2 + 1] + vel[i][1] * e);
-  };
-  const end = Math.min(T, f.t + MAX_AHEAD);
-  let t = f.t;
-  while (t + SUB_MS <= end) {
+  let t = a.t;
+  while (t + SUB_MS <= to) {
     sweeps.length = 0;
     for (let i = 0; i < n; i++) {
-      const [x0, y0] = at(i, t);
-      const [x1, y1] = at(i, t + SUB_MS);
+      const [x0, y0] = paddleAt(a, b, i, t);
+      const [x1, y1] = paddleAt(a, b, i, t + SUB_MS);
       sweeps.push({ slot: i, x0, y0, x1, y1, r: view.r[i] });
     }
     const ts = t + SUB_MS;
@@ -410,9 +393,34 @@ function predictPuck(sc: Scene, f: Frame, T: number, d: TableData, contacts: Con
       return p;
     }
   }
-  const rem = Math.max(0, end - t) / 1000;
+  const rem = Math.max(0, to - t) / 1000;
   p.x += p.vx * rem;
   p.y += p.vy * rem;
+  return p;
+}
+
+/**
+ * The puck at time t. Between two snapshots it follows the real physics from the earlier one
+ * (so bounces off walls and paddles look right, not cut across), with any small difference to
+ * the later snapshot blended in across the gap, so it lands exactly where the server says.
+ */
+function playPuck(a: Frame, b: Frame | null, t: number, d: TableData, contacts: Contact[]): Kin {
+  if (d.view.phase !== "live") {
+    if (!b) return { x: a.p[0], y: a.p[1], vx: 0, vy: 0 };
+    const k = Math.min(1, Math.max(0, (t - a.t) / (b.t - a.t)));
+    return { x: a.p[0] + (b.p[0] - a.p[0]) * k, y: a.p[1] + (b.p[1] - a.p[1]) * k, vx: 0, vy: 0 };
+  }
+  const to = Math.min(t, a.t + (b ? b.t - a.t : MAX_PAST_NEWEST));
+  const p = simulate(a, b, to, d, contacts);
+  if (!b) return p;
+  const atB = simulate(a, b, b.t, d, null);
+  const k = Math.min(1, Math.max(0, (to - a.t) / (b.t - a.t)));
+  const ex = b.p[0] - atB.x;
+  const ey = b.p[1] - atB.y;
+  // A big disagreement (a goal reset, a teleport) isn't blended: take the snapshot.
+  if (Math.hypot(ex, ey) > 200) return k > 0.5 ? { x: b.p[0], y: b.p[1], vx: b.p[2], vy: b.p[3] } : p;
+  p.x += ex * k;
+  p.y += ey * k;
   return p;
 }
 
@@ -495,12 +503,15 @@ function draw(g: CanvasRenderingContext2D, sc: Scene, S: Surface, d: TableData, 
   const myTeam = mine >= 0 ? view.team[mine] : 0;
 
   // ----- the moment we draw -----
-  sc.clock.tick(perf, latest.t, TICK_MS, 200);
-  const T = Math.max(sc.lastT, sc.clock.serverNow(perf) + sc.lead);
+  // Playback runs a little behind the newest snapshot (the Timeline sizes that buffer from how
+  // evenly snapshots arrive), so the puck and the other paddles only ever move along what the
+  // server really did: no guessing ahead, so nothing to snap back when a guess was wrong.
+  const rt = Math.max(sc.lastT, sc.clock.tick(perf, latest.t, TICK_MS, 200));
+  const T = rt;
   const prevT = sc.lastT;
-  sc.lastT = T;
+  sc.lastT = rt;
 
-  // ----- your paddle -----
+  // ----- your paddle (right under your finger, no lag) -----
   if (mine >= 0) {
     const rect = zoneRect(view.team[mine], view.zone[mine], view.r[mine]);
     if (!sc.me.ready || sc.me.n !== latest.n) {
@@ -508,7 +519,6 @@ function draw(g: CanvasRenderingContext2D, sc: Scene, S: Surface, d: TableData, 
       const y = latest.d[mine * 2 + 1];
       if (!sc.me.ready || Math.hypot(x - sc.me.x, y - sc.me.y) > 40) {
         Object.assign(sc.me, { x, y, tx: x, ty: y });
-        sc.hist.length = 0;
       }
       sc.me.ready = true;
       sc.me.n = latest.n;
@@ -519,32 +529,33 @@ function draw(g: CanvasRenderingContext2D, sc: Scene, S: Surface, d: TableData, 
       sc.me.x = latest.d[mine * 2];
       sc.me.y = latest.d[mine * 2 + 1];
     }
-    sc.hist.push({ T, x: sc.me.x, y: sc.me.y });
-    while (sc.hist.length > 2 && sc.hist[0].T < T - 1_500) sc.hist.shift();
   }
 
-  // ----- the puck -----
+  // ----- the puck and the other paddles, played back -----
+  const [fa, fb] = framesAround(sc.frames, rt);
   const contacts: Contact[] = [];
-  const raw = predictPuck(sc, latest, T, d, contacts);
-  if (sc.rawFrom && sc.rawFrom !== latest && sc.rawFrom.n === latest.n && view.phase === "live") {
-    // A new snapshot: what the old one says now vs the new one; ease the difference out.
-    const old = predictPuck(sc, sc.rawFrom, T, d, null);
-    const ex = old.x - raw.x;
-    const ey = old.y - raw.y;
-    if (Math.hypot(ex, ey) < 260) sc.spring.add(ex, ey);
-    else sc.spring.reset();
-  }
-  sc.rawFrom = latest;
-  sc.spring.step(dt);
+  const raw = playPuck(fa, fb, rt, d, contacts);
   const P = sc.puck;
-  P.x = raw.x + sc.spring.x;
-  P.y = raw.y + sc.spring.y;
+  P.x = raw.x;
+  P.y = raw.y;
   P.vx = raw.vx;
   P.vy = raw.vy;
   P.ok = true;
+  // Your paddle is drawn "now" and the puck a moment ago, so a hit you're about to make could
+  // show the puck sliding into your paddle before the server's bounce arrives: keep it outside.
+  if (mine >= 0 && view.phase === "live") {
+    const dx = P.x - sc.me.x;
+    const dy = P.y - sc.me.y;
+    const dist = Math.hypot(dx, dy);
+    const minD = view.r[mine] + PUCK_R;
+    if (dist < minD && dist > 0.001) {
+      P.x = sc.me.x + (dx / dist) * minD;
+      P.y = sc.me.y + (dy / dist) * minD;
+    }
+  }
   const speed = Math.hypot(P.vx, P.vy);
 
-  // ----- hits: effects the moment they happen in the picture -----
+  // ----- hits: effects the moment they show up in the picture -----
   for (const c of contacts) {
     if (c.t <= prevT || view.phase !== "live") continue;
     if (c.kind === C_PADDLE) {
@@ -570,15 +581,11 @@ function draw(g: CanvasRenderingContext2D, sc: Scene, S: Surface, d: TableData, 
   const n = view.ids.length;
   for (let i = 0; i < n; i++) {
     if (i === mine) continue;
-    const o = (sc.others[i] ??= { x: latest.d[i * 2], y: latest.d[i * 2 + 1], ok: false });
-    const [vx, vy] = paddleVel(sc.frames, latest, i);
-    const e = Math.min(OTHERS_AHEAD, Math.max(0, T - latest.t));
-    const tx = latest.d[i * 2] + vx * e;
-    const ty = latest.d[i * 2 + 1] + vy * e;
-    if (!o.ok) [o.x, o.y, o.ok] = [tx, ty, true];
-    const k = 1 - Math.exp(-dt / 35);
-    o.x += (tx - o.x) * k;
-    o.y += (ty - o.y) * k;
+    const [x, y] = paddleAt(fa, fb, i, rt);
+    const o = (sc.others[i] ??= { x, y, ok: true });
+    o.x = x;
+    o.y = y;
+    o.ok = true;
   }
 
   // ----- paint -----
