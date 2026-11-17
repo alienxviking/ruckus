@@ -61,8 +61,8 @@ body {
   isolation: isolate;
 }
 
-/* Fixed backdrop: a black wall with a faint print halftone and grain. Its own fixed layers,
-   so scrolling never repaints it. */
+/* Fixed backdrop: a faint measuring grid fading out from the top, soft colour glows and
+   film grain. Its own fixed layers, so scrolling never repaints it. */
 body::before,
 body::after {
   content: "";
@@ -72,8 +72,12 @@ body::after {
   pointer-events: none;
 }
 body::before {
-  background: radial-gradient(circle at 1px 1px, rgb(255 255 255 / 0.07) 1px, transparent 1.6px) 0 0 / 18px 18px;
-  mask-image: radial-gradient(130% 90% at 50% 0%, #000 25%, transparent 80%);
+  background:
+    radial-gradient(70rem 36rem at 15% -12%, rgb(198 244 50 / 0.07), transparent 65%),
+    radial-gradient(60rem 40rem at 100% 0%, rgb(76 224 255 / 0.07), transparent 60%),
+    linear-gradient(to right, rgb(255 255 255 / 0.035) 1px, transparent 1px) 0 0 / 56px 56px,
+    linear-gradient(to bottom, rgb(255 255 255 / 0.035) 1px, transparent 1px) 0 0 / 56px 56px;
+  mask-image: radial-gradient(120% 75% at 50% 0%, #000 30%, transparent 85%);
 }
 body::after {
   opacity: 0.05;
@@ -829,17 +833,14 @@ body::after {
   }
 }
 
-/* ---------- landing intro: Rux yells RUCKUS! (once per session) ---------- */
+/* ---------- landing intro: one marker line scrawls "ruckus" (once per session) ---------- */
 @layer components {
   .rux-intro {
     position: fixed;
     inset: 0;
     z-index: 60;
-    display: grid;
-    place-items: center;
-    background: var(--color-ink);
     cursor: pointer;
-    animation: ri-out 0.5s cubic-bezier(0.7, 0, 0.3, 1) 1.05s forwards;
+    overflow: hidden;
   }
   html[data-intro="skip"] .rux-intro {
     display: none;
@@ -848,61 +849,107 @@ body::after {
   html[data-intro="play"] .after-intro :is(.slap, .bob) {
     animation-play-state: paused;
   }
-  .rux-intro .ri-stage {
-    position: relative;
-    width: min(72vw, 26rem);
-  }
-  .rux-intro .ri-rux {
-    display: block;
-    transform-origin: 40% 90%;
-    animation: ri-pop 0.55s var(--ease-spring) both;
-  }
-  .rux-intro .ri-ring {
+  /* The curtain: two halves that split apart along the line. */
+  .rux-intro .ri-half {
     position: absolute;
-    left: 92%;
-    top: 52%;
-    width: 30%;
-    aspect-ratio: 1;
-    margin: -15% 0 0 -15%;
-    border-radius: 999px;
-    border: 5px solid var(--color-sun);
-    opacity: 0;
-    animation: ri-ring 0.7s ease-out both;
+    left: 0;
+    right: 0;
+    height: 50.5%;
+    background: var(--color-ink);
   }
-  .rux-intro .ri-r1 {
-    animation-delay: 0.3s;
+  /* Full shorthands each (a lone animation-name gets merged into a shorthand with 0s duration). */
+  .rux-intro .ri-top {
+    top: 0;
+    animation: ri-split-top 0.55s cubic-bezier(0.7, 0, 0.25, 1) 1.2s forwards;
   }
-  .rux-intro .ri-r2 {
-    animation-delay: 0.45s;
-    border-color: var(--color-pink);
+  .rux-intro .ri-bottom {
+    bottom: 0;
+    animation: ri-split-bottom 0.55s cubic-bezier(0.7, 0, 0.25, 1) 1.2s forwards;
   }
-  .rux-intro .ri-r3 {
-    animation-delay: 0.6s;
-    border-color: var(--color-volt);
-  }
-  .rux-intro .ri-word {
+  /* Stage: the word, centred, its baseline (70% down the art) on the screen's middle. */
+  .rux-intro .ri-stage {
+    --w: min(78vw, 44rem);
+    --stroke: calc(var(--w) * 8 / 520);
     position: absolute;
     left: 50%;
-    top: -6%;
-    font-size: clamp(3rem, 13vw, 6.5rem);
-    font-weight: 800;
-    line-height: 1;
-    letter-spacing: -0.04em;
-    color: var(--color-volt);
-    -webkit-text-stroke: 4px #14101f;
-    paint-order: stroke fill;
-    text-shadow: 5px 6px 0 var(--color-pink);
-    white-space: nowrap;
-    animation: ri-word 0.5s var(--ease-spring) 0.35s both;
+    top: 50%;
+    width: var(--w);
+    aspect-ratio: 520 / 200;
+    translate: -50% -70%;
+    animation: ri-fade 0.18s ease-in 1.12s forwards;
+  }
+  .rux-intro .ri-word {
+    display: block;
+    width: 100%;
+    height: 100%;
+  }
+  .rux-intro .ri-ink {
+    fill: none;
+    stroke: var(--color-volt);
+    stroke-width: 8;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    stroke-dasharray: 1;
+    stroke-dashoffset: 1;
+    animation: ri-draw 0.6s cubic-bezier(0.45, 0, 0.55, 1) 0.16s forwards;
+  }
+  .rux-intro .ri-ink-shadow {
+    stroke: var(--color-pink);
+    translate: 3.5px 3.5px;
+  }
+  /* The straight runs to the screen edges, on the baseline. */
+  .rux-intro .ri-line {
+    position: absolute;
+    top: 70%;
+    width: 52vw;
+    height: var(--stroke);
+    margin-top: calc(var(--stroke) / -2);
+    border-radius: 999px;
+    background: var(--color-volt);
+    box-shadow: 3.5px 3.5px 0 var(--color-pink);
+    transform: scaleX(0);
+    transform-origin: left center;
+  }
+  .rux-intro .ri-line-l {
+    right: 99.6%;
+    animation: ri-grow 0.18s ease-in forwards;
+  }
+  .rux-intro .ri-line-r {
+    left: 99.6%;
+    animation: ri-grow 0.2s ease-out 0.74s forwards;
+  }
+  /* Rux drops onto the line after the "s" and winks. */
+  .rux-intro .ri-rux {
+    position: absolute;
+    left: 82%;
+    bottom: 30%;
+    width: 17%;
+    transform-origin: 50% 100%;
+    opacity: 0;
+    animation: ri-drop 0.45s var(--ease-spring) 0.7s forwards;
   }
 }
-@keyframes ri-pop {
+@keyframes ri-draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+@keyframes ri-grow {
+  to {
+    transform: scaleX(1);
+  }
+}
+@keyframes ri-drop {
   0% {
-    transform: translateY(70%) scale(0.2) rotate(-20deg);
+    transform: translateY(-160%) scale(0.6);
     opacity: 0;
   }
-  60% {
-    transform: translateY(-6%) scale(1.08) rotate(4deg);
+  45% {
+    transform: translateY(0) scale(1.15, 0.8);
+    opacity: 1;
+  }
+  70% {
+    transform: translateY(-12%) scale(0.95, 1.06);
     opacity: 1;
   }
   100% {
@@ -910,34 +957,20 @@ body::after {
     opacity: 1;
   }
 }
-@keyframes ri-ring {
-  0% {
-    transform: scale(0.3);
-    opacity: 0.95;
-  }
-  100% {
-    transform: scale(2.6);
-    opacity: 0;
-  }
-}
-@keyframes ri-word {
-  0% {
-    transform: translateX(-50%) scale(2.4) rotate(-14deg);
-    opacity: 0;
-  }
-  70% {
-    transform: translateX(-50%) scale(0.92) rotate(-5deg);
-    opacity: 1;
-  }
-  100% {
-    transform: translateX(-50%) scale(1) rotate(-7deg);
-    opacity: 1;
-  }
-}
-@keyframes ri-out {
+@keyframes ri-fade {
   to {
-    transform: translateY(-100%);
-    visibility: hidden;
+    opacity: 0;
+    transform: scale(1.04);
+  }
+}
+@keyframes ri-split-top {
+  to {
+    transform: translateY(-101%);
+  }
+}
+@keyframes ri-split-bottom {
+  to {
+    transform: translateY(101%);
   }
 }
 @media (prefers-reduced-motion: reduce) {

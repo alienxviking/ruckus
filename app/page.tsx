@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { CATALOG, CATALOG_BY_ID } from "@/games/catalog";
 import { CoverArt } from "@/components/CoverArt";
+import { HeroBackdrop } from "@/components/HeroBackdrop";
 import { HomeActions } from "@/components/HomeActions";
 import { Logo } from "@/components/Logo";
 import { Rux } from "@/components/Rux";
@@ -23,6 +24,9 @@ export default function Home() {
   return (
     <main className="w-full overflow-x-clip pb-24">
       <RuxIntro />
+      {/* The moving backdrop (glows, a perspective floor running at you) behind the top of the page. */}
+      <div className="relative isolate">
+        <HeroBackdrop />
       <div className="mx-auto w-full max-w-6xl px-4 sm:px-6">
         <header className="flex items-center justify-between gap-3 py-4">
           <Logo />
@@ -102,6 +106,10 @@ export default function Home() {
           </div>
         </section>
 
+      </div>
+      </div>
+
+      <div className="mx-auto w-full max-w-6xl px-4 sm:px-6">
         {/* ---------- what to play ---------- */}
         <HomeLibrary localIds={LOCAL_IDS} />
 

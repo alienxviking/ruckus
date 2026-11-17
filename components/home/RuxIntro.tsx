@@ -1,6 +1,7 @@
 "use client";
 
 import { Rux } from "../Rux";
+import { SCRAWL_VIEWBOX, SCRAWL_WORD } from "./scrawl";
 
 // Before first paint: a repeat visit in this tab session skips the intro entirely (no flash).
 // It marks <html data-intro>, which the CSS reads; <html> has suppressHydrationWarning for it.
@@ -11,9 +12,10 @@ function done() {
 }
 
 /**
- * The landing intro, once per session: Rux pops up and yells "RUCKUS!" through his megaphone,
- * sound rings burst out, then the curtain flies up to reveal the page. CSS only, ~1.4 s,
- * tap to skip, and nothing at all for people who prefer reduced motion.
+ * The landing intro, once per session: one lime marker line runs in from the left, scrawls
+ * "ruckus" in a single stroke and shoots off to the right; Rux drops onto the line and winks;
+ * then the screen splits open along the line. CSS only (~1.7 s), tap to skip, and nothing at
+ * all for people who prefer reduced motion.
  */
 export function RuxIntro() {
   return (
@@ -24,18 +26,22 @@ export function RuxIntro() {
         aria-hidden
         onClick={done}
         onAnimationEnd={(e) => {
-          if (e.target === e.currentTarget) done();
+          if (e.animationName === "ri-split-bottom") done();
         }}
       >
-        <div className="ri-stage">
+        <span className="ri-half ri-top" />
+        <span className="ri-half ri-bottom" />
+        <span className="ri-stage">
+          <span className="ri-line ri-line-l" />
+          <svg viewBox={SCRAWL_VIEWBOX} className="ri-word" overflow="visible">
+            <path className="ri-ink ri-ink-shadow" d={SCRAWL_WORD} pathLength={1} />
+            <path className="ri-ink" d={SCRAWL_WORD} pathLength={1} />
+          </svg>
+          <span className="ri-line ri-line-r" />
           <span className="ri-rux">
-            <Rux mood="shout" megaphone className="w-full" />
+            <Rux mood="wink" className="w-full" />
           </span>
-          <span className="ri-ring ri-r1" />
-          <span className="ri-ring ri-r2" />
-          <span className="ri-ring ri-r3" />
-          <span className="ri-word font-hero">RUCKUS!</span>
-        </div>
+        </span>
       </div>
     </>
   );
