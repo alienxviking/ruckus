@@ -1,10 +1,14 @@
 "use client";
 
-import { Dices } from "lucide-react";
-import { useState } from "react";
-import { AVATARS, MAX_NAME, PLAYER_COLORS } from "@/shared/types";
+import { Ban, Dices, Lock } from "lucide-react";
+import { useState, useSyncExternalStore } from "react";
+import { ACCESSORIES, AVATARS, MAX_NAME, parseAvatar, PLAYER_COLORS, type AccessoryId } from "@/shared/types";
 import { randomLook } from "@/lib/identity";
+import { ACCESSORY_LABEL } from "@/lib/avatar-art";
+import { getWins, UNLOCK_AT } from "@/lib/progress";
 import { Avatar, AVATAR_LABEL } from "../Avatar";
+
+const noop = () => () => {};
 
 export interface ProfileValues {
   name: string;
@@ -24,7 +28,11 @@ export function ProfileForm({
   const [look] = useState(randomLook);
   const [name, setName] = useState(initial?.name ?? "");
   const [color, setColor] = useState<string>(initial?.color ?? look.color);
-  const [avatar, setAvatar] = useState<string>(initial?.avatar ?? look.avatar);
+  const start = parseAvatar(initial?.avatar ?? look.avatar);
+  const [base, setBase] = useState<string>(start?.base ?? look.avatar);
+  const [acc, setAcc] = useState<AccessoryId | null>(start?.acc ?? null);
+  const wins = useSyncExternalStore(noop, getWins, () => 0);
+  const avatar = acc ? `${base}+${acc}` : base;
   const valid = name.trim().length > 0;
 
   return (
@@ -68,14 +76,15 @@ export function ProfileForm({
       <fieldset>
         <div className="mb-2 flex items-center justify-between">
           <legend className="label">
-            Avatar <span className="text-text/80 normal-case tracking-normal">· {AVATAR_LABEL[avatar as keyof typeof AVATAR_LABEL] ?? ""}</span>
+            Avatar <span className="text-text/80 normal-case tracking-normal">· {AVATAR_LABEL[base as keyof typeof AVATAR_LABEL] ?? ""}
+            {acc ? ` + ${ACCESSORY_LABEL[acc]}` : ""}</span>
           </legend>
           <button
             type="button"
             className="flex items-center gap-1.5 rounded-md px-2 py-1 font-mono text-[11px] text-muted transition-colors hover:bg-panel-2 hover:text-text"
             onClick={() => {
               const next = randomLook();
-              setAvatar(next.avatar);
+              setBase(next.avatar);
               setColor(next.color);
             }}
           >
@@ -85,7 +94,7 @@ export function ProfileForm({
         </div>
         <div className="grid grid-cols-8 gap-1.5">
           {AVATARS.map((a) => {
-            const on = a === avatar;
+            const on = a === base;
             return (
               <button
                 type="button"
@@ -93,13 +102,61 @@ export function ProfileForm({
                 aria-label={AVATAR_LABEL[a]}
                 title={AVATAR_LABEL[a]}
                 aria-pressed={on}
-                onClick={() => setAvatar(a)}
+                onClick={() => setBase(a)}
                 className={`grid aspect-square place-items-center rounded-lg transition-[background-color,box-shadow,transform] duration-200 ease-[cubic-bezier(0.34,1.4,0.5,1)] active:scale-90 ${
                   on ? "scale-105" : "hover:-translate-y-0.5 hover:bg-panel-2"
                 }`}
                 style={on ? { background: `${color}26`, boxShadow: `inset 0 0 0 1.5px ${color}` } : undefined}
               >
                 <Avatar id={a} size="78%" />
+              </button>
+            );
+          })}
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <div className="mb-2 flex items-center justify-between">
+          <legend className="label">Wear</legend>
+          <span className="font-mono text-[11px] text-muted">
+            {wins} {wins === 1 ? "win" : "wins"} · winning unlocks more
+          </span>
+        </div>
+        <div className="grid grid-cols-7 gap-1.5">
+          {[null, ...ACCESSORIES].map((a) => {
+            const on = a === acc;
+            const need = a ? UNLOCK_AT[a] : 0;
+            const locked = need > wins;
+            const label = a ? ACCESSORY_LABEL[a] : "Nothing";
+            return (
+              <button
+                type="button"
+                key={a ?? "none"}
+                aria-label={locked ? `${label} (unlocks at ${need} wins)` : label}
+                title={locked ? `${label}: win ${need} ${need === 1 ? "game" : "games"} to unlock` : label}
+                aria-pressed={on}
+                disabled={locked}
+                onClick={() => setAcc(a)}
+                className={`relative grid aspect-square place-items-center rounded-lg transition-[background-color,box-shadow,transform] duration-200 ease-[cubic-bezier(0.34,1.4,0.5,1)] active:scale-90 disabled:cursor-not-allowed ${
+                  on ? "scale-105" : locked ? "" : "hover:-translate-y-0.5 hover:bg-panel-2"
+                }`}
+                style={on ? { background: `${color}26`, boxShadow: `inset 0 0 0 1.5px ${color}` } : undefined}
+              >
+                {a ? (
+                  <span className={locked ? "opacity-25 grayscale" : ""}>
+                    <Avatar id={`${base}+${a}`} size="2.1rem" />
+                  </span>
+                ) : (
+                  <Ban aria-hidden className="size-4 text-muted" strokeWidth={2} />
+                )}
+                {locked && (
+                  <span className="absolute inset-0 grid place-items-center">
+                    <span className="flex items-center gap-0.5 rounded-sm bg-ink/85 px-1 py-px font-mono text-[9px] text-text">
+                      <Lock aria-hidden className="size-2.5" strokeWidth={2.5} />
+                      {need}
+                    </span>
+                  </span>
+                )}
               </button>
             );
           })}

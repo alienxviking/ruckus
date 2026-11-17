@@ -17,6 +17,8 @@ import type { ProfileValues } from "./ProfileForm";
 import { InviteButton } from "./InviteButton";
 import { SoundToggle, useRoomFeedback } from "./RoomFeedback";
 import { Avatar } from "@/components/Avatar";
+import { ACCESSORY_LABEL } from "@/lib/avatar-art";
+import type { AccessoryId } from "@/shared/types";
 
 // The animated profile dialog is fetched on first hover/focus of the profile button.
 const loadProfileDialog = () => import("./ProfileDialog");
@@ -64,7 +66,11 @@ export function Room({
   };
   const playing = room?.phase === "playing";
 
-  useRoomFeedback(room, r.me, r.serverNow);
+  const { unlocked, dismissUnlocked } = useRoomFeedback(room, r.me, r.serverNow);
+  const openProfile = () => {
+    setDialogMounted(true);
+    setEditing(true);
+  };
 
   // Fetch the picked game's code while everyone is still in the lobby, so Start is instant.
   useEffect(() => {
@@ -105,6 +111,17 @@ export function Room({
       )}
 
       {room && !r.rejected && r.status !== "open" && <ReconnectBanner playing={playing} />}
+      {unlocked.length > 0 && (
+        <UnlockToast
+          avatar={identity.avatar}
+          items={unlocked}
+          onWear={() => {
+            dismissUnlocked();
+            openProfile();
+          }}
+          onClose={dismissUnlocked}
+        />
+      )}
 
       {r.rejected ? (
         <div className="grid flex-1 place-items-center px-4">
@@ -221,6 +238,44 @@ export function Room({
 }
 
 const noPing = () => null;
+
+/** "You unlocked a crown!" after a win, with a shortcut to the profile to wear it. */
+function UnlockToast({
+  avatar,
+  items,
+  onWear,
+  onClose,
+}: {
+  avatar: string;
+  items: AccessoryId[];
+  onWear: () => void;
+  onClose: () => void;
+}) {
+  const base = avatar.split("+")[0];
+  const first = items[0];
+  return (
+    <div className="fixed inset-x-0 bottom-20 z-50 flex justify-center px-3 lg:bottom-6">
+      <div
+        role="status"
+        className="animate-pop lit-edge flex items-center gap-3 rounded-2xl border border-brand-2/50 bg-panel/95 py-2.5 pr-2.5 pl-3 shadow-[0_20px_50px_-20px_var(--color-brand-2)] backdrop-blur-md"
+      >
+        <span className="animate-trophy grid size-12 place-items-center rounded-xl bg-brand-2/15">
+          <Avatar id={`${base}+${first}`} size={40} />
+        </span>
+        <span className="min-w-0">
+          <span className="label text-brand-2">Unlocked</span>
+          <span className="block font-display font-bold">{items.map((i) => ACCESSORY_LABEL[i]).join(" + ")}</span>
+        </span>
+        <button className="btn btn-primary px-3 py-1.5 text-sm" onClick={onWear}>
+          Wear it
+        </button>
+        <button className="btn px-2 py-1.5" aria-label="Dismiss" onClick={onClose}>
+          <X aria-hidden className="size-4" strokeWidth={2} />
+        </button>
+      </div>
+    </div>
+  );
+}
 
 const subscribeOnline = (cb: () => void) => {
   window.addEventListener("online", cb);

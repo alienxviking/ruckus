@@ -1,15 +1,18 @@
 "use client";
 
 import { Volume2, VolumeX } from "lucide-react";
-import { useEffect, useRef, useSyncExternalStore } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { feedback, getFeedbackSettings, setFeedbackSettings, sfx, subscribeFeedback } from "@/lib/feedback";
-import type { RoomView } from "@/shared/types";
+import { recordWin } from "@/lib/progress";
+import type { AccessoryId, RoomView } from "@/shared/types";
 
 /**
  * Room-wide sound and haptics: a game starting, the result (win or not), people joining,
  * chat from others, and quick play's last seconds. Games add their own cues on top.
  */
 export function useRoomFeedback(room: RoomView | null, me: string, serverNow: () => number) {
+  /** Accessories a win just unlocked (for the "Unlocked!" toast). */
+  const [unlocked, setUnlocked] = useState<AccessoryId[]>([]);
   const seen = useRef<{ seq: number; result: boolean; chat: string | undefined } | null>(null);
 
   useEffect(() => {
@@ -20,7 +23,14 @@ export function useRoomFeedback(room: RoomView | null, me: string, serverNow: ()
     if (!prev) return; // first sync: don't replay what already happened
 
     if (room.gameSeq !== prev.seq && room.phase === "playing") feedback("start");
-    else if (room.result && !prev.result) feedback(room.result.winners.includes(me) ? "win" : "end");
+    else if (room.result && !prev.result) {
+      const won = room.result.winners.includes(me);
+      feedback(won ? "win" : "end");
+      if (won && room.participants.includes(me)) {
+        const fresh = recordWin();
+        if (fresh.length) queueMicrotask(() => setUnlocked(fresh));
+      }
+    }
 
     if (lastChat !== prev.chat) {
       // Only the newest line, so a burst of history doesn't machine-gun.
@@ -41,6 +51,8 @@ export function useRoomFeedback(room: RoomView | null, me: string, serverNow: ()
     }
     return () => timers.forEach((t) => window.clearTimeout(t));
   }, [at, serverNow]);
+
+  return { unlocked, dismissUnlocked: () => setUnlocked([]) };
 }
 
 /** Header button: sound on/off (vibration follows it). */

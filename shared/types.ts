@@ -113,19 +113,39 @@ const LEGACY_AVATAR: Record<string, AvatarId> = {
   "🐧": "penguin", "🦖": "dino", "👾": "alien", "🤖": "robot", "👻": "ghost", "🍕": "cat", "🌵": "slime", "🍄": "shroom",
 };
 
-export function isAvatarId(v: unknown): v is AvatarId {
-  return typeof v === "string" && (AVATARS as readonly string[]).includes(v);
+/** Things an avatar can wear. The worn one travels with the avatar id: "fox+crown". */
+export const ACCESSORIES = [
+  "cap", "beanie", "shades", "bow", "flower", "headphones",
+  "party", "horns", "halo", "tophat", "wizard", "crown",
+] as const;
+export type AccessoryId = (typeof ACCESSORIES)[number];
+
+/** Splits "fox+crown" into its parts; null for anything that isn't a valid avatar. */
+export function parseAvatar(v: unknown): { base: AvatarId; acc: AccessoryId | null } | null {
+  if (typeof v !== "string" || v.length > 32) return null;
+  const [base, acc, extra] = v.split("+");
+  if (extra !== undefined || !(AVATARS as readonly string[]).includes(base)) return null;
+  if (acc === undefined) return { base: base as AvatarId, acc: null };
+  if (!(ACCESSORIES as readonly string[]).includes(acc)) return null;
+  return { base: base as AvatarId, acc: acc as AccessoryId };
 }
 
-/** A valid avatar id for anything a client sends or a browser saved. */
-export function toAvatarId(v: unknown): AvatarId | null {
+/** A valid avatar value ("fox" or "fox+crown"), as opposed to a fallback emoji like "🙂". */
+export function isAvatarId(v: unknown): v is string {
+  return parseAvatar(v) !== null;
+}
+
+/** A valid avatar value for anything a client sends or a browser saved. */
+export function toAvatarId(v: unknown): string | null {
   if (isAvatarId(v)) return v;
   return typeof v === "string" ? (LEGACY_AVATAR[v] ?? null) : null;
 }
 
 /** Plain-text form of an avatar (ids become emoji; anything else, like a fallback emoji, passes through). */
 export function avatarText(v: string | undefined): string {
-  return v === undefined ? "" : isAvatarId(v) ? AVATAR_EMOJI[v] : v;
+  if (v === undefined) return "";
+  const a = parseAvatar(v);
+  return a ? AVATAR_EMOJI[a.base] : v;
 }
 
 export const MAX_PLAYERS = 12;

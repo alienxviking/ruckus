@@ -2,7 +2,7 @@
 // One source of truth as SVG markup, used by <Avatar> (inline SVG) and by canvas games
 // (as images, see avatarImage).
 
-import { isAvatarId, type AvatarId } from "@/shared/types";
+import { isAvatarId, parseAvatar, type AccessoryId, type AvatarId } from "@/shared/types";
 
 const INK = "#1d1a2b";
 
@@ -181,23 +181,153 @@ const ART: Record<AvatarId, string> = {
     smile("M29.5 52 Q32 54.5 34.5 52", 2.1),
 };
 
-/** Inner SVG markup (64×64 grid) for an avatar id. */
-export function avatarMarkup(id: AvatarId): string {
-  return ART[id];
+// ----- accessories -----
+
+export const ACCESSORY_LABEL: Record<AccessoryId, string> = {
+  cap: "Cap",
+  beanie: "Beanie",
+  shades: "Shades",
+  bow: "Bow",
+  flower: "Flower",
+  headphones: "Headphones",
+  party: "Party hat",
+  horns: "Horns",
+  halo: "Halo",
+  tophat: "Top hat",
+  wizard: "Wizard hat",
+  crown: "Crown",
+};
+
+/** Where things sit on each character: head top (t), eye line (e), half eye gap (g), half head width (w). */
+const FIT: Record<AvatarId, { t: number; e: number; g: number; w: number }> = {
+  fox: { t: 17, e: 35, g: 9, w: 24 },
+  frog: { t: 10, e: 20, g: 12, w: 27 },
+  cat: { t: 17, e: 35, g: 9, w: 24 },
+  bear: { t: 13, e: 32, g: 10, w: 24 },
+  panda: { t: 13, e: 34, g: 9.5, w: 24 },
+  bunny: { t: 21, e: 39, g: 7.5, w: 21 },
+  owl: { t: 16, e: 31, g: 10, w: 23 },
+  penguin: { t: 10, e: 33, g: 8, w: 25 },
+  robot: { t: 14, e: 33, g: 7.5, w: 24 },
+  alien: { t: 11, e: 35, g: 10.5, w: 25 },
+  ghost: { t: 8, e: 30, g: 8, w: 23 },
+  octo: { t: 8, e: 32, g: 9, w: 25 },
+  dino: { t: 14, e: 32, g: 10, w: 25 },
+  slime: { t: 10, e: 37, g: 8, w: 24 },
+  tiger: { t: 12, e: 33, g: 9, w: 24 },
+  shroom: { t: 6, e: 47, g: 6, w: 15 },
+};
+
+/** Hats sit above the head, so the character shrinks a little to make room. */
+const WORN_ON_TOP = new Set<AccessoryId>(["cap", "beanie", "party", "tophat", "wizard", "crown", "halo", "horns", "headphones", "bow", "flower"]);
+
+function accessory(acc: AccessoryId, f: { t: number; e: number; g: number; w: number }): string {
+  const { t, e, g, w } = f;
+  switch (acc) {
+    case "cap":
+      return (
+        `<path d="M17 ${t + 3} Q17 ${t - 13} 32 ${t - 13} Q47 ${t - 13} 47 ${t + 3}Z" fill="#3b82f6"/>` +
+        `<path d="M17 ${t + 3} Q17 ${t - 13} 32 ${t - 13} Q24 ${t - 9} 22 ${t + 3}Z" fill="#fff" opacity=".18"/>` +
+        `<path d="M30 ${t + 1} Q46 ${t - 3} 59 ${t + 3} Q47 ${t + 6} 30 ${t + 4}Z" fill="#1e5fd0"/>` +
+        `<circle cx="32" cy="${t - 13}" r="2" fill="#1e5fd0"/>`
+      );
+    case "beanie":
+      return (
+        `<path d="M15 ${t + 4} Q15 ${t - 15} 32 ${t - 15} Q49 ${t - 15} 49 ${t + 4}Z" fill="#ef4444"/>` +
+        `<path d="M24 ${t - 12} V${t - 1} M32 ${t - 14} V${t - 1} M40 ${t - 12} V${t - 1}" stroke="#c42b2b" stroke-width="2" stroke-linecap="round"/>` +
+        `<rect x="13.5" y="${t - 2}" width="37" height="7" rx="3.5" fill="#b91c1c"/>` +
+        `<circle cx="32" cy="${t - 16}" r="4.5" fill="#fff4f4"/>`
+      );
+    case "party":
+      return (
+        `<path d="M22 ${t + 3} L32 ${t - 21} L42 ${t + 3}Z" fill="#c084fc"/>` +
+        `<path d="M25.3 ${t - 5} L38.6 ${t - 5} M28.2 ${t - 12} L35.8 ${t - 12}" stroke="#ffe14d" stroke-width="2.6" stroke-linecap="round"/>` +
+        `<circle cx="32" cy="${t - 21}" r="3.6" fill="#ffe14d"/>`
+      );
+    case "tophat":
+      return (
+        `<rect x="21" y="${t - 20}" width="22" height="21" rx="2" fill="#35304d" stroke="#6b6491" stroke-width="1.2"/>` +
+        `<rect x="21" y="${t - 6}" width="22" height="4.5" fill="#ff4769"/>` +
+        `<ellipse cx="32" cy="${t + 1}" rx="18" ry="3.8" fill="#35304d" stroke="#6b6491" stroke-width="1.2"/>` +
+        `<rect x="23.5" y="${t - 18}" width="3" height="10" rx="1.5" fill="#fff" opacity=".22"/>`
+      );
+    case "wizard":
+      return (
+        `<path d="M19 ${t + 2} Q29 ${t - 10} 39 ${t - 25} Q37 ${t - 9} 45 ${t + 2}Z" fill="#6366f1"/>` +
+        `<ellipse cx="32" cy="${t + 2}" rx="18" ry="3.6" fill="#4f46e5"/>` +
+        `<path d="M30 ${t - 8} l1.2 2.4 2.6.4-1.9 1.8.5 2.6-2.4-1.3-2.4 1.3.5-2.6-1.9-1.8 2.6-.4Z" fill="#ffe14d"/>` +
+        `<circle cx="37" cy="${t - 15}" r="1.3" fill="#ffe14d"/><circle cx="25" cy="${t - 2}" r="1.1" fill="#ffe14d"/>`
+      );
+    case "crown":
+      return (
+        `<path d="M18 ${t + 2} L18 ${t - 11} L25 ${t - 3} L32 ${t - 14} L39 ${t - 3} L46 ${t - 11} L46 ${t + 2}Z" fill="#ffd43b" stroke="#e8a800" stroke-width="1.5" stroke-linejoin="round"/>` +
+        `<rect x="18" y="${t - 2}" width="28" height="4" fill="#e8a800" opacity=".55"/>` +
+        `<circle cx="32" cy="${t - 6}" r="2.4" fill="#ff4769"/><circle cx="23" cy="${t - 3.5}" r="1.6" fill="#38bdf8"/><circle cx="41" cy="${t - 3.5}" r="1.6" fill="#38bdf8"/>`
+      );
+    case "halo":
+      return (
+        `<ellipse cx="32" cy="${t - 9}" rx="14" ry="4" fill="none" stroke="#ffe14d" stroke-width="5" opacity=".35"/>` +
+        `<ellipse cx="32" cy="${t - 9}" rx="14" ry="4" fill="none" stroke="#ffe680" stroke-width="2.6"/>`
+      );
+    case "horns":
+      return (
+        `<path d="M21 ${t + 4} Q12 ${t - 4} 16 ${t - 14} Q20 ${t - 4} 28 ${t + 2}Z" fill="#ef4444"/>` +
+        `<path d="M43 ${t + 4} Q52 ${t - 4} 48 ${t - 14} Q44 ${t - 4} 36 ${t + 2}Z" fill="#ef4444"/>`
+      );
+    case "bow":
+      return (
+        `<path d="M45 ${t + 1} L35 ${t - 6} L36 ${t + 8}Z M45 ${t + 1} L55 ${t - 6} L54 ${t + 8}Z" fill="#f472b6" stroke="#f472b6" stroke-width="2" stroke-linejoin="round"/>` +
+        `<circle cx="45" cy="${t + 1}" r="3.4" fill="#db2777"/>`
+      );
+    case "flower":
+      return (
+        [0, 72, 144, 216, 288]
+          .map((a) => {
+            const r = (a * Math.PI) / 180;
+            return `<circle cx="${(19 + Math.cos(r) * 4.2).toFixed(1)}" cy="${(t + Math.sin(r) * 4.2).toFixed(1)}" r="3.6" fill="#fff"/>`;
+          })
+          .join("") + `<circle cx="19" cy="${t}" r="3" fill="#ffb020"/>`
+      );
+    case "shades": {
+      const lw = Math.min(13, g * 1.35);
+      return (
+        `<rect x="${32 - g - lw / 2}" y="${e - 4.5}" width="${lw}" height="9" rx="3.5" fill="#111018"/>` +
+        `<rect x="${32 + g - lw / 2}" y="${e - 4.5}" width="${lw}" height="9" rx="3.5" fill="#111018"/>` +
+        `<path d="M${32 - g + lw / 2} ${e - 2} H${32 + g - lw / 2}" stroke="#111018" stroke-width="2.2"/>` +
+        `<path d="M${32 - g - lw / 2 + 2} ${e - 2} l3 -1.2 M${32 + g - lw / 2 + 2} ${e - 2} l3 -1.2" stroke="#fff" stroke-width="1.4" stroke-linecap="round" opacity=".6"/>`
+      );
+    }
+    case "headphones":
+      return (
+        `<path d="M${32 - w} ${e} Q${32 - w} ${t - 11} 32 ${t - 11} Q${32 + w} ${t - 11} ${32 + w} ${e}" fill="none" stroke="#6b6491" stroke-width="4" stroke-linecap="round"/>` +
+        `<rect x="${32 - w - 4}" y="${e - 7}" width="8" height="14" rx="3.5" fill="#ff4769"/>` +
+        `<rect x="${32 + w - 4}" y="${e - 7}" width="8" height="14" rx="3.5" fill="#ff4769"/>`
+      );
+  }
+}
+
+/** Inner SVG markup (64×64 grid) for an avatar ("fox", or "fox+crown" with an accessory). */
+export function avatarMarkup(id: string): string {
+  const a = parseAvatar(id);
+  if (!a) return "";
+  if (!a.acc) return ART[a.base];
+  const extra = accessory(a.acc, FIT[a.base]);
+  if (!WORN_ON_TOP.has(a.acc)) return ART[a.base] + extra;
+  return `<g transform="translate(32 64) scale(.8) translate(-32 -64)">${ART[a.base]}${extra}</g>`;
 }
 
 // ----- canvas games: avatars as images -----
 
-const images = new Map<AvatarId, HTMLImageElement>();
+const images = new Map<string, HTMLImageElement>();
 
-function load(id: AvatarId): HTMLImageElement {
+function load(id: string): HTMLImageElement {
   let img = images.get(id);
   if (!img) {
     img = new Image();
     // Rasterised at 128 px so scaled draws stay crisp on retina canvases.
     img.src =
       "data:image/svg+xml;charset=utf-8," +
-      encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="128" height="128">${ART[id]}</svg>`);
+      encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="128" height="128">${avatarMarkup(id)}</svg>`);
     images.set(id, img);
   }
   return img;
