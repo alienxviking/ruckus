@@ -1,6 +1,7 @@
 "use client";
 
 import { CATEGORY_LABEL, type GameMeta } from "@/games/catalog";
+import { CoverArt } from "./CoverArt";
 
 /** A game as a sticker: its cover art up top, then name, a line, and who it's for. */
 export function GameCard({
@@ -24,15 +25,14 @@ export function GameCard({
   const body = (
     <>
       <span className="gc-cover">
-        {/* Static, lazily loaded art (see scripts/gen-covers.tsx): costs nothing until on screen. */}
-        {/* eslint-disable-next-line @next/next/no-img-element -- tiny static SVGs; next/image adds nothing */}
-        <img src={`/covers/${game.id}.svg`} alt="" width={320} height={200} loading="lazy" decoding="async" draggable={false} />
-        {game.isNew && <span className="gc-new marker">new!</span>}
+        <CoverArt game={game} />
       </span>
       <span className="block px-3 pt-2.5 pb-3">
-        <span className="block font-hero text-lg leading-tight font-extrabold tracking-[-0.01em]">{game.name}</span>
-        <span className="mt-0.5 line-clamp-2 block text-sm leading-snug text-muted">{game.tagline}</span>
+        {/* The poster shows the name; keep it for screen readers. */}
+        <span className="sr-only">{game.name}: </span>
+        <span className="line-clamp-2 block text-sm leading-snug text-muted">{game.tagline}</span>
         <span className="mt-2 flex flex-wrap items-center gap-1.5 text-xs">
+          {game.isNew && <span className="gc-new marker">new!</span>}
           <span className="gc-chip">
             <b>{players}</b> players
           </span>

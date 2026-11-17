@@ -43,6 +43,8 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html
       lang="en"
+      // The home intro marks <html data-intro> before first paint (see RuxIntro).
+      suppressHydrationWarning
       className={`${geistSans.variable} ${geistMono.variable} ${display.variable} ${hero.variable} ${marker.variable} h-full antialiased`}
     >
       <body className="flex min-h-full flex-col">

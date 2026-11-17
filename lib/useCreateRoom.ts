@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { newRoomCode } from "./identity";
 import { createRoom } from "./rooms";
 
@@ -10,6 +10,16 @@ export function useCreateRoom() {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Coming back to this page (browser Back) must never leave the button stuck on "Setting up…".
+  // Next keeps visited pages alive in the background and re-runs their effects when they're
+  // shown again; the browser's back-forward cache restores pages through "pageshow".
+  useEffect(() => {
+    queueMicrotask(() => setBusy(false));
+    const onShow = () => setBusy(false);
+    window.addEventListener("pageshow", onShow);
+    return () => window.removeEventListener("pageshow", onShow);
+  }, []);
 
   const create = async (gameId?: string) => {
     setBusy(true);

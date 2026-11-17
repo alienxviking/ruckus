@@ -562,23 +562,11 @@ body::after {
   background: var(--accent);
   overflow: hidden;
 }
-.game-card .gc-cover img {
-  display: block;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  transition: transform 0.35s var(--ease-spring);
-}
-.game-card:where(:hover, :focus-visible):not(:disabled) .gc-cover img {
-  transform: scale(1.05) rotate(-1deg);
-}
 .game-card .gc-new {
-  position: absolute;
-  top: 0.5rem;
-  left: 0.5rem;
-  padding: 0.05rem 0.55rem 0.15rem;
-  font-size: 1.15rem;
-  line-height: 1.2;
+  position: relative;
+  padding: 0 0.45rem 0.1rem;
+  font-size: 1rem;
+  line-height: 1.15;
   color: #14101f;
   background: var(--color-sun);
   border: 2px solid #14101f;
@@ -744,7 +732,6 @@ body::after {
     animation: none !important;
   }
   .game-card,
-  .game-card .gc-cover img,
   .game-badge .glyph,
   .roll-digit > span {
     transition: none;
@@ -839,5 +826,216 @@ body::after {
   .lift:hover,
   .stk-btn:hover:not(:disabled) {
     transform: none;
+  }
+}
+
+/* ---------- landing intro: Rux yells RUCKUS! (once per session) ---------- */
+@layer components {
+  .rux-intro {
+    position: fixed;
+    inset: 0;
+    z-index: 60;
+    display: grid;
+    place-items: center;
+    background: var(--color-ink);
+    cursor: pointer;
+    animation: ri-out 0.5s cubic-bezier(0.7, 0, 0.3, 1) 1.05s forwards;
+  }
+  html[data-intro="skip"] .rux-intro {
+    display: none;
+  }
+  /* While the intro plays, the hero's own entrances wait (paused animations hold their delay). */
+  html[data-intro="play"] .after-intro :is(.slap, .bob) {
+    animation-play-state: paused;
+  }
+  .rux-intro .ri-stage {
+    position: relative;
+    width: min(72vw, 26rem);
+  }
+  .rux-intro .ri-rux {
+    display: block;
+    transform-origin: 40% 90%;
+    animation: ri-pop 0.55s var(--ease-spring) both;
+  }
+  .rux-intro .ri-ring {
+    position: absolute;
+    left: 92%;
+    top: 52%;
+    width: 30%;
+    aspect-ratio: 1;
+    margin: -15% 0 0 -15%;
+    border-radius: 999px;
+    border: 5px solid var(--color-sun);
+    opacity: 0;
+    animation: ri-ring 0.7s ease-out both;
+  }
+  .rux-intro .ri-r1 {
+    animation-delay: 0.3s;
+  }
+  .rux-intro .ri-r2 {
+    animation-delay: 0.45s;
+    border-color: var(--color-pink);
+  }
+  .rux-intro .ri-r3 {
+    animation-delay: 0.6s;
+    border-color: var(--color-volt);
+  }
+  .rux-intro .ri-word {
+    position: absolute;
+    left: 50%;
+    top: -6%;
+    font-size: clamp(3rem, 13vw, 6.5rem);
+    font-weight: 800;
+    line-height: 1;
+    letter-spacing: -0.04em;
+    color: var(--color-volt);
+    -webkit-text-stroke: 4px #14101f;
+    paint-order: stroke fill;
+    text-shadow: 5px 6px 0 var(--color-pink);
+    white-space: nowrap;
+    animation: ri-word 0.5s var(--ease-spring) 0.35s both;
+  }
+}
+@keyframes ri-pop {
+  0% {
+    transform: translateY(70%) scale(0.2) rotate(-20deg);
+    opacity: 0;
+  }
+  60% {
+    transform: translateY(-6%) scale(1.08) rotate(4deg);
+    opacity: 1;
+  }
+  100% {
+    transform: none;
+    opacity: 1;
+  }
+}
+@keyframes ri-ring {
+  0% {
+    transform: scale(0.3);
+    opacity: 0.95;
+  }
+  100% {
+    transform: scale(2.6);
+    opacity: 0;
+  }
+}
+@keyframes ri-word {
+  0% {
+    transform: translateX(-50%) scale(2.4) rotate(-14deg);
+    opacity: 0;
+  }
+  70% {
+    transform: translateX(-50%) scale(0.92) rotate(-5deg);
+    opacity: 1;
+  }
+  100% {
+    transform: translateX(-50%) scale(1) rotate(-7deg);
+    opacity: 1;
+  }
+}
+@keyframes ri-out {
+  to {
+    transform: translateY(-100%);
+    visibility: hidden;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .rux-intro {
+    display: none;
+  }
+}
+
+/* ---------- cover art: game posters (see components/CoverArt.tsx) ---------- */
+@layer components {
+  .cover-art {
+    position: relative;
+    display: block;
+    aspect-ratio: 16 / 10;
+    overflow: hidden;
+    isolation: isolate;
+    container-type: inline-size;
+    background: var(--a);
+    color: #14101f;
+  }
+  .cover-art .cv-dots {
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(circle, rgb(20 16 31 / 0.24) 1.1px, transparent 1.5px) 0 0 / 8px 8px;
+    mask-image: linear-gradient(135deg, transparent 30%, #000 95%);
+  }
+  .cover-art .cv-glyph {
+    position: absolute;
+    width: 64cqw;
+    aspect-ratio: 1;
+    right: -12cqw;
+    bottom: -18cqw;
+    color: #14101f;
+    transform: rotate(var(--tilt));
+    transition: transform 0.4s var(--ease-spring);
+  }
+  /* Misregistered second ink: an off-white copy nudged down-right. */
+  .cover-art .cv-glyph-shadow {
+    color: var(--color-paper);
+    opacity: 0.75;
+    translate: 2.4cqw 1.8cqw;
+  }
+  .cover-art .cv-name {
+    position: absolute;
+    top: 6cqw;
+    left: 6cqw;
+    right: 22cqw;
+    font-size: 12.5cqw;
+    font-weight: 800;
+    line-height: 0.86;
+    letter-spacing: -0.045em;
+    text-wrap: balance;
+    text-shadow: 0.7cqw 0.7cqw 0 rgb(255 255 255 / 0.35);
+  }
+  .cover-art .cv-stamp {
+    position: absolute;
+    bottom: 5cqw;
+    left: 6cqw;
+    padding: 0.5cqw 1.8cqw;
+    border: 0.55cqw solid #14101f;
+    border-radius: 1.2cqw;
+    background: var(--color-paper);
+    font-family: var(--font-mono), ui-monospace, monospace;
+    font-size: 3.3cqw;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    white-space: nowrap;
+    transform: rotate(-4deg);
+  }
+  .cover-art.cv-bl .cv-name {
+    top: auto;
+    bottom: 6cqw;
+  }
+  .cover-art.cv-bl .cv-glyph {
+    bottom: auto;
+    top: -16cqw;
+    right: -10cqw;
+  }
+  .cover-art.cv-bl .cv-stamp {
+    bottom: auto;
+    top: 5cqw;
+    transform: rotate(3deg);
+  }
+  .cover-art.cv-tr .cv-name {
+    left: 24cqw;
+    right: 6cqw;
+    text-align: right;
+  }
+  .cover-art.cv-tr .cv-glyph {
+    right: auto;
+    left: -14cqw;
+  }
+  .cover-art.cv-tr .cv-stamp {
+    left: auto;
+    right: 6cqw;
+    transform: rotate(4deg);
+  }
+  .game-card:where(:hover, :focus-visible):not(:disabled) .cover-art .cv-glyph {
+    transform: rotate(calc(var(--tilt) * -1)) scale(1.06);
   }
 }

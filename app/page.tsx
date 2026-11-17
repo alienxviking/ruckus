@@ -1,9 +1,11 @@
 import Link from "next/link";
-import { CATALOG } from "@/games/catalog";
+import { CATALOG, CATALOG_BY_ID } from "@/games/catalog";
+import { CoverArt } from "@/components/CoverArt";
 import { HomeActions } from "@/components/HomeActions";
 import { Logo } from "@/components/Logo";
 import { Rux } from "@/components/Rux";
 import { DailySticker } from "@/components/home/DailySticker";
+import { RuxIntro } from "@/components/home/RuxIntro";
 import { HomeLibrary } from "@/components/home/HomeLibrary";
 import { LOCAL_GAMES } from "@/lib/local-games";
 
@@ -20,6 +22,7 @@ const STAGE: [string, string, string, number][] = [
 export default function Home() {
   return (
     <main className="w-full overflow-x-clip pb-24">
+      <RuxIntro />
       <div className="mx-auto w-full max-w-6xl px-4 sm:px-6">
         <header className="flex items-center justify-between gap-3 py-4">
           <Logo />
@@ -34,7 +37,7 @@ export default function Home() {
         </header>
 
         {/* ---------- hero ---------- */}
-        <section className="relative grid items-center gap-8 pt-6 pb-14 md:grid-cols-[1.1fr_1fr] md:pt-10 md:pb-20">
+        <section className="after-intro relative grid items-center gap-8 pt-6 pb-14 md:grid-cols-[1.1fr_1fr] md:pt-10 md:pb-20">
           <div>
             <p className="marker slap mb-2 inline-block text-2xl text-brand-2" style={{ "--tilt": "-3deg" } as React.CSSProperties}>
               {CATALOG.length} games. zero sign-ups. full bawaal.
@@ -82,14 +85,7 @@ export default function Home() {
           <div aria-hidden className="relative mx-auto hidden aspect-square w-full max-w-[30rem] md:block">
             {STAGE.map(([id, pos, tilt, delay]) => (
               <span key={id} className={`absolute ${pos} slap`} style={{ "--tilt": tilt, animationDelay: `${delay}ms` } as React.CSSProperties}>
-                {/* eslint-disable-next-line @next/next/no-img-element -- tiny static SVG */}
-                <img
-                  src={`/covers/${id}.svg`}
-                  alt=""
-                  width={320}
-                  height={200}
-                  className="block w-full rounded-2xl border-[3px] border-paper shadow-[5px_6px_0_rgb(0_0_0/0.55)]"
-                />
+                <CoverArt game={CATALOG_BY_ID[id]} className="rounded-2xl border-[3px] border-paper shadow-[5px_6px_0_rgb(0_0_0/0.55)]" />
               </span>
             ))}
             <div className="absolute inset-x-0 top-1/2 mx-auto w-[64%] -translate-y-1/2">
@@ -97,8 +93,8 @@ export default function Home() {
                 <Rux mood="shout" megaphone className="w-full drop-shadow-[6px_8px_0_rgb(0_0_0/0.5)]" />
               </span>
               <span
-                className="slap marker absolute -top-10 right-0 rounded-2xl border-[3px] border-ink bg-paper px-3 py-1 text-2xl text-ink shadow-[4px_5px_0_#000]"
-                style={{ "--tilt": "6deg", animationDelay: "900ms" } as React.CSSProperties}
+                className="slap marker absolute -top-12 -left-6 rounded-2xl border-[3px] border-ink bg-paper px-3 py-1 text-2xl text-ink shadow-[4px_5px_0_#000]"
+                style={{ "--tilt": "-6deg", animationDelay: "900ms" } as React.CSSProperties}
               >
                 oye! game time 📣
               </span>

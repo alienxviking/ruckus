@@ -6,6 +6,7 @@ import { Bot, Dices, Users, X } from "lucide-react";
 import { CATALOG, type GameMeta } from "@/games/catalog";
 import { useCreateRoom } from "@/lib/useCreateRoom";
 import { GameBrowser } from "../GameBrowser";
+import { CoverArt } from "../CoverArt";
 import { GameCard } from "../GameCard";
 import { Rux } from "../Rux";
 
@@ -158,9 +159,9 @@ const ROWS: { title: string; note: string; tilt: string; color: string; test: (g
 function Row({ title, note, tilt, color, games, onPick }: { title: string; note: string; tilt: string; color: string; games: GameMeta[]; onPick: (g: GameMeta) => void }) {
   return (
     <section aria-label={title}>
-      <div className="mb-3 flex items-baseline gap-3">
+      <div className="mb-3 flex flex-wrap items-baseline gap-x-3 gap-y-1">
         <h3
-          className="inline-block rounded-lg border-2 border-ink px-2.5 py-0.5 font-hero text-xl font-extrabold text-ink shadow-[3px_4px_0_#000]"
+          className="inline-block whitespace-nowrap rounded-lg border-2 border-ink px-2.5 py-0.5 font-hero text-xl font-extrabold text-ink shadow-[3px_4px_0_#000]"
           style={{ background: color, transform: `rotate(${tilt})` }}
         >
           {title}
@@ -235,8 +236,7 @@ function PlaySheet({ game, local, onClose }: { game: GameMeta; local: boolean; o
       style={{ "--stk-bg": "var(--color-panel)", "--accent": game.accent } as React.CSSProperties}
     >
       <div className="flex items-center gap-3 p-3">
-        {/* eslint-disable-next-line @next/next/no-img-element -- tiny static SVG */}
-        <img src={`/covers/${game.id}.svg`} alt="" width={96} height={60} className="h-[60px] w-24 shrink-0 rounded-lg border-2 border-ink object-cover" />
+        <CoverArt game={game} className="w-28 shrink-0 rounded-lg border-2 border-ink" />
         <div className="min-w-0 flex-1">
           <p className="marker text-lg leading-none text-brand-2">kaise khelna hai?</p>
           <h3 id="play-sheet-title" className="truncate font-hero text-xl font-extrabold">
