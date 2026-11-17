@@ -4,16 +4,15 @@ import { CATALOG_BY_ID } from "@/games/catalog";
 import { GAME_CLIENTS } from "@/games/client-registry";
 import { MAX_PAUSES, type Player, type RoomView } from "@/shared/types";
 import type { useRoom } from "@/lib/useRoom";
-import { Trophy } from "lucide-react";
-import { PlayerChip, useSecondsLeft } from "../game-ui";
+import { useSecondsLeft } from "../game-ui";
 import { QuickPlaySwitch } from "./Lobby";
 import { HowToPlay, markRulesSeen } from "./HowToPlay";
 import { GameBadge } from "../GameBadge";
-import { Magnetic } from "../Magnetic";
-import { Confetti } from "../Confetti";
 import { Component, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ReactionBar, ReactionLayer } from "./Reactions";
 import { PauseOverlay } from "./PauseOverlay";
+import { ResultPodium } from "./ResultPodium";
+import { GameStart } from "./GameStart";
 import { reportError, setReportGame } from "@/lib/report-error";
 import dynamic from "next/dynamic";
 
@@ -143,6 +142,7 @@ export function GameStage({
 
       <ReactionLayer onReact={r.onReact} byId={byId} />
       <div className="relative min-h-[60vh]">
+        {!room.result && <GameStart key={`start-${room.gameSeq}`} seq={room.gameSeq} />}
         {room.pause && !room.result && (
           <PauseOverlay pause={room.pause} byId={byId} me={me} isHost={isHost} serverNow={serverNow} send={send} />
         )}
@@ -185,49 +185,14 @@ function ResultBanner({
   r: ReturnType<typeof useRoom>;
   accent?: string;
 }) {
-  const result = room.result!;
   const a = accent ?? "#c6f432";
-  const iWon = result.winners.includes(me);
   return (
-    <div
-      role="status"
-      className="card result-banner relative flex flex-col items-center gap-4 p-4 text-center sm:flex-row sm:justify-between sm:p-5 sm:text-left"
-      style={{
-        borderColor: a + "aa",
-        background: `radial-gradient(90% 140% at 0% 0%, ${a}2a, transparent 60%), var(--color-panel)`,
-        boxShadow: `0 0 0 1px ${a}33, 0 20px 50px -24px ${a}`,
-      }}
-    >
-      <span aria-hidden className="banner-sweep" />
-      {result.winners.length > 0 && <Confetti pieces={iWon ? 40 : 22} />}
-      <div className="flex flex-col items-center gap-3 sm:flex-row sm:items-center">
-        <span
-          aria-hidden
-          className="game-badge animate-trophy size-14 rounded-xl"
-          style={{ "--accent": "var(--color-brand-2)" } as React.CSSProperties}
-          data-sheen="true"
-        >
-          <Trophy className="glyph" strokeWidth={1.75} />
-        </span>
-        <div>
-          <div className={`label mb-1 ${iWon ? "text-brand-2" : ""}`}>{iWon ? "You won!" : "Game over"}</div>
-          <div className="font-display text-xl font-bold tracking-tight sm:text-2xl">{result.headline}</div>
-          {result.winners.length > 0 && (
-            <div className="mt-2 flex flex-wrap justify-center gap-1.5 sm:justify-start">
-              {result.winners.map((id) => (
-                <PlayerChip key={id} player={byId[id]} size="sm" />
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
+    <ResultPodium room={room} byId={byId} me={me} accent={a}>
       {isHost ? (
-        <div className="flex flex-wrap items-center justify-center gap-2">
-          <Magnetic>
-            <button className="btn btn-primary" onClick={() => r.send({ t: "start" })}>
-              Play again
-            </button>
-          </Magnetic>
+        <>
+          <button className="stk-btn px-5 py-2.5 text-lg" onClick={() => r.send({ t: "start" })}>
+            Play again
+          </button>
           <button className="btn" onClick={() => r.send({ t: "lobby" })}>
             Pick another
           </button>
@@ -236,11 +201,11 @@ function ResultBanner({
               <QuickPlaySwitch compact on={room.autoNext} onChange={(on) => r.send({ t: "auto", on })} />
             </div>
           )}
-        </div>
+        </>
       ) : (
-        <span className="font-mono text-xs text-muted">Waiting for the host…</span>
+        <span className="text-sm font-semibold text-muted">Waiting for the host to pick the next one…</span>
       )}
-    </div>
+    </ResultPodium>
   );
 }
 

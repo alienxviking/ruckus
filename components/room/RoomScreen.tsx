@@ -1,5 +1,6 @@
 "use client";
 
+import type { ReactNode } from "react";
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -8,6 +9,7 @@ import { roomExists } from "@/lib/rooms";
 import { ProfileForm } from "./ProfileForm";
 import { Room } from "./Room";
 import { Logo } from "../Logo";
+import { Rux, type RuxMood } from "../Rux";
 
 const noopSubscribe = () => () => {};
 function subscribeHistory(cb: () => void) {
@@ -56,8 +58,9 @@ export function RoomScreen() {
     return (
       <main className="mx-auto flex w-full max-w-md flex-1 flex-col justify-center gap-6 px-4 py-10">
         <Logo />
-        <div className="glass lit-edge animate-rise p-5 sm:p-6">
-          <h1 className="font-hero text-xl font-extrabold tracking-[-0.03em] sm:text-2xl">That link has no room code</h1>
+        <RuxSays mood="wow">hmm, code kahan hai?</RuxSays>
+        <div className="glass animate-rise p-5 sm:p-6">
+          <h1 className="font-hero text-2xl font-extrabold tracking-[-0.03em]">That link has no room code</h1>
           <p className="mt-1 mb-5 text-sm text-muted">Room links look like /r/ABCDE. Make a new room or enter a code.</p>
           <Link href="/" className="btn btn-primary w-full py-3">
             Go to the start page
@@ -71,8 +74,9 @@ export function RoomScreen() {
     return (
       <main className="mx-auto flex w-full max-w-md flex-1 flex-col justify-center gap-6 px-4 py-10">
         <Logo />
-        <div className="card p-5 sm:p-6" role="alert">
-          <h1 className="font-hero text-xl font-extrabold tracking-[-0.03em] sm:text-2xl">No room called {code}</h1>
+        <RuxSays mood="wow">arre! ye room toh hai hi nahi</RuxSays>
+        <div className="glass p-5 sm:p-6" role="alert">
+          <h1 className="font-hero text-2xl font-extrabold tracking-[-0.03em]">No room called {code}</h1>
           <p className="mt-1 mb-5 text-sm text-muted">
             The code may be mistyped, or everyone left and the room closed. Ask for a fresh link, or start your own.
           </p>
@@ -88,8 +92,11 @@ export function RoomScreen() {
     return (
       <main className="mx-auto flex w-full max-w-md flex-1 flex-col justify-center gap-6 px-4 py-10">
         <Logo />
-        <div className="glass lit-edge animate-rise p-5 sm:p-6">
-          <h1 className="font-hero text-xl font-extrabold tracking-[-0.03em] sm:text-2xl">Joining room {code}</h1>
+        <RuxSays mood="grin">aao aao! pehle naam batao 👋</RuxSays>
+        <div className="glass animate-rise p-5 sm:p-6">
+          <h1 className="font-hero text-2xl font-extrabold tracking-[-0.03em]">
+            Joining room <span className="text-brand-2">{code}</span>
+          </h1>
           <p className="mt-1 mb-5 text-sm text-muted">Pick a name and a look. Saved on this device.</p>
           <ProfileForm submitLabel="Let's go" onSubmit={(v) => setOverride(saveIdentity(v))} />
         </div>
@@ -98,4 +105,21 @@ export function RoomScreen() {
   }
 
   return <Room key={code} code={code} identity={identity} onIdentity={(v) => setOverride(saveIdentity(v))} />;
+}
+
+/** Rux popping up beside a speech bubble, above a card. */
+function RuxSays({ mood, children }: { mood: RuxMood; children: ReactNode }) {
+  return (
+    <div className="-mb-3 flex items-end gap-2 pl-2" aria-hidden>
+      <span className="slap w-16 shrink-0" style={{ "--tilt": "-8deg" } as React.CSSProperties}>
+        <Rux mood={mood} className="w-full" />
+      </span>
+      <span
+        className="slap marker mb-6 rounded-2xl border-[3px] border-ink bg-paper px-3 py-1.5 text-xl leading-tight text-ink shadow-[3px_4px_0_var(--color-pink)]"
+        style={{ "--tilt": "-3deg", animationDelay: "160ms" } as React.CSSProperties}
+      >
+        {children}
+      </span>
+    </div>
+  );
 }

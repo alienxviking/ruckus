@@ -13,7 +13,7 @@ import { feedback } from "@/lib/feedback";
 import { useCreateRoom } from "@/lib/useCreateRoom";
 import { Avatar } from "../Avatar";
 import { Confetti } from "../Confetti";
-import { GameBadge } from "../GameBadge";
+import { CoverArt } from "../CoverArt";
 import { Magnetic } from "../Magnetic";
 import { PlayerChip } from "../game-ui";
 import { HowToPlay } from "../room/HowToPlay";
@@ -119,17 +119,24 @@ export function LocalPlay({ gameId }: { gameId: string }) {
 
   return (
     <div className="mx-auto w-full max-w-3xl">
-      <div className="animate-rise card lit-edge relative overflow-hidden p-5 sm:p-6" style={{ "--accent": meta.accent } as React.CSSProperties}>
+      <div
+        className="animate-rise stk relative overflow-hidden p-5 sm:p-6"
+        style={{ "--accent": meta.accent, "--stk-bg": "var(--color-panel)", boxShadow: `6px 7px 0 color-mix(in oklab, ${meta.accent} 55%, #000)` } as React.CSSProperties}
+      >
         <div
           aria-hidden
           className="pointer-events-none absolute inset-0 opacity-60"
           style={{ background: `radial-gradient(70% 90% at 0% 0%, ${meta.accent}22, transparent 60%)` }}
         />
         <div className="relative flex items-start gap-4">
-          <GameBadge id={meta.id} accent={meta.accent} size="xl" sheen />
+          <span className="slap w-32 shrink-0 sm:w-44" style={{ "--tilt": "-4deg" } as React.CSSProperties}>
+            <CoverArt game={meta} className="rounded-xl border-[3px] border-paper shadow-[4px_5px_0_rgb(0_0_0/0.55)]" />
+          </span>
           <div className="min-w-0 flex-1">
-            <p className="label mb-1">{solo ? "Solo" : range.min === 0 ? "Solo or vs bots" : "vs bots"}</p>
-            <h1 className="font-hero text-2xl leading-tight font-extrabold tracking-[-0.03em] sm:text-3xl">{meta.name}</h1>
+            <p className="marker mb-1 text-xl leading-none" style={{ color: meta.accent }}>
+              {solo ? "solo" : range.min === 0 ? "solo or vs bots" : "vs bots"}
+            </p>
+            <h1 className="font-hero text-3xl leading-[0.95] font-extrabold tracking-[-0.03em] sm:text-4xl">{meta.name}</h1>
             <p className="mt-1 text-muted">{meta.tagline}</p>
           </div>
         </div>

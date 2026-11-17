@@ -7,7 +7,8 @@ import { GameSettings } from "./GameSettings";
 import { RecapCard } from "./Recap";
 import { GameBadge } from "../GameBadge";
 import { GameBrowser } from "../GameBrowser";
-import { Magnetic } from "../Magnetic";
+import { CoverArt } from "../CoverArt";
+import { Rux } from "../Rux";
 import { HowToPlay } from "./HowToPlay";
 import { Dices } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
@@ -78,31 +79,39 @@ export function Lobby({
     <div className="flex flex-col gap-4">
       <div
         ref={heroRef}
-        className="card lit-edge animate-rise relative grid gap-5 overflow-hidden p-5 transition-[border-color] duration-300 sm:grid-cols-[1fr_auto] sm:p-6"
+        className="stk animate-rise relative grid gap-5 p-5 sm:grid-cols-[1fr_auto] sm:p-6"
         style={
           {
             "--accent": game.accent,
-            borderColor: game.accent + "55",
-            background: `radial-gradient(80% 120% at 0% 0%, ${game.accent}1c, transparent 60%), var(--color-panel)`,
+            background: `radial-gradient(90% 120% at 0% 0%, ${game.accent}26, transparent 60%), var(--color-panel)`,
+            boxShadow: `6px 7px 0 color-mix(in oklab, ${game.accent} 55%, #000)`,
           } as React.CSSProperties
         }
       >
         {/* Re-keyed per game so the details animate in when the host switches games. */}
         <div key={game.id} className="animate-rise">
           <div className="flex items-center gap-4">
-            <GameBadge id={game.id} accent={game.accent} size="xl" className="animate-pop" sheen />
+            <span className="slap w-32 shrink-0 sm:w-44" style={{ "--tilt": "-4deg" } as React.CSSProperties}>
+              <CoverArt game={game} className="rounded-xl border-[3px] border-paper shadow-[4px_5px_0_rgb(0_0_0/0.55)]" />
+            </span>
             <div className="min-w-0">
-              <div className="label">{isHost ? "You picked" : `${host?.name ?? "The host"} picked`}</div>
-              <h1 className="mt-1 font-hero text-2xl leading-tight font-extrabold tracking-[-0.03em] sm:text-3xl">
+              <div className="marker text-xl leading-none" style={{ color: game.accent }}>
+                {isHost ? "you picked" : `${host?.name ?? "the host"} picked`}
+              </div>
+              <h1 className="mt-1 font-hero text-3xl leading-[0.95] font-extrabold tracking-[-0.03em] sm:text-4xl">
                 {game.name}
               </h1>
+              <p className="mt-1 text-sm text-muted">{game.tagline}</p>
             </div>
           </div>
           <ul className="mt-4 space-y-2 text-sm text-text/85">
             {game.how.map((line, i) => (
               <li key={i} className="animate-rise flex gap-3" style={{ animationDelay: `${120 + i * 70}ms` }}>
-                <span className="pt-px font-mono text-xs font-medium" style={{ color: game.accent }}>
-                  0{i + 1}
+                <span
+                  className="grid size-5 shrink-0 place-items-center rounded-full text-[11px] font-extrabold text-ink"
+                  style={{ background: game.accent }}
+                >
+                  {i + 1}
                 </span>
                 {line}
               </li>
@@ -116,16 +125,10 @@ export function Lobby({
         <div className="flex flex-col justify-end gap-2 sm:w-52">
           {isHost ? (
             <>
-              <Magnetic>
-                <button
-                  className="btn btn-primary w-full py-3 text-lg"
-                  disabled={tooFew}
-                  onClick={() => send({ t: "start" })}
-                >
-                  Start game
-                </button>
-              </Magnetic>
-              <p className="text-center font-mono text-[11px] text-muted">
+              <button className="stk-btn w-full py-3.5 text-xl" disabled={tooFew} onClick={() => send({ t: "start" })}>
+                Start game
+              </button>
+              <p className="mt-1 text-center text-xs font-semibold text-muted">
                 {tooFew
                   ? botsPlay
                     ? `Needs ${game.minPlayers}+ players: invite friends or add a bot`
@@ -138,11 +141,16 @@ export function Lobby({
             </>
           ) : (
             <>
-              <p className="rounded-lg border border-line bg-ink/60 px-4 py-3 text-center text-sm text-muted">
-                Waiting for {host?.name ?? "the host"} to start…
-              </p>
+              <div className="flex items-end gap-2">
+                <span className="bob w-14 shrink-0" style={{ "--tilt": "-6deg" } as React.CSSProperties}>
+                  <Rux mood="sleepy" className="w-full" />
+                </span>
+                <p className="marker mb-3 rounded-2xl border-2 border-ink bg-paper px-3 py-1.5 text-lg leading-tight text-ink shadow-[3px_4px_0_#000]">
+                  {host?.name ?? "host"} ka wait karo… start dabayega abhi
+                </p>
+              </div>
               {room.autoNext && (
-                <p className="text-center font-mono text-[11px] text-brand-2">Quick play is on: games roll on by themselves</p>
+                <p className="text-center text-xs font-bold text-brand-2">Quick play is on: games roll on by themselves</p>
               )}
             </>
           )}

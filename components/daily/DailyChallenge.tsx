@@ -24,6 +24,7 @@ import { LocalEngine, ME, useLocalGame } from "@/lib/local-engine";
 import { feedback } from "@/lib/feedback";
 import { Confetti } from "../Confetti";
 import { GameBadge } from "../GameBadge";
+import { Rux } from "../Rux";
 import { Magnetic } from "../Magnetic";
 import { LocalStage, loadLocalGame, localMe, type LoadedGame } from "../play/LocalStage";
 
@@ -107,7 +108,10 @@ export function DailyChallenge() {
 
   return (
     <div className="mx-auto w-full max-w-3xl">
-      <section className="animate-rise pt-2 pb-6">
+      <section className="animate-rise relative pt-2 pb-6">
+        <span aria-hidden className="bob absolute top-0 right-0 hidden w-24 sm:block" style={{ "--tilt": "6deg" } as React.CSSProperties}>
+          <Rux mood="grin" className="w-full" />
+        </span>
         <p className="label mb-3 flex flex-wrap items-center gap-x-3 gap-y-1">
           <span>
             Daily <span className="text-text">#{dailyNumber(day)}</span>
@@ -119,9 +123,10 @@ export function DailyChallenge() {
             New in <span className="text-text tabular-nums">{countdown(msToNextDay(sec * 1000))}</span>
           </span>
         </p>
-        <h1 className="font-hero text-3xl leading-[1.05] font-extrabold tracking-[-0.03em] sm:text-5xl">
-          Daily <span className="text-brand-2">challenge</span>
+        <h1 className="font-hero text-5xl leading-[0.9] font-extrabold tracking-[-0.04em] sm:text-7xl">
+          Daily <span className="text-pink">challenge</span>
         </h1>
+        <p className="marker mt-2 text-2xl text-brand-2">aaj ka scene: 3 games, sabke liye same</p>
         <p className="mt-3 max-w-xl text-muted">
           Three games, the same puzzles for everyone today. Your first try is your score; replays are just for fun.
         </p>

@@ -3,6 +3,7 @@ import Link from "next/link";
 import { CalendarDays, ChevronRight } from "lucide-react";
 import type { GameMeta } from "@/games/catalog";
 import { GameCard } from "@/components/GameCard";
+import { Rux } from "@/components/Rux";
 import { Logo } from "@/components/Logo";
 import { BackLink } from "@/components/play/BackLink";
 import { LOCAL_GAMES } from "@/lib/local-games";
@@ -23,9 +24,14 @@ export default function PlayIndex() {
         <BackLink href="/">Home</BackLink>
       </header>
 
-      <section className="pt-4 pb-8 sm:pt-8">
-        <p className="label animate-rise mb-3">No room · no waiting · no sign-up</p>
-        <h1 className="animate-rise font-hero text-3xl leading-[1.05] font-extrabold tracking-[-0.03em] sm:text-5xl">
+      <section className="relative pt-4 pb-8 sm:pt-8">
+        <span aria-hidden className="bob absolute top-2 right-2 hidden w-28 sm:block" style={{ "--tilt": "8deg" } as React.CSSProperties}>
+          <Rux mood="wink" className="w-full" />
+        </span>
+        <p className="marker slap mb-2 inline-block text-2xl text-brand-2" style={{ "--tilt": "-3deg" } as React.CSSProperties}>
+          no room. no waiting. bas khelo.
+        </p>
+        <h1 className="animate-rise font-hero text-5xl leading-[0.9] font-extrabold tracking-[-0.04em] sm:text-7xl">
           Play <span className="text-brand-2">right now.</span>
         </h1>
         <p className="animate-rise mt-4 max-w-xl text-muted" style={{ animationDelay: "80ms" }}>
@@ -34,8 +40,8 @@ export default function PlayIndex() {
         </p>
         <Link
           href="/daily"
-          className="card lit-edge animate-rise group mt-6 flex items-center gap-3 p-4 hover:bg-panel-2 sm:max-w-md"
-          style={{ animationDelay: "140ms" }}
+          className="stk lift slap group mt-6 flex items-center gap-3 p-4 sm:max-w-md"
+          style={{ "--stk-bg": "var(--color-pink)", "--stk-fg": "#14101f", "--tilt": "-1.5deg", animationDelay: "140ms" } as React.CSSProperties}
         >
           <span className="grid size-10 shrink-0 place-items-center rounded-lg border border-line bg-ink text-brand-2">
             <CalendarDays aria-hidden className="size-5" strokeWidth={1.75} />
