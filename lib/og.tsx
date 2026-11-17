@@ -80,61 +80,68 @@ const WALL = {
     "radial-gradient(520px 420px at 8% 0%, rgba(198,244,50,0.22), transparent 70%), radial-gradient(520px 460px at 100% 20%, rgba(255,79,163,0.2), transparent 70%), radial-gradient(600px 400px at 40% 120%, rgba(79,123,255,0.22), transparent 70%)",
 };
 
-/** The home page preview: "Cause a ruckus." with Rux on his megaphone. */
+/** The home page preview: "Cause a ruckus." with Rux on his megaphone. Text sits in the middle
+ *  square, because WhatsApp and friends crop link thumbnails to a centred square. */
 export function HomeCard({ games }: { games: number }) {
   return (
-    <div style={{ ...WALL, width: "100%", height: "100%", display: "flex", alignItems: "center", padding: "0 80px", color: "#edf0f7" }}>
-      <div style={{ display: "flex", flexDirection: "column", flex: 1 }}>
-        <div style={{ fontFamily: "Marker", fontSize: 44, color: "#c6f432", transform: "rotate(-3deg)" }}>
-          {`${games} games. zero sign-ups. full bawaal.`}
-        </div>
-        <div style={{ display: "flex", flexDirection: "column", fontFamily: "Hero", fontSize: 128, lineHeight: 0.9, letterSpacing: -5, marginTop: 18 }}>
+    <div style={{ ...WALL, position: "relative", width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "#edf0f7" }}>
+      {/* eslint-disable-next-line @next/next/no-img-element -- next/og renders plain img */}
+      <img src={ruxUri("shout", true)} width={330} height={308} style={{ position: "absolute", right: -40, bottom: 40, transform: "rotate(-6deg)" }} alt="" />
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center", width: 640 }}>
+        <div style={{ fontFamily: "Marker", fontSize: 42, color: "#c6f432", transform: "rotate(-3deg)" }}>{`${games} games. zero sign-ups.`}</div>
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", fontFamily: "Hero", fontSize: 140, lineHeight: 0.9, letterSpacing: -5, marginTop: 18 }}>
           <span>Cause a</span>
           <span style={{ color: "#c6f432" }}>ruckus.</span>
         </div>
-        <div style={{ fontSize: 32, color: "#8a91a7", marginTop: 28 }}>Party games in your browser. No app, no login.</div>
+        <div style={{ fontSize: 30, color: "#8a91a7", marginTop: 28 }}>Party games in your browser. No login.</div>
       </div>
-      {/* eslint-disable-next-line @next/next/no-img-element -- next/og renders plain img */}
-      <img src={ruxUri("shout", true)} width={420} height={392} style={{ transform: "rotate(-6deg)" }} alt="" />
     </div>
   );
 }
 
-/** A game as a poster: name huge, glyph cropped off the edge, a stamp and a line on top. */
+/** A game as a poster: name huge, glyph cropped off the edge, a stamp and a line on top.
+ *  Everything you need to read sits in the middle square: chat apps (WhatsApp, iMessage) crop
+ *  link thumbnails to a centred square, while Discord/X show the full width. */
 export function GameCard({ game, kicker, footer }: { game: GameMeta; kicker: string; footer: string }) {
   const players = game.minPlayers === game.maxPlayers ? `${game.minPlayers}P` : `${game.minPlayers}–${game.maxPlayers}P`;
   return (
-    <div style={{ ...WALL, width: "100%", height: "100%", display: "flex", padding: 48 }}>
+    <div style={{ ...WALL, width: "100%", height: "100%", display: "flex", padding: 36 }}>
       <div
         style={{
           position: "relative",
           display: "flex",
           flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "center",
+          textAlign: "center",
           width: "100%",
           height: "100%",
           overflow: "hidden",
           backgroundColor: game.accent,
           border: `8px solid ${PAPER}`,
           borderRadius: 40,
-          padding: "48px 56px",
           color: INK,
           boxShadow: "14px 16px 0 rgba(0,0,0,0.55)",
         }}
       >
         {/* eslint-disable-next-line @next/next/no-img-element -- next/og renders plain img */}
-        <img src={glyphUri(game.id, INK)} width={440} height={440} style={{ position: "absolute", right: -70, bottom: -90, transform: "rotate(-12deg)", opacity: 0.9 }} alt="" />
-        <div style={{ fontFamily: "Marker", fontSize: 50, transform: "rotate(-2deg)" }}>{kicker}</div>
-        <div style={{ fontFamily: "Hero", fontSize: 112, lineHeight: 0.9, letterSpacing: -4, marginTop: 10, maxWidth: 760 }}>{game.name}</div>
-        <div style={{ fontSize: 34, marginTop: 18, maxWidth: 680, fontWeight: 600 }}>{game.tagline}</div>
-        <div style={{ display: "flex", alignItems: "center", gap: 18, marginTop: "auto" }}>
-          <div style={{ display: "flex", padding: "6px 18px", border: `4px solid ${INK}`, borderRadius: 14, backgroundColor: PAPER, fontSize: 28, fontWeight: 700, letterSpacing: 2 }}>
-            {players}
+        <img src={glyphUri(game.id, INK)} width={360} height={360} style={{ position: "absolute", left: -90, bottom: -80, transform: "rotate(14deg)", opacity: 0.85 }} alt="" />
+        {/* eslint-disable-next-line @next/next/no-img-element -- next/og renders plain img */}
+        <img src={glyphUri(game.id, INK)} width={300} height={300} style={{ position: "absolute", right: -70, top: -60, transform: "rotate(-12deg)", opacity: 0.35 }} alt="" />
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", width: 560 }}>
+          <div style={{ fontFamily: "Marker", fontSize: 46, transform: "rotate(-2deg)" }}>{kicker}</div>
+          <div style={{ fontFamily: "Hero", fontSize: game.name.length > 12 ? 100 : 118, lineHeight: 0.9, letterSpacing: -4, marginTop: 14, textAlign: "center" }}>{game.name}</div>
+          <div style={{ fontSize: 28, marginTop: 20, fontWeight: 600, lineHeight: 1.2 }}>{game.tagline}</div>
+          <div style={{ display: "flex", alignItems: "center", gap: 16, marginTop: 26 }}>
+            <div style={{ display: "flex", padding: "4px 16px", border: `4px solid ${INK}`, borderRadius: 14, backgroundColor: PAPER, fontSize: 26, fontWeight: 700, letterSpacing: 2 }}>
+              {players}
+            </div>
+            <div style={{ fontSize: 28, fontWeight: 700 }}>{footer}</div>
           </div>
-          <div style={{ fontSize: 30, fontWeight: 700 }}>{footer}</div>
         </div>
       </div>
       {/* eslint-disable-next-line @next/next/no-img-element -- next/og renders plain img */}
-      <img src={ruxUri("grin")} width={150} height={178} style={{ position: "absolute", right: 30, top: 4, transform: "rotate(12deg)" }} alt="" />
+      <img src={ruxUri("grin")} width={150} height={178} style={{ position: "absolute", right: 40, bottom: 30, transform: "rotate(10deg)" }} alt="" />
     </div>
   );
 }
