@@ -1,13 +1,13 @@
 import type { GameRules } from "../rules-types";
 
 export const rules: GameRules = {
-  goal: "Own the most tiles on the map when the 60-second clock runs out.",
+  goal: "Own the most tiles on the map when the clock runs out (60 seconds; the host can change this).",
   flow: [
     "Everyone starts on a small 3x3 patch of their own colour. During the 3-second countdown you can already pick a direction.",
     "Once play starts you keep moving on your own. Every tile you step on turns your colour, even if a rival owned it.",
     "Head out from your turf and come back to it: every tile you have closed off from the map edge becomes yours, including rivals' paint.",
     "Power-ups appear on the map every 5-7 seconds (up to 3 at a time). Drive over one to use it.",
-    "After 60 seconds the map is frozen and tiles are counted.",
+    "When time is up the map is frozen and tiles are counted. The host can also pick a smaller or larger map.",
   ],
   controls: {
     desktop: [

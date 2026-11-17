@@ -1,10 +1,10 @@
 import type { GameRules } from "../rules-types";
 
 export const rules: GameRules = {
-  goal: "Score the most points over 3 rounds by painting the best copy of your own secret emblem.",
+  goal: "Score the most points over 3 rounds (the host can change this) by painting the best copy of your own secret emblem.",
   flow: [
     "Each round you get a secret 5×5 pixel emblem (like a heart or a skull). Only you can see it.",
-    "Everyone paints on the same shared canvas at once for 75 seconds. Paint your emblem anywhere you like.",
+    "Everyone paints on the same shared canvas at once for 75 seconds (the host can pick 45 or 120). Paint your emblem anywhere you like.",
     "Every new pixel briefly flashes in its painter's colour, so you can work out who is painting what, then paint over their emblem to wreck it.",
     "When time's up, the game finds the best copy of each emblem anywhere on the canvas and reveals everyone's emblem.",
     "Tap Ready to move on. The canvas is wiped clean and you get a new emblem for the next round.",
@@ -24,7 +24,7 @@ export const rules: GameRules = {
   scoring: [
     "Your best copy scores 1 point for every pixel that matches your emblem, up to 25.",
     "A perfect copy (all 25 pixels right) earns a 5-point bonus, so 30 points in total.",
-    "Points add up over 3 rounds. The highest total wins, and equal top scores share the win.",
+    "Points add up over every round. The highest total wins, and equal top scores share the win.",
   ],
   tips: [
     "Paint takes a moment to recharge, so you can only lay down a few pixels each second. Don't waste them.",

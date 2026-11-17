@@ -218,7 +218,7 @@ function Intro({ view, serverNow, accent }: { view: BlitzView; serverNow: () => 
         {[
           ["✅", "Right + fast scores up to 200"],
           ["🔥", `The last ${DOUBLE_LAST} count double`],
-          ["⌨️", "Keys: 1–4, arrows, Space"],
+          ["⌨️", "Keys: 1–9, arrows, Space"],
         ].map(([icon, text]) => (
           <li key={icon} className="flex gap-2">
             <span aria-hidden className="w-5 shrink-0 text-center">

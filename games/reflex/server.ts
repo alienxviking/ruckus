@@ -1,4 +1,6 @@
 import { pick, topScorers, type GameCtx, type GameDef } from "../../shared/game";
+import { readSettings } from "../../shared/settings";
+import { config } from "./config";
 import { FAKE_WORDS } from "./data";
 
 // Quick Draw: wait for the signal, then tap faster than everyone else.
@@ -70,6 +72,10 @@ export interface RoundSummary {
 }
 
 export interface ReflexState {
+  /** Points needed to win (host setting). */
+  target: number;
+  /** Chance a round has a fake-out (host setting). */
+  fakeChance: number;
   /** Random id for this match, so clients never confuse round N of one game with round N of the next. */
   game: string;
   ids: string[];
@@ -167,7 +173,7 @@ function startRound(s: ReflexState, ctx: GameCtx) {
 function enterWait(s: ReflexState, ctx: GameCtx) {
   const now = ctx.now();
   s.phase = "wait";
-  if (ctx.random() < TIMING.fakeChance) {
+  if (ctx.random() < s.fakeChance) {
     s.fakeAt = now + between(ctx, TIMING.fakeAfterMinMs, TIMING.fakeAfterMaxMs);
     s.postFakeMs = between(ctx, TIMING.postFakeMinMs, TIMING.postFakeMaxMs);
     s.goAt = null;
@@ -230,7 +236,7 @@ function resolve(s: ReflexState, ctx: GameCtx) {
   s.idleRounds = Object.keys(s.taps).length === 0 ? s.idleRounds + 1 : 0;
   s.last = { round: s.round, entries, winners, fakeText: s.fakeText };
 
-  if (winners.some((id) => s.scores[id] >= TARGET)) return finish(s, ctx, "target");
+  if (winners.some((id) => s.scores[id] >= s.target)) return finish(s, ctx, "target");
   s.phase = "result";
   s.endsAt = ctx.now() + TIMING.resultMs;
 }
@@ -342,12 +348,62 @@ function step(s: ReflexState, ctx: GameCtx): boolean {
   return changed;
 }
 
+/** Fake-out chance per round for each host choice ("some" is the classic rate). */
+const FAKE_CHANCE: Record<string, number> = { off: 0, some: TIMING.fakeChance, lots: 0.55 };
+
+// ---------- practice bot ----------
+
+interface BotPlan {
+  round: number;
+  /** When the bot first saw the current phase, and which phase that was. */
+  phase: Phase;
+  seenAt: number;
+  /** Reaction time it will tap with once it sees DRAW!. */
+  rt: number;
+  /** Whether it will fall for this round's fake-out. */
+  bites: boolean;
+}
+
+const botPlans = new WeakMap<ReflexState, Map<string, BotPlan>>();
+
+/**
+ * A decent but human gunslinger: reacts in about 230-430 ms from when it sees DRAW!
+ * (it only ever reads the public phase), and now and then bites on a fake-out.
+ */
+function botTap(s: ReflexState, botId: string, ctx: GameCtx): ReflexAction | null {
+  if (!s.ids.includes(botId)) return null;
+  let plans = botPlans.get(s);
+  if (!plans) botPlans.set(s, (plans = new Map()));
+  const now = ctx.now();
+  let p = plans.get(botId);
+  if (!p || p.round !== s.round) {
+    p = { round: s.round, phase: s.phase, seenAt: now, rt: 0, bites: false };
+    p.rt = Math.round(230 + ctx.random() * 200);
+    p.bites = ctx.random() < 0.15;
+    plans.set(botId, p);
+  }
+  if (p.phase !== s.phase) {
+    p.phase = s.phase;
+    p.seenAt = now;
+  }
+  if (s.phase === "paused" && s.pauseReason === "idle") {
+    return now - p.seenAt > 1_500 ? { type: "tap", round: s.round, rt: null } : null;
+  }
+  if (s.taps[botId]) return null;
+  if (s.phase === "fake" && p.bites && now - p.seenAt >= 250) return { type: "tap", round: s.round, rt: null };
+  if (s.phase === "go" && now - p.seenAt >= p.rt) return { type: "tap", round: s.round, rt: p.rt };
+  return null;
+}
+
 const game: GameDef<ReflexState, unknown> = {
   id: "reflex",
 
   setup(ctx) {
     const ids = ctx.players.map((p) => p.id);
+    const set = readSettings(config.settings, ctx.settings);
     const s: ReflexState = {
+      target: Number(set.target) || TARGET,
+      fakeChance: FAKE_CHANCE[String(set.fakes)] ?? TIMING.fakeChance,
       game: Math.floor(ctx.random() * 2 ** 32).toString(36),
       ids,
       scores: dict(ids, 0),
@@ -415,6 +471,10 @@ const game: GameDef<ReflexState, unknown> = {
   tick(s, ctx) {
     return step(s, ctx);
   },
+
+  bot(s, botId, ctx) {
+    return botTap(s, botId, ctx);
+  },
   tickMs: 50,
 
   view(s, viewerId): ReflexView {
@@ -428,7 +488,7 @@ const game: GameDef<ReflexState, unknown> = {
       game: s.game,
       phase: s.phase,
       round: s.round,
-      target: TARGET,
+      target: s.target,
       ids: s.ids,
       scores: s.scores,
       best: s.best,

@@ -573,3 +573,32 @@ function checkViews(s: LettersState, t: T) {
 }
 
 console.log("letters: all tests passed");
+
+// ---------- host settings ----------
+{
+  // Defaults unchanged.
+  const t = makeTestCtx(2, 5);
+  const s: LettersState = game.setup(t.ctx);
+  assert(s.plan.length === ROUNDS && s.answerMs === ANSWER_MS && s.endsAt === t.ctx.now() + ANSWER_MS, "defaults");
+}
+{
+  // 2 rounds of 60s: the timer is shorter and the game ends after round 2.
+  const t = makeTestCtx(2, 6, { rounds: 2, answerSec: 60 });
+  const s: LettersState = game.setup(t.ctx);
+  const v = game.view(s, t.ids[0], t.ctx) as LettersView;
+  assert(v.rounds === 2 && v.phaseMs === 60_000 && s.endsAt === t.ctx.now() + 60_000, "2 rounds, 60s");
+  let guard = 0;
+  while (!t.result && guard++ < 1000) {
+    t.advance(1000);
+    game.tick!(s, t.ctx);
+  }
+  assert(t.result !== null && s.history.length === 2, `ends after 2 rounds (${s.history.length})`);
+  const u = makeTestCtx(2, 6, { rounds: 5 });
+  const s5: LettersState = game.setup(u.ctx);
+  assert(s5.plan.length === 5 && new Set(s5.plan.flatMap((p) => p.categories)).size === 30, "5 rounds, no repeated categories");
+  const w = makeTestCtx(2, 6, { rounds: 4, answerSec: 5 });
+  const s2: LettersState = game.setup(w.ctx);
+  assert(s2.plan.length === 3 && s2.answerMs === ANSWER_MS, "invalid settings fall back");
+}
+
+console.log("letters: settings tests passed");

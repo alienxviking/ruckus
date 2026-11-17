@@ -1,4 +1,6 @@
 import { shuffle, topScorers, type GameCtx, type GameDef } from "../../shared/game";
+import { readSettings } from "../../shared/settings";
+import { config } from "./config";
 import { FACTS, type Fact } from "./data";
 import {
   CLOSE_MESSAGE,
@@ -80,6 +82,8 @@ export interface FibState {
   /** FACTS indices for each round. */
   factOrder: number[];
   totalRounds: number;
+  /** Writing time per round in ms (host setting). */
+  writeMs: number;
   round: number;
   phase: Phase;
   /** Deadline of the current phase (absolute server time). */
@@ -120,6 +124,8 @@ export interface FibView {
   phase: Phase;
   round: number;
   totalRounds: number;
+  /** Full length of the write phase, for the timer bar. */
+  writeMs: number;
   /** Deadline of the current phase (0 when final). */
   endsAt: number;
   /** The current fact, with a blank. Its answer only ever appears in `history`. */
@@ -181,7 +187,7 @@ function everyoneIn(s: FibState, ctx: GameCtx, done: (seat: number) => boolean):
 function startRound(s: FibState, ctx: GameCtx) {
   s.round += 1;
   s.phase = "write";
-  s.endsAt = ctx.now() + WRITE_MS;
+  s.endsAt = ctx.now() + s.writeMs;
   s.lies = s.ids.map(() => null);
   s.options = [];
   s.picks = s.ids.map(() => -1);
@@ -381,15 +387,17 @@ export const fib: GameDef<FibState, FibAction> = {
   id: "fib",
 
   setup(ctx) {
+    const settings = readSettings(config.settings, ctx.settings);
     const ids = ctx.players.map((p) => p.id);
     const factOrder = shuffle(
       FACTS.map((_, i) => i),
       () => ctx.random(),
-    ).slice(0, ROUNDS);
+    ).slice(0, Number(settings.rounds) || ROUNDS);
     const s: FibState = {
       ids,
       factOrder,
       totalRounds: factOrder.length,
+      writeMs: (Number(settings.write) || WRITE_MS / 1000) * 1000,
       round: 0,
       phase: "write",
       endsAt: 0,
@@ -463,6 +471,7 @@ export const fib: GameDef<FibState, FibAction> = {
       phase: s.phase,
       round: s.round,
       totalRounds: s.totalRounds,
+      writeMs: s.writeMs,
       endsAt: s.phase === "final" ? 0 : s.endsAt,
       prompt: currentFact(s).prompt,
       submitted: s.phase === "write" ? s.ids.filter((_, i) => s.lies[i] !== null) : [],

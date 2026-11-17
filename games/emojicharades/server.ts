@@ -1,4 +1,6 @@
 import { shuffle, topScorers, type GameCtx, type GameDef } from "../../shared/game";
+import { customWords, readSettings } from "../../shared/settings";
+import { config } from "./config";
 import { PHRASES } from "./data";
 import { CAT_KEYS, CLUE_MAX, MAX_GUESS, isClueEmoji, isLetter, type Cat, type CharadesEvent } from "./shared";
 
@@ -66,6 +68,10 @@ export interface TurnRecord {
 
 export interface CharadesState {
   game: number;
+  /** Clue phase length for this game (host setting). */
+  clueMs: number;
+  /** The host's own phrases (offered first), or empty. */
+  custom: string[];
   players: string[];
   /** Clue-giver for every turn (the shuffled order, repeated per lap). */
   order: string[];
@@ -228,10 +234,34 @@ function pushFeed(s: CharadesState, item: Without<FeedItem, "n">) {
   if (s.feed.length > FEED_MAX) s.feed.splice(0, s.feed.length - FEED_MAX);
 }
 
+/**
+ * A host phrase in the game's phrase format (lowercase letters, spaces, apostrophes and
+ * hyphens), or null when it can't be used (digits, or too few letters).
+ */
+export function normalizePhrase(raw: string): string | null {
+  if (/[0-9]/.test(raw)) return null;
+  const p = raw
+    .normalize("NFD")
+    .replace(ACCENTS_RE, "")
+    .toLowerCase()
+    .replace(/[’‘`]/g, "'")
+    .replace(/&/g, " and ")
+    .replace(/[^a-z' -]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return (p.match(/[a-z]/g)?.length ?? 0) >= 3 ? p : null;
+}
+
 /** Three phrases from three different categories, never offered before this game. */
 function pickOptions(s: CharadesState, ctx: GameCtx): Offer[] {
   const cats = shuffle(CAT_KEYS, ctx.random);
   const out: Offer[] = [];
+  // The host's own phrases come first; built-in ones top up when they run out.
+  const mine = shuffle(
+    s.custom.filter((p) => !s.used.includes(p)),
+    ctx.random,
+  );
+  for (const text of mine.slice(0, 3)) out.push({ text, cat: "custom" });
   for (const cat of cats) {
     if (out.length >= 3) break;
     const pool = PHRASES[cat].filter((p) => !s.used.includes(p));
@@ -278,8 +308,8 @@ function startTurn(s: CharadesState, ctx: GameCtx, index: number) {
 function beginClue(s: CharadesState, ctx: GameCtx, index: number) {
   s.phrase = s.options[index] ?? s.options[0];
   s.phase = "clue";
-  s.phaseMs = CLUE_MS;
-  s.endsAt = ctx.now() + CLUE_MS;
+  s.phaseMs = s.clueMs;
+  s.endsAt = ctx.now() + s.clueMs;
   s.revealed = [];
   s.hints = 0;
   pushFeed(s, { kind: "giving", by: s.giver });
@@ -388,7 +418,7 @@ function onGuess(s: CharadesState, playerId: string, text: unknown, ctx: GameCtx
 
   const verdict = judge(clean, s.phrase.text);
   if (verdict === "correct") {
-    const left = Math.min(1, Math.max(0, (s.endsAt - now) / CLUE_MS));
+    const left = Math.min(1, Math.max(0, (s.endsAt - now) / s.clueMs));
     const pts = GUESS_BASE + Math.round(GUESS_SPEED * left) + (FIRST_BONUS[s.guessed.length] ?? 0);
     award(s, playerId, pts);
     award(s, s.giver, GIVER_EACH);
@@ -430,7 +460,9 @@ export const emojicharades: GameDef<CharadesState, CharadesAction> = {
 
   setup(ctx) {
     const players = ctx.players.map((p) => p.id);
-    const laps = players.length <= 4 ? 2 : 1;
+    const set = readSettings(config.settings, ctx.settings);
+    const laps = Number(set.laps) > 0 ? Number(set.laps) : players.length <= 4 ? 2 : 1;
+    const custom = [...new Set((customWords(config.settings, ctx.settings, "words") ?? []).map(normalizePhrase).filter((p): p is string => !!p))];
     const lap = shuffle(players, ctx.random);
     const order: string[] = [];
     for (let i = 0; i < laps; i++) order.push(...lap);
@@ -438,6 +470,8 @@ export const emojicharades: GameDef<CharadesState, CharadesAction> = {
     for (const id of players) scores[id] = 0;
     const s: CharadesState = {
       game: ctx.now(),
+      clueMs: (Number(set.clue) || CLUE_MS / 1000) * 1000,
+      custom,
       players,
       order,
       laps,
@@ -509,8 +543,8 @@ export const emojicharades: GameDef<CharadesState, CharadesAction> = {
         beginReveal(s, ctx, "time");
         return true;
       }
-      const elapsed = CLUE_MS - (s.endsAt - now);
-      while (s.hints < HINT_AT.length && elapsed >= CLUE_MS * HINT_AT[s.hints]) {
+      const elapsed = s.clueMs - (s.endsAt - now);
+      while (s.hints < HINT_AT.length && elapsed >= s.clueMs * HINT_AT[s.hints]) {
         s.hints += 1;
         if (revealHint(s, ctx)) changed = true;
       }

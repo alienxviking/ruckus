@@ -33,7 +33,10 @@ export const DASH_MS = 3_000;
 export const FREEZE_MS = 1_500;
 export const BOMB_RADIUS = 2;
 
-/** Board size for a player count: 40x26 up to 4 painters, 48x32 beyond. */
-export function boardSize(players: number): { w: number; h: number } {
-  return players <= 4 ? { w: 40, h: 26 } : { w: 48, h: 32 };
+/** Board size for a player count (normal: 40x26 up to 4 painters, 48x32 beyond) and the host's map choice. */
+export function boardSize(players: number, map: string = "normal"): { w: number; h: number } {
+  const few = players <= 4;
+  if (map === "small") return few ? { w: 32, h: 21 } : { w: 40, h: 26 };
+  if (map === "large") return few ? { w: 50, h: 32 } : { w: 58, h: 38 };
+  return few ? { w: 40, h: 26 } : { w: 48, h: 32 };
 }

@@ -1,13 +1,13 @@
 import { shuffle, topScorers, type GameCtx, type GameDef } from "../../shared/game";
+import { readSettings, customWords } from "../../shared/settings";
+import { config } from "./config";
 import { PAIRS } from "./data";
 import {
   AWAY_GUESS_MS,
-  CLUE_MS,
   GUESS_MS,
   LAPS,
   MAX_CLUE,
   MAX_RAW,
-  MAX_ROUNDS,
   MIN_PLAYERS,
   POINTS,
   REVEAL_MS,
@@ -18,6 +18,7 @@ import {
   clueProblem,
   guessMatches,
   guessProblem,
+  normalizeWord,
 } from "./shared";
 
 // Odd One Out: everyone gets the same secret word except one player, who gets a
@@ -62,6 +63,10 @@ export interface RoundSummary {
 export interface ImpostorState {
   ids: string[];
   totalRounds: number;
+  /** Clue turn length (host setting). */
+  clueMs: number;
+  /** The word pairs in play: the host's own (topped up from ours when short) or ours. */
+  pairs: (readonly [string, string])[];
   round: number;
   phase: Phase;
   /** Hard deadline of the current turn / phase (absolute server time). */
@@ -108,6 +113,8 @@ export interface ImpostorView {
   phase: Phase;
   round: number;
   totalRounds: number;
+  /** Length of a clue turn, for the timer bar. */
+  clueMs: number;
   /** Effective deadline of the current turn / phase (0 when final). */
   endsAt: number;
   /** Turn order (player ids) for this round. */
@@ -213,14 +220,14 @@ function chooseOddSeat(s: ImpostorState, ctx: GameCtx): number {
 function startRound(s: ImpostorState, ctx: GameCtx) {
   s.round += 1;
 
-  let pool = PAIRS.map((_, i) => i).filter((i) => !s.usedPairs.includes(i));
+  let pool = s.pairs.map((_, i) => i).filter((i) => !s.usedPairs.includes(i));
   if (!pool.length) {
     s.usedPairs = [];
-    pool = PAIRS.map((_, i) => i);
+    pool = s.pairs.map((_, i) => i);
   }
   const pairIndex = pool[randomIndex(ctx, pool.length)];
   s.usedPairs.push(pairIndex);
-  const pair = PAIRS[pairIndex];
+  const pair = s.pairs[pairIndex];
   const flip = ctx.random() < 0.5;
   s.majorityWord = flip ? pair[1] : pair[0];
   s.oddWord = flip ? pair[0] : pair[1];
@@ -252,7 +259,7 @@ function beginTurn(s: ImpostorState, ctx: GameCtx) {
   while (s.turn < turnsPerRound(s)) {
     const seat = s.order[s.turn % n];
     if (paused || isOnline(ctx, s.ids[seat])) {
-      s.endsAt = ctx.now() + CLUE_MS;
+      s.endsAt = ctx.now() + s.clueMs;
       return;
     }
     s.clues.push({ by: s.ids[seat], text: null, status: "away", lap: Math.floor(s.turn / n) });
@@ -457,6 +464,34 @@ function syncAll(s: ImpostorState, ctx: GameCtx): boolean {
   return changed;
 }
 
+/**
+ * One custom line as a pair: "group word / odd word" (also "|" or " vs "). Lines that
+ * aren't two different words are skipped. Pairs keep their order but which side the
+ * majority gets is still random per round, like ours.
+ */
+export function parsePair(line: string): [string, string] | null {
+  const parts = line.split(/\s*[/|]\s*|\s+vs\.?\s+/i).map((w) => cleanText(w));
+  if (parts.length !== 2) return null;
+  const [a, b] = parts;
+  if (!a || !b || guessProblem(a) || guessProblem(b)) return null;
+  const na = normalizeWord(a);
+  const nb = normalizeWord(b);
+  // Too close to play: same word, or one inside the other.
+  if (na === nb || na.includes(nb) || nb.includes(na)) return null;
+  return [a.toLowerCase(), b.toLowerCase()];
+}
+
+/** The host's pairs, topped up from ours when fewer than one per round are usable. */
+function pairsFor(ctx: GameCtx, rounds: number): (readonly [string, string])[] {
+  const mine = customWords(config.settings, ctx.settings, "words");
+  if (!mine) return PAIRS.slice();
+  const pairs = mine.map(parsePair).filter((p): p is [string, string] => p !== null);
+  if (!pairs.length) return PAIRS.slice();
+  const extra = shuffle(PAIRS.slice(), () => ctx.random());
+  while (pairs.length < rounds && extra.length) pairs.push([...extra.pop()!]);
+  return pairs;
+}
+
 // ---------- actions ----------
 
 function giveClue(s: ImpostorState, seat: number, text: unknown, ctx: GameCtx) {
@@ -496,9 +531,14 @@ export const impostor: GameDef<ImpostorState, ImpostorAction> = {
 
   setup(ctx) {
     const ids = ctx.players.map((p) => p.id);
+    const set = readSettings(config.settings, ctx.settings);
+    const rounds = Number(set.rounds);
     const s: ImpostorState = {
       ids,
-      totalRounds: Math.min(MAX_ROUNDS, ids.length),
+      // Never more rounds than players at the default, as before; a host who asks for more gets them.
+      totalRounds: rounds === 3 ? Math.min(rounds, ids.length) : rounds,
+      clueMs: Number(set.clueSec) * 1000,
+      pairs: pairsFor(ctx, rounds),
       round: 0,
       phase: "clues",
       endsAt: 0,
@@ -559,6 +599,7 @@ export const impostor: GameDef<ImpostorState, ImpostorAction> = {
       phase: s.phase,
       round: s.round,
       totalRounds: s.totalRounds,
+      clueMs: s.clueMs,
       endsAt: deadline(s),
       order: s.order.map((i) => s.ids[i]),
       turn: s.turn,

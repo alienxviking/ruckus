@@ -3,11 +3,11 @@ import type { GameRules } from "../rules-types";
 export const rules: GameRules = {
   goal: "Finish with the most money: your leftover cash plus the value of every crate you bought.",
   flow: [
-    "Everyone starts with $100. There are 8 mystery crates: 3 or 4 treasures, 2 junk, 1 or 2 cursed, and one 🎁 gift crate.",
+    "Everyone starts with $100. There are 8 mystery crates (the host can pick 6 or 10 instead): mostly treasure, a little junk, a curse or two, and one 🎁 gift crate. With 8 that's 3 or 4 treasures, 2 junk and 1 or 2 cursed.",
     "Peek time (15 seconds): you secretly see inside a few crates. Every crate is seen by exactly 2 players, and nobody knows who the other one is. Press \"I've seen enough\" to start early once everyone is ready.",
     "The crates are auctioned one at a time. Bidding opens a moment after each crate appears.",
     "Every new bid restarts the countdown: going once, going twice, last call, about 4.5 seconds in all. When it runs out, the top bidder pays and takes the crate, and its contents are shown to everyone.",
-    "If nobody bids within 6 seconds, the crate goes unsold. After the 8th crate, the 🎁 gift is opened and the scores are counted.",
+    "If nobody bids within 6 seconds, the crate goes unsold. After the last crate, the 🎁 gift is opened and the scores are counted.",
   ],
   controls: {
     desktop: [

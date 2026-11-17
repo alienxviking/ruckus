@@ -1,5 +1,5 @@
 import { assert, makeTestCtx } from "../../shared/testing";
-import game, { autoMove, favouriteFace, type LiarsAction, type LiarsState, type LiarsView } from "./server";
+import game, { autoMove, botMove, favouriteFace, type LiarsAction, type LiarsState, type LiarsView } from "./server";
 import {
   AWAY_MS,
   LONELY_MS,
@@ -608,6 +608,72 @@ for (let n = 2; n <= 8; n++) {
     check(res.headline.startsWith(`${t.ctx.player(w)!.name} wins Liar's Dice with`), "headline");
     JSON.parse(JSON.stringify(view(s, t, "spectator")));
   }
+}
+
+// ---------- host settings ----------
+{
+  const t = makeTestCtx(3, 7, { dice: 3, turnMs: 15_000 });
+  const s: LiarsState = game.setup(t.ctx);
+  check(s.startDice === 3 && s.order.every((id) => s.counts[id] === 3 && s.dice[id].length === 3), "3 starting dice");
+  toBid(s, t);
+  check(s.endsAt - t.ctx.now() === 15_000 && view(s, t, s.order[0]).timerMs === 15_000, "15s turn timer");
+  t.advance(15_000);
+  tick(s, t);
+  check(s.bids.length === 1 && s.bids[0].auto, "timer runs out after 15s");
+  const d = makeTestCtx(3, 7, { dice: 99, turnMs: 1 });
+  const s2: LiarsState = game.setup(d.ctx);
+  check(s2.startDice === 5 && s2.turnMs === TURN_MS, "invalid settings fall back to the defaults");
+  const big: LiarsState = game.setup(makeTestCtx(8, 7, { dice: 6 }).ctx);
+  check(big.startDice === 6, "6 dice even with 8 players");
+}
+
+// ---------- practice bots ----------
+{
+  for (const [n, bots, seed] of [
+    [4, 4, 1],
+    [3, 2, 2],
+    [6, 5, 3],
+    [2, 1, 4],
+  ] as const) {
+    const t = makeTestCtx(n, seed, {}, bots);
+    const s: LiarsState = game.setup(t.ctx);
+    let botMoves = 0;
+    let autos = 0;
+    for (let i = 0; i < 20_000 && !t.result; i++) {
+      t.advance(200);
+      tick(s, t);
+      for (const id of s.order) {
+        if (!t.ctx.player(id)?.bot) continue;
+        const a = game.bot!(s, id, t.ctx);
+        if (a == null) continue;
+        check(s.turn === id, "bots only move on their turn");
+        const before = s.bids.length;
+        check(act(s, t, id, a) !== false, `bot move is legal: ${JSON.stringify(a)}`);
+        botMoves++;
+        if (s.phase === "bid") check(s.bids.length === before + 1, "a bid was placed");
+      }
+    }
+    for (const sd of s.log) if (sd.auto) autos++;
+    for (const b of s.bids) if (b.auto) autos++;
+    check(t.result !== null && s.phase === "over", `${n}p with ${bots} bots: game finishes`);
+    check(botMoves > 5, "bots played");
+    if (bots === n) check(autos === 0 && s.log.every((x) => !x.auto), "all-bot games never need the timer");
+  }
+  // Bots think before acting, and never act on someone else's turn.
+  const t = makeTestCtx(3, 9, {}, 2);
+  const s: LiarsState = game.setup(t.ctx);
+  toBid(s, t);
+  for (const id of s.order) if (id !== s.turn && id.startsWith("bot-")) check(game.bot!(s, id, t.ctx) == null, "not my turn");
+  if (s.turn?.startsWith("bot-")) {
+    check(game.bot!(s, s.turn, t.ctx) == null, "first look: thinking");
+    t.advance(300);
+    check(game.bot!(s, s.turn, t.ctx) == null, "still thinking after 0.3s");
+    t.advance(3_000);
+    check(game.bot!(s, s.turn, t.ctx) != null, "acts within a few seconds");
+  }
+  // Bots call an obviously impossible bid.
+  const v = { phase: "bid", turn: "bot-0", you: "bot-0", mine: [2, 3, 4, 5, 6], total: 10, spotOk: false, bids: [{ by: "p0", qty: 9, face: 6, auto: false }] } as unknown as LiarsView;
+  check(botMove(v, () => 0.5)?.type === "liar", "bot calls a wild bid");
 }
 
 console.log("✓ liars tests passed");

@@ -1,4 +1,6 @@
 import { topScorers, type GameCtx, type GameDef } from "../../shared/game";
+import { readSettings } from "../../shared/settings";
+import { config } from "./config";
 import { BG, H, MAX_BATCH, MAX_STROKE_ID, PALETTE, SIZES, W, type WireStroke } from "../sketch/shared";
 import { PROMPTS } from "./data";
 import {
@@ -7,6 +9,7 @@ import {
   MAX_STEPS,
   MAX_STROKES,
   NEXT_GUARD_MS,
+  PACES,
   PAGE_BLANK_MS,
   PAGE_DRAW_MS,
   PAGE_TEXT_MS,
@@ -149,11 +152,15 @@ export interface GarbleView {
   /** Set while fewer than 2 players are connected: when the game skips to the reveal. */
   soloEndsAt: number | null;
   endedEarly: boolean;
+  /** Step timers [write, draw, describe] in ms (host setting). */
+  times: number[];
 }
 
 export interface GarbleState {
   players: string[];
   steps: number;
+  /** Step timers [write, draw, describe] in ms (host setting). */
+  times: number[];
   phase: Phase;
   step: number;
   endsAt: number;
@@ -276,7 +283,7 @@ function startStep(s: GarbleState, ctx: GameCtx, step: number) {
   s.phase = "play";
   s.step = step;
   s.done = [];
-  s.phaseMs = stepMs(kind);
+  s.phaseMs = stepMs(kind, s.times);
   s.endsAt = ctx.now() + s.phaseMs;
   const n = s.players.length;
   s.books.forEach((book, b) => {
@@ -571,9 +578,12 @@ export const garble: GameDef<GarbleState, GarbleAction> = {
 
   setup(ctx) {
     const players = ctx.players.map((p) => p.id);
+    const set = readSettings(config.settings, ctx.settings);
+    const maxPages = Math.min(MAX_STEPS, Number(set.pages) || MAX_STEPS);
     const s: GarbleState = {
       players,
-      steps: Math.max(1, Math.min(players.length, MAX_STEPS)),
+      steps: Math.max(1, Math.min(players.length, maxPages)),
+      times: [...(PACES[String(set.pace)] ?? PACES.normal)],
       phase: "play",
       step: 0,
       endsAt: 0,
@@ -668,6 +678,7 @@ export const garble: GameDef<GarbleState, GarbleAction> = {
       final: null,
       soloEndsAt: s.soloSince === null ? null : s.soloSince + SOLO_GRACE_MS,
       endedEarly: s.endedEarly,
+      times: s.times,
     };
     if (s.phase === "play" && index >= 0) {
       const b = bookFor(s.players.length, index, s.step);

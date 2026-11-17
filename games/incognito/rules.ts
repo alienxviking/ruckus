@@ -1,13 +1,13 @@
 import type { GameRules } from "../rules-types";
 
 export const rules: GameRules = {
-  goal: "Hide among 36 identical bots, light landmarks and dart the other humans to score the most points over 3 rounds.",
+  goal: "Hide among 36 identical bots, light landmarks and dart the other humans to score the most points over 3 rounds (the host can change the number of rounds).",
   flow: [
     "Each round you are one walker in a park full of look-alike bots. Only you can see which walker is yours.",
     "There are 5 landmarks (Statue, Bell, Clock, Tulips, Carousel). Stand on one for 1.5 seconds to light it. Each light makes a pulse everyone can see, but bots sometimes fake pulses too.",
     "After a 4-second start, your 3 darts unlock. Throw one at any walker you think is a human.",
     "Hit a human and they're out for the rest of the round. Hit a bot and you light up in your own colour for a moment, so everyone can spot you.",
-    "A round ends when someone lights all 5 landmarks, when only one human is left, or after 100 seconds. Play 3 rounds, each in a new park.",
+    "A round ends when someone lights all 5 landmarks, when only one human is left, or after 100 seconds (the host can pick 60 or 150 instead). Each round moves to a different park.",
   ],
   controls: {
     desktop: [
@@ -26,8 +26,8 @@ export const rules: GameRules = {
     "Dart a human: +2 points, and they're out for the round. Darting a bot costs you a dart and gives away where you are.",
     "Light all 5 landmarks: +3 points and the round ends right away.",
     "Be the last human not darted: +2 points.",
-    "If time runs out (100 seconds), the humans still in with the most lit landmarks each get +3.",
-    "You get 3 darts per round, at most one every 0.7 seconds. Most points after 3 rounds wins; ties share the win.",
+    "If time runs out, the humans still in with the most lit landmarks each get +3.",
+    "You get 3 darts per round, at most one every 0.7 seconds. Most points after the last round wins; ties share the win.",
   ],
   tips: [
     "Move like a bot: walk in straight lines at normal speed and pause now and then. Sprinting and zig-zagging give you away.",

@@ -45,6 +45,10 @@ const KEYS = new Map<string, Dir>([
 ]);
 
 const PHASE_MS = { countdown: COUNTDOWN_MS, play: ROUND_MS, roundOver: ROUND_OVER_MS, final: 0 } as const;
+/** Match format from the view (host settings), with the classic defaults for older views. */
+const roundMsOf = (v: SnakeView) => v.roundMs || ROUND_MS;
+const winsNeededOf = (v: SnakeView) => v.winsNeeded || WINS_NEEDED;
+const maxRoundsOf = (v: SnakeView) => v.maxRounds || MAX_ROUNDS;
 const PALETTE = PLAYER_COLORS.map((c) => c.toLowerCase());
 
 const REASON: Record<RoundReason, string> = {
@@ -304,14 +308,14 @@ function Brawl({
             Round {round}
             <span className="font-normal text-muted">
               {" "}
-              of {MAX_ROUNDS} max · first to {WINS_NEEDED}
+              of {maxRoundsOf(view)} max · first to {winsNeededOf(view)}
             </span>
           </span>
           <span className={`shrink-0 tabular-nums ${hurry ? "font-bold text-red-400" : "text-muted"}`}>⏱ {clock}</span>
         </div>
         <TimerBar
           endsAt={phase === "final" ? 0 : view.endsAt}
-          total={phase === "roundOver" && view.waiting ? REJOIN_MS : PHASE_MS[phase]}
+          total={phase === "roundOver" && view.waiting ? REJOIN_MS : phase === "play" ? roundMsOf(view) : PHASE_MS[phase]}
           serverNow={serverNow}
           color={hurry ? "#f87171" : accent}
         />
@@ -420,7 +424,7 @@ function BoardOverlay({
     );
   }
   if (view.phase === "play") {
-    if (secs >= ROUND_MS / 1000) {
+    if (secs >= roundMsOf(view) / 1000) {
       return (
         <div className="pointer-events-none absolute inset-0 grid place-items-center">
           <span className="animate-pop font-display text-5xl font-black text-white/90 drop-shadow-[0_4px_14px_rgba(0,0,0,0.7)] @2xl:text-7xl">
@@ -476,10 +480,10 @@ function BoardOverlay({
   return null;
 }
 
-function Pips({ wins, color }: { wins: number; color: string }) {
+function Pips({ wins, need, color }: { wins: number; need: number; color: string }) {
   return (
     <span className="flex items-center gap-0.5" aria-hidden>
-      {Array.from({ length: Math.max(WINS_NEEDED, wins) }, (_, i) => (
+      {Array.from({ length: Math.max(need, wins) }, (_, i) => (
         <span
           key={i}
           className={`size-2 rounded-full border ${i < wins ? "animate-pop" : ""}`}
@@ -530,7 +534,7 @@ function Roster({
               {p.name}
             </span>
             {p.id === me && <span className="text-[10px] font-bold tracking-wide text-text/80 uppercase">you</span>}
-            <Pips wins={wins} color={color} />
+            <Pips wins={wins} need={winsNeededOf(view)} color={color} />
             <span className="font-mono text-xs text-muted tabular-nums" aria-hidden>
               {sn?.alive ? `${longest === p.id ? "👑" : "🐍"}${sn.len}` : !p.connected ? "🔌" : sn ? "💀" : "⏳"}
             </span>
@@ -657,7 +661,7 @@ function FinalStandings({
                   <span className="block text-xs text-muted tabular-nums">longest {best(id)}</span>
                 </span>
                 <span className="flex shrink-0 items-center gap-2">
-                  <Pips wins={wins(id)} color={color} />
+                  <Pips wins={wins(id)} need={winsNeededOf(view)} color={color} />
                   <span className="w-5 text-right font-mono text-lg font-bold tabular-nums">{wins(id)}</span>
                   <span className="sr-only"> round win{wins(id) === 1 ? "" : "s"}</span>
                 </span>

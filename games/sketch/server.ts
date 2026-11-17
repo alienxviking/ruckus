@@ -1,4 +1,6 @@
 import { shuffle, topScorers, type GameCtx, type GameDef } from "../../shared/game";
+import { customWords, readSettings } from "../../shared/settings";
+import { config } from "./config";
 import { WORDS } from "./data";
 import {
   BG,
@@ -10,6 +12,7 @@ import {
   PALETTE,
   SIZES,
   W,
+  type BuiltinLevel,
   type Level,
   type SketchEvent,
   type WireStroke,
@@ -35,7 +38,7 @@ export const MAX_POINTS_IN = 150_000;
 
 const COLORS: readonly string[] = [...PALETTE.map((p) => p.hex), BG];
 const SIZE_SET: readonly number[] = SIZES;
-const LEVELS: Level[] = ["easy", "medium", "hard"];
+const LEVELS: BuiltinLevel[] = ["easy", "medium", "hard"];
 const ID_RE = /^[A-Za-z0-9_-]+$/;
 /** A regex character-class range between two code points. */
 const span = (a: number, b: number) => `${String.fromCharCode(a)}-${String.fromCharCode(b)}`;
@@ -88,6 +91,10 @@ export interface SketchState {
   /** Artist for every turn (the shuffled order, repeated per lap). */
   order: string[];
   laps: number;
+  /** Drawing time per turn (host setting). */
+  drawMs: number;
+  /** The host's own words, or null to use ours. Offered with the level "custom". */
+  custom: string[] | null;
   turn: number;
   phase: Phase;
   endsAt: number;
@@ -191,7 +198,8 @@ export function oneEdit(a: string, b: string): boolean {
   return a.length === b.length ? a.slice(i + 1) === b.slice(i + 1) : a.slice(i) === b.slice(i + 1);
 }
 
-const isLetter = (ch: string) => ch >= "a" && ch <= "z";
+// Any letter or digit is hidden (custom words may have capitals, accents or numbers).
+const isLetter = (ch: string) => /[\p{L}\p{N}]/u.test(ch);
 
 function letterIndices(word: string): number[] {
   const out: number[] = [];
@@ -222,9 +230,21 @@ function pushFeed(s: SketchState, item: Without<FeedItem, "n">) {
 
 function pickOptions(s: SketchState, ctx: GameCtx): Offer[] {
   const out: Offer[] = [];
-  const free = (level: Level) =>
+  if (s.custom) {
+    // The host's words: three unused ones, topped up from ours once they run out.
+    const pool = s.custom.filter((w) => !s.used.includes(w));
+    while (out.length < 3 && pool.length) {
+      const [word] = pool.splice(Math.floor(ctx.random() * pool.length), 1);
+      out.push({ word, level: "custom" });
+    }
+    if (out.length === 3) {
+      for (const o of out) s.used.push(o.word);
+      return out;
+    }
+  }
+  const free = (level: BuiltinLevel) =>
     WORDS[level].filter((w) => !s.used.includes(w) && !out.some((o) => o.word === w));
-  for (const want of LEVELS) {
+  for (const want of LEVELS.slice(out.length)) {
     // One of each difficulty when possible; otherwise borrow from another level.
     let level = want;
     let pool = free(want);
@@ -237,7 +257,7 @@ function pickOptions(s: SketchState, ctx: GameCtx): Offer[] {
   }
   if (!out.length) {
     // Every word has been used (cannot happen with the current list sizes): allow repeats.
-    for (const level of LEVELS) out.push({ word: WORDS[level][Math.floor(ctx.random() * WORDS[level].length)], level });
+    for (const level of LEVELS) if (out.length < 3) out.push({ word: WORDS[level][Math.floor(ctx.random() * WORDS[level].length)], level });
   }
   for (const o of out) s.used.push(o.word);
   return out;
@@ -282,8 +302,8 @@ function beginDraw(s: SketchState, ctx: GameCtx, index: number) {
   const offer = s.options[index] ?? s.options[0];
   s.word = offer.word;
   s.phase = "draw";
-  s.phaseMs = DRAW_MS;
-  s.endsAt = ctx.now() + DRAW_MS;
+  s.phaseMs = s.drawMs;
+  s.endsAt = ctx.now() + s.drawMs;
   s.revealed = [];
   s.hints = 0;
   pushFeed(s, { kind: "drawing", by: s.artist });
@@ -376,7 +396,7 @@ function onGuess(s: SketchState, playerId: string, text: unknown, ctx: GameCtx):
   const guess = compact(clean);
   const answer = compact(s.word);
   if (guess === answer) {
-    const left = Math.min(1, Math.max(0, (s.endsAt - now) / DRAW_MS));
+    const left = Math.min(1, Math.max(0, (s.endsAt - now) / s.drawMs));
     const bonus = s.guessed.length === 0 ? 50 : s.guessed.length === 1 ? 25 : 0;
     const pts = 100 + Math.round(300 * left) + bonus;
     s.scores[playerId] = (s.scores[playerId] ?? 0) + pts;
@@ -483,7 +503,14 @@ export const sketch: GameDef<SketchState, SketchAction> = {
 
   setup(ctx) {
     const players = ctx.players.map((p) => p.id);
-    const laps = players.length <= 3 ? 2 : 1;
+    const set = readSettings(config.settings, ctx.settings);
+    const laps = set.laps === "auto" ? (players.length <= 3 ? 2 : 1) : Number(set.laps);
+    // Custom words are kept as typed, but in lowercase (the hint mask and the feed look like ours).
+    // Guesses are compared in plain a-z/0-9 form, so a word needs at least two of those to be guessable.
+    const mine = customWords(config.settings, ctx.settings, "words")
+      ?.map((w) => w.toLowerCase())
+      .filter((w) => compact(w).length >= 2);
+    const custom = mine && mine.length >= 3 ? mine : null;
     const lap = shuffle(players, ctx.random);
     const order: string[] = [];
     for (let i = 0; i < laps; i++) order.push(...lap);
@@ -494,6 +521,8 @@ export const sketch: GameDef<SketchState, SketchAction> = {
       players,
       order,
       laps,
+      drawMs: Number(set.drawSec) * 1000,
+      custom,
       turn: -1,
       phase: "choose",
       endsAt: 0,
@@ -591,8 +620,8 @@ export const sketch: GameDef<SketchState, SketchAction> = {
         beginReveal(s, ctx, "time");
         return true;
       }
-      const elapsed = DRAW_MS - (s.endsAt - now);
-      while (s.hints < 2 && elapsed >= DRAW_MS * (s.hints === 0 ? 0.5 : 0.75)) {
+      const elapsed = s.drawMs - (s.endsAt - now);
+      while (s.hints < 2 && elapsed >= s.drawMs * (s.hints === 0 ? 0.5 : 0.75)) {
         s.hints += 1;
         if (revealHint(s, ctx)) changed = true;
       }

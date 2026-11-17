@@ -1,4 +1,6 @@
 import type { GameCtx, GameDef } from "../../shared/game";
+import { readSettings } from "../../shared/settings";
+import { config } from "./config";
 import {
   AWAY_MS,
   LONELY_MS,
@@ -6,8 +8,10 @@ import {
   MIN_FACE,
   ROLL_MS,
   TURN_MS,
+  FACES,
   isLegalBid,
   matches,
+  minQtyFor,
   revealTiming,
   startingDice,
 } from "./shared";
@@ -83,6 +87,8 @@ export interface LiarsState {
   /** This round's dice per player (SECRET: only the owner sees theirs). */
   dice: Record<string, number[]>;
   startDice: number;
+  /** Time to bid or call (host setting, TURN_MS by default). */
+  turnMs: number;
   phase: Phase;
   round: number;
   /** Who opens the current round. */
@@ -192,8 +198,8 @@ function startRound(s: LiarsState, ctx: GameCtx) {
 function startTurn(s: LiarsState, id: string, ctx: GameCtx) {
   s.phase = "bid";
   s.turn = id;
-  s.endsAt = ctx.now() + TURN_MS;
-  s.timerMs = TURN_MS;
+  s.endsAt = ctx.now() + s.turnMs;
+  s.timerMs = s.turnMs;
   s.awayAt = connected(ctx, id) ? null : ctx.now();
 }
 
@@ -386,6 +392,45 @@ function updateAway(s: LiarsState, ctx: GameCtx): boolean {
   return false;
 }
 
+// ---------- practice bot ----------
+
+/** When each bot may act on the current turn (per state, so games don't share memory). */
+const botWake = new WeakMap<LiarsState, Map<string, { key: string; at: number }>>();
+
+/**
+ * A medium-strength bot that only uses its own dice and public info (via view()):
+ * it expects a third of the unseen dice to match any face, calls Liar on bids that
+ * look a die or so too high, sometimes tries Spot on when a bid looks exact, and
+ * otherwise raises on whichever face it holds the most of.
+ */
+export function botMove(v: LiarsView, rand: () => number): LiarsAction | null {
+  const hand = v.mine;
+  if (!hand || v.phase !== "bid" || v.turn !== v.you) return null;
+  const total = v.total;
+  const unknown = total - hand.length;
+  const prev = v.bids.length ? v.bids[v.bids.length - 1] : null;
+  const expect = (face: number) => hand.filter((d) => matches(d, face)).length + unknown / 3;
+  if (!prev) {
+    const face = favouriteFace(hand);
+    const qty = Math.round(hand.filter((d) => matches(d, face)).length + (unknown / 3) * (0.3 + rand() * 0.5));
+    return { type: "bid", qty: Math.max(1, Math.min(total, qty)), face };
+  }
+  const own = prev.by === v.you;
+  const exp = expect(prev.face);
+  const nerve = rand() * 1.2 - 0.3; // some bots bluff a little further than others
+  if (!own && v.spotOk && Math.abs(prev.qty - exp) < 0.4 && rand() < 0.2) return { type: "spot" };
+  if (!own && prev.qty > exp + 0.8 + nerve) return { type: "liar" };
+  let best: { qty: number; face: number; margin: number } | null = null;
+  for (const face of FACES) {
+    const qty = minQtyFor(face, prev, total);
+    if (qty === null) continue;
+    const margin = expect(face) - qty + rand() * 0.6;
+    if (!best || margin > best.margin) best = { qty, face, margin };
+  }
+  if (!best || (!own && best.margin < -1 - nerve)) return own ? null : { type: "liar" };
+  return { type: "bid", qty: best.qty, face: best.face };
+}
+
 // ---------- the game ----------
 
 export const liars: GameDef<LiarsState, LiarsAction> = {
@@ -393,7 +438,9 @@ export const liars: GameDef<LiarsState, LiarsAction> = {
 
   setup(ctx) {
     const order = ctx.players.map((p) => p.id);
-    const startDice = startingDice(order.length);
+    const set = readSettings(config.settings, ctx.settings);
+    const startDice = typeof set.dice === "number" ? set.dice : startingDice(order.length);
+    const turnMs = typeof set.turnMs === "number" ? set.turnMs : TURN_MS;
     const counts: Record<string, number> = {};
     const stats: Record<string, PlayerStats> = {};
     for (const id of order) {
@@ -406,6 +453,7 @@ export const liars: GameDef<LiarsState, LiarsAction> = {
       counts,
       dice: {},
       startDice,
+      turnMs,
       phase: "roll",
       round: 1,
       starter,
@@ -495,6 +543,25 @@ export const liars: GameDef<LiarsState, LiarsAction> = {
   playerReturned(s, _id, ctx) {
     updateLonely(s, ctx);
     updateAway(s, ctx);
+  },
+
+  bot(s, botId, ctx) {
+    if (s.phase !== "bid" || s.turn !== botId) return null;
+    let mem = botWake.get(s);
+    if (!mem) botWake.set(s, (mem = new Map()));
+    const key = `${s.round}:${s.bids.length}`;
+    const now = ctx.now();
+    const w = mem.get(botId);
+    if (!w || w.key !== key) {
+      // Think for 0.8–2.6 s (a bit longer once the bidding gets tense), well inside the timer.
+      const think = Math.min(800 + ctx.random() * 1300 + s.bids.length * 120, s.timerMs * 0.5);
+      mem.set(botId, { key, at: now + think });
+      return null;
+    }
+    if (now < w.at) return null;
+    const move = botMove(liars.view(s, botId, ctx) as LiarsView, ctx.random);
+    // Never stall: if the bot has nothing sensible, take the server's default move.
+    return move ?? autoMove(s, botId);
   },
 
   view(s, viewerId): LiarsView {

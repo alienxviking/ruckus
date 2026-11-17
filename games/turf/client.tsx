@@ -6,6 +6,9 @@ import { Note, StatusBanner, TimerBar, useSecondsLeft } from "@/components/game-
 import { PLAYER_COLORS, type Player } from "@/shared/types";
 import type { TurfAction, TurfDelta, TurfEvent, TurfView } from "./server";
 import { DIRS, FREEZE_MS, PLAY_MS, POWER_INFO } from "./shared";
+
+/** Full length of play; falls back for views from before it was configurable. */
+const playMsOf = (v: TurfView) => v.playMs || PLAY_MS;
 import { TurfBoard, parsePainters, rgba, textureCss, type Painter } from "./board";
 import { TurfPredictor } from "./predict";
 import { hear, isTurfWire, nothingHeard, rebuild, type Heard } from "./delta";
@@ -226,7 +229,7 @@ function TurfGame({
   const frozenFor = mine && view.phase === "play" ? Math.min(FREEZE_MS, Math.max(0, mine.frozen - now)) : 0;
   const dashFor = mine && view.phase === "play" ? Math.max(0, mine.dash - now) : 0;
   const leaderIdx = painters.reduce((best, p, i) => (best === -1 || p.n > painters[best].n ? i : best), -1);
-  const showGo = view.phase === "play" && now - (view.endsAt - PLAY_MS) < 900;
+  const showGo = view.phase === "play" && now - (view.endsAt - playMsOf(view)) < 900;
   const abandonIn =
     view.abandonAt && view.phase !== "over" ? Math.max(0, Math.ceil((view.abandonAt - now) / 1000)) : null;
 
@@ -286,7 +289,7 @@ function TurfGame({
       {view.phase === "play" && (
         <div className="flex items-center gap-3">
           <div className="flex-1">
-            <TimerBar endsAt={view.endsAt} total={PLAY_MS} serverNow={serverNow} color={secsLeft <= 10 ? "#f87171" : accent} />
+            <TimerBar endsAt={view.endsAt} total={playMsOf(view)} serverNow={serverNow} color={secsLeft <= 10 ? "#f87171" : accent} />
           </div>
           <span
             className={`w-12 text-right font-mono text-sm font-bold tabular-nums ${secsLeft <= 10 ? "text-red-400" : "text-muted"}`}

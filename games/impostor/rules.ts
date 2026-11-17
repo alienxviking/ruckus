@@ -3,11 +3,11 @@ import type { GameRules } from "../rules-types";
 export const rules: GameRules = {
   goal: "Score the most points by spotting the player with the different word, or by blending in when that player is you.",
   flow: [
-    "Everyone gets the same secret word, except one player, the odd one out, who gets a related word. Nobody is told which word they have, so even the odd one doesn't know.",
-    "Players take turns giving a one-word clue about their word, in a random order. Everyone goes twice. You have 25 seconds per clue, or your turn is passed.",
+    "Everyone gets the same secret word, except one player, the odd one out, who gets a related word. Nobody is told which word they have, so even the odd one doesn't know. The host can also type in their own word pairs.",
+    "Players take turns giving a one-word clue about their word, in a random order. Everyone goes twice. You have 25 seconds per clue (the host can change this), or your turn is passed.",
     "Then everyone has 45 seconds to vote for the player whose clues seem off. You can change your vote, and voting closes 2 seconds after everyone has voted.",
     "If the odd one out gets the most votes, they have 25 seconds to guess everyone else's word.",
-    "Both words and all the votes are revealed. The game lasts 3 rounds, with new words each time.",
+    "Both words and all the votes are revealed. The game lasts 3 rounds by default (the host can pick more), with new words each time.",
   ],
   controls: {
     desktop: [

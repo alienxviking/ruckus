@@ -1,4 +1,6 @@
 import type { GameCtx, GameDef } from "../../shared/game";
+import { readSettings } from "../../shared/settings";
+import { config } from "./config";
 import {
   BOMBS,
   BOMB_MS,
@@ -83,6 +85,8 @@ export interface DefuseState {
   covered: string[];
   fewSince: number | null;
   team: number;
+  /** Bomb clock in ms (host setting). */
+  bombMs: number;
   /** First defuser's seat; bomb k is defused by order[(first + k) % n]. */
   first: number;
   over: boolean;
@@ -106,6 +110,8 @@ export interface DefuseView {
   resultMs: number;
   bombNo: number;
   bombs: number;
+  /** Full clock of each bomb, ms. */
+  bombMs: number;
   role: "defuser" | "expert" | "spectator";
   defuser: string;
   order: string[];
@@ -152,7 +158,7 @@ function newBomb(s: DefuseState, ctx: GameCtx, no: number): Bomb {
     mods.map((m) => m.t),
     experts,
   );
-  return { no, edge, mods, defuser, frags, strikes: 0, anchor: ctx.now(), left: BOMB_MS, rate: 1, outcome: null, leftAtEnd: BOMB_MS };
+  return { no, edge, mods, defuser, frags, strikes: 0, anchor: ctx.now(), left: s.bombMs, rate: 1, outcome: null, leftAtEnd: s.bombMs };
 }
 
 function startBrief(s: DefuseState, ctx: GameCtx, no: number) {
@@ -168,7 +174,7 @@ function startBrief(s: DefuseState, ctx: GameCtx, no: number) {
 function goLive(s: DefuseState, ctx: GameCtx) {
   s.phase = "live";
   s.bomb.anchor = ctx.now();
-  s.bomb.left = BOMB_MS;
+  s.bomb.left = s.bombMs;
   s.bomb.rate = 1;
   s.endsAt = explodeAt(s.bomb);
 }
@@ -380,6 +386,7 @@ export const defuse: GameDef<DefuseState, DefuseAction> = {
 
   setup(ctx) {
     const order = ctx.players.map((p) => p.id);
+    const set = readSettings(config.settings, ctx.settings);
     const s: DefuseState = {
       phase: "brief",
       endsAt: 0,
@@ -395,6 +402,7 @@ export const defuse: GameDef<DefuseState, DefuseAction> = {
       covered: [],
       fewSince: null,
       team: 0,
+      bombMs: (Number(set.clock) || BOMB_MS / 1000) * 1000,
       first: Math.floor(ctx.random() * order.length),
       over: false,
       abandoned: false,
@@ -488,6 +496,7 @@ export const defuse: GameDef<DefuseState, DefuseAction> = {
       resultMs: RESULT_MS,
       bombNo: b.no,
       bombs: BOMBS,
+      bombMs: s.bombMs,
       role,
       defuser: b.defuser,
       order: s.order,

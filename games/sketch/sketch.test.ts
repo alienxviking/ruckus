@@ -135,7 +135,7 @@ function playOut(g: G, duringDraw?: (g: G) => void) {
     ok(g.s.phase === "choose" && g.s.turn === 0 && g.s.artist === g.s.order[0], "starts with the first artist choosing");
     ok(g.s.endsAt === g.t.ctx.now() + CHOOSE_MS, "choose deadline");
     ok(JSON.stringify(g.s.options.map((o) => o.level)) === '["easy","medium","hard"]', "one word of each difficulty");
-    for (const o of g.s.options) ok(WORDS[o.level].includes(o.word), "offered words come from their level");
+    for (const o of g.s.options) ok(o.level !== "custom" && WORDS[o.level].includes(o.word), "offered words come from their level");
     ok(g.s.soloSince === null, "not solo at start");
   }
   // Different seeds shuffle differently.
@@ -882,3 +882,63 @@ function playOut(g: G, duringDraw?: (g: G) => void) {
 }
 
 console.log("sketch: all tests passed");
+
+// ---------- host settings ----------
+{
+  // Defaults unchanged: 80s drawing, two laps with 3 players, one with 4.
+  const t = makeTestCtx(3, 3);
+  const s: SketchState = game.setup(t.ctx);
+  assert(s.laps === 2 && s.order.length === 6 && s.drawMs === 80_000 && s.custom === null, "defaults (3 players)");
+  assert(s.options.every((o) => o.level !== "custom"), "our words by default");
+  const u = makeTestCtx(4, 3);
+  assert((game.setup(u.ctx) as SketchState).laps === 1, "defaults (4 players)");
+}
+{
+  // One turn each and 60s to draw: a 3-player game ends after 3 turns; hints follow the shorter clock.
+  const t = makeTestCtx(3, 4, { laps: 1, drawSec: 60 });
+  const s: SketchState = game.setup(t.ctx);
+  assert(s.order.length === 3 && s.laps === 1, "one lap");
+  game.action(s, s.artist, { type: "choose", index: 0 }, t.ctx);
+  assert(s.phase === "draw" && s.endsAt === t.ctx.now() + 60_000 && s.phaseMs === 60_000, "60s turn");
+  t.advance(30_000);
+  game.tick!(s, t.ctx);
+  assert(s.hints === 1, "first hint at half of 60s");
+  let guard = 0;
+  while (!t.result && guard++ < 1000) {
+    t.advance(1000);
+    game.tick!(s, t.ctx);
+  }
+  assert(t.result !== null && s.history.length === 3, `3 turns played (${s.history.length})`);
+  const v = makeTestCtx(3, 4, { laps: 7, drawSec: 1 });
+  const s2: SketchState = game.setup(v.ctx);
+  assert(s2.laps === 2 && s2.drawMs === 80_000, "invalid settings fall back");
+}
+{
+  // Custom words: offered as "custom", guessable, and topped up from ours when they run out.
+  const words = ["Birthday Cake", "haunted house", "Grandma's cat", "T-Rex", "Café"];
+  const t = makeTestCtx(3, 5, { words, laps: 2 });
+  const s: SketchState = game.setup(t.ctx);
+  assert(s.custom !== null && s.custom.length === 5 && s.custom.includes("grandma's cat"), "custom list kept, lowercased");
+  assert(s.options.length === 3 && s.options.every((o) => o.level === "custom"), "three custom offers");
+  game.action(s, s.artist, { type: "choose", index: 0 }, t.ctx);
+  const word = s.word!;
+  const mask = (game.view(s, s.players.find((id) => id !== s.artist)!, t.ctx) as SketchView).mask!;
+  assert(mask.filter((c) => c === null).length === compact(word).length, "letters hidden");
+  const guesser = s.players.find((id) => id !== s.artist)!;
+  t.advance(1000);
+  game.action(s, guesser, { type: "guess", text: word.toUpperCase() }, t.ctx);
+  assert(s.guessed.includes(guesser), "custom word guessed");
+  // Second turn: only 2 custom words left, so one built-in word tops it up.
+  t.advance(200_000);
+  game.tick!(s, t.ctx);
+  t.advance(10_000);
+  game.tick!(s, t.ctx);
+  assert(s.phase === "choose" && s.options.length === 3, "second offer");
+  const levels = s.options.map((o) => o.level);
+  assert(levels.filter((l) => l === "custom").length === 2 && levels.includes("hard"), `topped up (${levels})`);
+  // Too few usable words: ours.
+  const u = makeTestCtx(3, 5, { words: ["ab", "cd", "ef", "gh"] });
+  assert((game.setup(u.ctx) as SketchState).custom === null, "below the minimum: ours");
+}
+
+console.log("sketch: settings tests passed");

@@ -1,7 +1,7 @@
 import type { GameRules } from "../rules-types";
 
 export const rules: GameRules = {
-  goal: "Be the first to win 3 rounds by being the last player left standing in the snowball fight.",
+  goal: "Be the first to win 3 rounds (the host can change this) by being the last player left standing in the snowball fight.",
   flow: [
     "Everyone spawns around the edge of a snowy field. After a 3-second countdown, the fight is on.",
     "You hold up to 3 snowballs and get a new one every 0.8 seconds. Walk over a ❄ pile to scoop up 5 at once (the pile grows back after 8 seconds).",
@@ -20,9 +20,9 @@ export const rules: GameRules = {
     ],
   },
   scoring: [
-    "You have 3 hearts. Each hit costs 1 (a Big ball costs 2). Lose them all and you're out for the round.",
+    "You have 3 hearts (the host can pick 1 or 5 instead). Each hit costs 1 (a Big ball costs 2). Lose them all and you're out for the round.",
     "The last player standing wins the round. A draw gives nobody the round.",
-    "First to 3 round wins takes the game. If nobody gets there in 7 rounds, the most round wins takes it (ties share the win).",
+    "First to 3 round wins takes the game (or 2 or 5, if the host changes it). If nobody gets there in 7 rounds (5 when playing to 2, 11 when playing to 5), the most round wins takes it (ties share the win).",
   ],
   tips: [
     "Don't empty your hand: with no snowballs left you're a sitting duck while you wait for a reload.",

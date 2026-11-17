@@ -1075,4 +1075,55 @@ for (const [name, link, seed, lim] of [
   assert(mid.goal > 150 && mid.goal < 200, `some jitter: in between (${mid.goal})`);
 }
 
+// ---------- host setting: first to 2 ----------
+{
+  const t = makeTestCtx(4, 5, { wins: 2 });
+  const s = sumo.setup(t.ctx);
+  assert(s.winsNeeded === 2 && s.maxRounds === 5, "first to 2, at most 5 rounds");
+  const v0 = sumo.view(s, "p0", t.ctx) as SumoView;
+  assert(v0.winsNeeded === 2 && v0.maxRounds === 5, "the view carries the match length");
+  let guard = 0;
+  while (s.phase !== "final" && guard++ < 20_000) {
+    if (s.phase === "fight" || s.phase === "countdown") steer(s, t, 2, CENTER, CENTER);
+    step(s, t);
+  }
+  assert(t.result?.winners.join() === "p2" && t.result.scores?.p2 === 2 && s.round === 2, "two round wins end it");
+  const d = makeTestCtx(2, 8, { wins: 2 });
+  const ds = sumo.setup(d.ctx);
+  guard = 0;
+  while (ds.phase !== "final" && guard++ < 40_000) step(ds, d);
+  assert(ds.history.length === 5, `draws stop after 5 rounds (${ds.history.length})`);
+  const def = sumo.setup(makeTestCtx(2, 1, { wins: 99 }).ctx);
+  assert(def.winsNeeded === WINS_NEEDED && def.maxRounds === MAX_ROUNDS, "bad setting falls back to the default");
+}
+
+// ---------- practice bots play a match to the end ----------
+for (const [n, bots] of [
+  [4, 4],
+  [3, 2],
+] as const) {
+  const t = makeTestCtx(n, 11 + n, {}, bots);
+  const s = sumo.setup(t.ctx);
+  let dashes = 0;
+  let guard = 0;
+  while (!t.result && guard++ < 60_000) {
+    t.advance(TICK_MS);
+    sumo.tick!(s, t.ctx);
+    for (const id of t.ids) {
+      if (!t.ctx.player(id)?.bot) continue;
+      const a = sumo.bot!(s, id, t.ctx);
+      if (a) {
+        if (a.type === "dash") dashes += 1;
+        sumo.action(s, id, a, t.ctx);
+      }
+    }
+    assert(finite(s), "bots never break the physics");
+  }
+  assert(t.result, `bots finish a match (${n} players, ${bots} bots)`);
+  assert(guard * TICK_MS < 20 * 60_000, "in a sane time");
+  assert(dashes > 0, "bots dash");
+  // Bots knock each other off rather than all waiting for the rink to melt away.
+  assert(s.kos.reduce((a, b) => a + b, 0) > 0, `bots score knockouts (${s.kos})`);
+}
+
 console.log("✓ sumo tests passed");

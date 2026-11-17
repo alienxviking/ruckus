@@ -594,4 +594,56 @@ function assertNoLeaks(t: Harness, s: ReflexState, ids: string[]) {
   assert(s.taps[t.ids[0]]?.rt === 150 + TIMING.rtSlackMs, "an impossible client time is clamped to the server's");
 }
 
+// ---------- host settings ----------
+{
+  const t = makeTestCtx(2, 5, { target: 3, fakes: "off" });
+  const s = game.setup(t.ctx) as ReflexState;
+  assert(s.target === 3 && s.fakeChance === 0, "settings read into state");
+  assert((game.view(s, t.ids[0], t.ctx) as ReflexView).target === 3, "view shows the configured target");
+  let rounds = 0;
+  for (let guard = 0; guard < 20 && !t.result; guard++) {
+    until(t, s, (x) => phaseOf(x) === "go" || phaseOf(x) === "over");
+    if (phaseOf(s) === "over") break;
+    assert(s.last === null || s.last.fakeText === null, "no fake-outs when off");
+    tap(t, s, t.ids[0], 200);
+    tap(t, s, t.ids[1], 300);
+    rounds++;
+    if (!t.result) until(t, s, (x) => phaseOf(x) !== "result");
+  }
+  assert(t.result && rounds === 3, `first to 3 ends after 3 rounds (got ${rounds})`);
+  const dflt = game.setup(makeTestCtx(2, 5).ctx) as ReflexState;
+  assert(dflt.target === TARGET && dflt.fakeChance === TIMING.fakeChance, "defaults unchanged");
+}
+
+// ---------- practice bots ----------
+for (const [n, bots] of [
+  [2, 1],
+  [4, 4],
+] as const) {
+  const t = makeTestCtx(n, 21 + n, {}, bots);
+  const s = game.setup(t.ctx) as ReflexState;
+  let ms = 0;
+  let botTaps = 0;
+  while (!t.result && ms < 10 * 60_000) {
+    t.advance(50);
+    ms += 50;
+    game.tick!(s, t.ctx);
+    for (const id of t.ids) {
+      if (!t.ctx.player(id)?.bot) continue;
+      const a = game.bot!(s, id, t.ctx);
+      if (a && game.action(s, id, a, t.ctx) !== false) botTaps++;
+    }
+    // The human (if any) is slow but always draws.
+    const human = t.ids.find((id) => !t.ctx.player(id)?.bot);
+    if (human && phaseOf(s) === "go" && !s.taps[human] && ctx0(s) + 450 <= t.ctx.now()) tap(t, s, human, 450);
+  }
+  assert(t.result, `bots finish a ${n}-player game`);
+  assert(botTaps >= TARGET, "bots tapped");
+  assert(t.result.winners.length > 0, "someone wins");
+}
+
+function ctx0(s: ReflexState) {
+  return s.signalAt ?? Infinity;
+}
+
 console.log("reflex: all tests passed");

@@ -1,4 +1,6 @@
 import { pick, topScorers, type GameCtx, type GameDef } from "../../shared/game";
+import { readSettings } from "../../shared/settings";
+import { config } from "./config";
 import {
   ABANDON_MS,
   AWAY_MS,
@@ -38,6 +40,8 @@ export interface DotsState {
   moveStartedAt: number;
   endsAt: number | null;
   turnMs: number;
+  /** Full thinking time per move (host setting). */
+  moveMs: number;
   /** Moves in a row each seat let time out while connected (IDLE_STRIKES+ = idle). */
   strikes: number[];
   lastLine: LastLine | null;
@@ -77,7 +81,7 @@ function beginMove(s: DotsState, ctx: GameCtx, seat: number, chained: boolean) {
   const now = ctx.now();
   s.turn = seat;
   s.moveStartedAt = now;
-  s.turnMs = isAway(s, ctx, seat) ? (chained ? CHAIN_MS : AWAY_MS) : TURN_MS;
+  s.turnMs = isAway(s, ctx, seat) ? (chained ? CHAIN_MS : AWAY_MS) : s.moveMs;
   s.endsAt = now + s.turnMs;
 }
 
@@ -237,6 +241,42 @@ function autoMove(s: DotsState, ctx: GameCtx) {
   else finishBoard(s, ctx); // unreachable: an unclaimed box always has an open side
 }
 
+/** Board for the host's size choice; "normal" is the classic size for the player count. */
+function boardFor(players: number, size: string): { rows: number; cols: number } {
+  const { rows, cols } = boardSize(players);
+  if (size === "small") return { rows: rows - 1, cols: cols - 1 };
+  if (size === "large") return { rows: rows + 2, cols: cols + 2 };
+  return { rows, cols };
+}
+
+// ---------- practice bot ----------
+
+/** When each bot (by state) may move next, so it "thinks" like a person. */
+const botReadyAt = new WeakMap<DotsState, Map<string, { n: number; at: number }>>();
+
+/**
+ * Medium bot: takes boxes that are ready and avoids third sides like the auto-move, but
+ * sometimes misses a free box or plays a careless line.
+ */
+function botMove(s: DotsState, botId: string, ctx: GameCtx): LineRef | null {
+  if (s.over || s.seats[s.turn] !== botId) return null;
+  let timers = botReadyAt.get(s);
+  if (!timers) botReadyAt.set(s, (timers = new Map()));
+  const now = ctx.now();
+  const t = timers.get(botId);
+  if (!t || t.n !== s.moves) {
+    const chained = s.lastLine?.seat === s.turn && s.lastLine.claimed.length > 0;
+    const think = chained ? 450 + ctx.random() * 600 : 800 + ctx.random() * 1700;
+    timers.set(botId, { n: s.moves, at: now + think });
+    return null;
+  }
+  if (now < t.at) return null;
+  const open = allLines(s.rows, s.cols).filter((l) => ownerOf(s.h, s.v, l, s.rows, s.cols) === -1);
+  if (open.length === 0) return null;
+  if (ctx.random() < 0.12) return choose(open, ctx.random);
+  return chooseAutoLine(s, ctx.random);
+}
+
 // ---------- the game ----------
 
 export const dots: GameDef<DotsState, unknown> = {
@@ -244,7 +284,9 @@ export const dots: GameDef<DotsState, unknown> = {
 
   setup(ctx) {
     const seats = ctx.players.map((p) => p.id);
-    const { rows, cols } = boardSize(seats.length);
+    const set = readSettings(config.settings, ctx.settings);
+    const moveMs = Number(set.turnSec) * 1000 || TURN_MS;
+    const { rows, cols } = boardFor(seats.length, String(set.board));
     const s: DotsState = {
       rows,
       cols,
@@ -256,7 +298,8 @@ export const dots: GameDef<DotsState, unknown> = {
       turn: 0,
       moveStartedAt: ctx.now(),
       endsAt: null,
-      turnMs: TURN_MS,
+      turnMs: moveMs,
+      moveMs,
       strikes: seats.map(() => 0),
       lastLine: null,
       moves: 0,
@@ -286,8 +329,8 @@ export const dots: GameDef<DotsState, unknown> = {
       if (s.turn === seat && s.endsAt !== null) {
         const now = ctx.now();
         s.moveStartedAt = now;
-        s.turnMs = TURN_MS;
-        s.endsAt = now + TURN_MS;
+        s.turnMs = s.moveMs;
+        s.endsAt = now + s.moveMs;
       }
       return true;
     }
@@ -343,12 +386,17 @@ export const dots: GameDef<DotsState, unknown> = {
     updatePresence(s, ctx);
     // Give back the rest of the normal clock (never more than a fresh move would get).
     if (s.turn === seat && s.endsAt !== null) {
-      const full = s.moveStartedAt + TURN_MS;
+      const full = s.moveStartedAt + s.moveMs;
       if (full > s.endsAt) {
         s.endsAt = full;
-        s.turnMs = TURN_MS;
+        s.turnMs = s.moveMs;
       }
     }
+  },
+
+  bot(s, botId, ctx) {
+    const l = botMove(s, botId, ctx);
+    return l ? { type: "line", o: l.o, r: l.r, c: l.c } : null;
   },
 
   view(s, viewerId): DotsView {

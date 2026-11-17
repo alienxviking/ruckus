@@ -1,4 +1,7 @@
 import { shuffle, type GameCtx, type GameDef } from "../../shared/game";
+import { readSettings } from "../../shared/settings";
+import { puttBot } from "./bot";
+import { config } from "./config";
 import { HOLE_BY_ID, HOLES } from "./holes";
 import { nearestFree, simulate, type RollEvent, type Shot } from "./physics";
 import {
@@ -98,6 +101,9 @@ export interface PuttState {
   /** Since when fewer than two golfers have been connected. */
   awaySince: number | null;
   over: boolean;
+  /** Aim time for the first shot on a hole, and for every shot after (host setting). */
+  firstAimMs: number;
+  aimMs: number;
 }
 
 export interface BallView {
@@ -155,13 +161,13 @@ const holeOf = (s: PuttState): Hole => HOLE_BY_ID[s.course[s.hole]] ?? HOLES[0];
 
 // ---------- picking the course ----------
 
-/** Six holes, ramping up through the tiers, with at least one windmill, portal and water hole. */
-export function pickCourse(random: () => number): string[] {
+/** `count` holes (six by default), ramping up through the tiers, with at least one windmill, portal and water hole when they fit. */
+export function pickCourse(random: () => number, count = HOLES_PER_GAME): string[] {
   const has = (ids: string[], f: (h: Hole) => boolean) => ids.some((id) => f(HOLE_BY_ID[id]));
   let pick: string[] = [];
   for (let tries = 0; tries < 60; tries++) {
     pick = shuffle(HOLES, random)
-      .slice(0, HOLES_PER_GAME)
+      .slice(0, Math.max(1, Math.min(HOLES.length, count)))
       .map((h) => h.id);
     if (
       has(pick, (h) => !!h.mills?.length) &&
@@ -196,8 +202,8 @@ function startHole(s: PuttState, ctx: GameCtx) {
   s.t0 = now;
   s.roll = null;
   s.phase = "aim";
-  s.endsAt = now + FIRST_AIM_MS;
-  s.total = FIRST_AIM_MS;
+  s.endsAt = now + s.firstAimMs;
+  s.total = s.firstAimMs;
 }
 
 /** Golfers who still have a ball to hit on this hole and are here to hit it. */
@@ -270,8 +276,8 @@ function finishRoll(s: PuttState, ctx: GameCtx) {
   if (shooters(s, ctx).length === 0) return endHole(s, ctx);
   s.shot += 1;
   s.phase = "aim";
-  s.endsAt = ctx.now() + AIM_MS;
-  s.total = AIM_MS;
+  s.endsAt = ctx.now() + s.aimMs;
+  s.total = s.aimMs;
 }
 
 function endHole(s: PuttState, ctx: GameCtx) {
@@ -405,9 +411,11 @@ export const putt: GameDef<PuttState, PuttAction> = {
   id: "putt",
 
   setup(ctx) {
+    const set = readSettings(config.settings, ctx.settings);
+    const aimMs = Number(set.aim) * 1000 || AIM_MS;
     const s: PuttState = {
       phase: "aim",
-      course: pickCourse(ctx.random),
+      course: pickCourse(ctx.random, Number(set.holes) || HOLES_PER_GAME),
       hole: 0,
       shot: 1,
       t0: ctx.now(),
@@ -430,6 +438,8 @@ export const putt: GameDef<PuttState, PuttAction> = {
       final: null,
       awaySince: null,
       over: false,
+      firstAimMs: aimMs + (FIRST_AIM_MS - AIM_MS),
+      aimMs,
     };
     startHole(s, ctx);
     return s;
@@ -499,6 +509,11 @@ export const putt: GameDef<PuttState, PuttAction> = {
     return changed;
   },
   tickMs: 200,
+
+  bot(s, botId, ctx) {
+    if (s.over) return null;
+    return puttBot(s, putt.view(s, botId, ctx) as PuttView, botId, ctx);
+  },
 
   playerLeft(s, _id, ctx) {
     updateAway(s, ctx);

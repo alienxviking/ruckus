@@ -1,4 +1,6 @@
 import { shuffle, topScorers, type GameCtx, type GameDef } from "../../shared/game";
+import { readSettings } from "../../shared/settings";
+import { config } from "./config";
 import {
   ABANDON_MS,
   CENTER,
@@ -17,7 +19,6 @@ import {
   FX_PICKUP,
   HEAVY_MASS,
   HEAVY_SCALE,
-  MAX_ROUNDS,
   POWER_EVERY_MS,
   POWER_FIRST_MS,
   POWER_INFO,
@@ -29,7 +30,6 @@ import {
   SUBSTEPS,
   TICK_MS,
   TURBO_CD_MS,
-  WINS_NEEDED,
   rinkRadius,
   encodeStick,
   HIT_FX_MIN,
@@ -149,6 +149,10 @@ export interface RoundRec {
 export interface SumoState {
   /** Participants in join order; index = slot. */
   ids: string[];
+  /** Round wins that make a champion (host setting). */
+  winsNeeded: number;
+  /** The match ends after this many rounds even if nobody got there. */
+  maxRounds: number;
   phase: Phase;
   round: number;
   /** Countdown / round-over deadline (0 otherwise). */
@@ -187,6 +191,8 @@ export type SumoAction = { type: "input"; x: number; y: number; s?: number; at?:
 export interface SumoView {
   phase: Phase;
   round: number;
+  winsNeeded: number;
+  maxRounds: number;
   endsAt: number;
   fightAt: number;
   ids: string[];
@@ -574,8 +580,8 @@ function finishRound(s: SumoState, ctx: GameCtx, winner: Disc | null) {
   s.history.push({ winner: s.lastWinner, order: s.falls.map((f) => f.s) });
   s.power = null;
   if (winner) s.wins[winner.slot] += 1;
-  if (winner && s.wins[winner.slot] >= WINS_NEEDED) return finishMatch(s, ctx, [winner.id], "won");
-  if (s.round >= MAX_ROUNDS) return finishMatch(s, ctx, topScorers(winsRecord(s)), "won");
+  if (winner && s.wins[winner.slot] >= s.winsNeeded) return finishMatch(s, ctx, [winner.id], "won");
+  if (s.round >= s.maxRounds) return finishMatch(s, ctx, topScorers(winsRecord(s)), "won");
   s.phase = "roundOver";
   s.endsAt = now + ROUND_OVER_MS;
 }
@@ -643,6 +649,8 @@ function buildView(s: SumoState): SumoView {
   return {
     phase: s.phase,
     round: s.round,
+    winsNeeded: s.winsNeeded,
+    maxRounds: s.maxRounds,
     endsAt: s.endsAt,
     fightAt: s.fightAt,
     ids: s.ids.slice(),
@@ -672,6 +680,90 @@ function readInput(a: Record<string, unknown>): [number, number] | null {
   return [(x * k) / 100, (y * k) / 100];
 }
 
+// ---------- practice bot ----------
+
+interface BotMem {
+  /** Next time this bot reconsiders its stick. */
+  next: number;
+  /** Last stick it sent (a dash goes along the stick). */
+  sx: number;
+  sy: number;
+  /** It decided to dash on the following decision (after aiming the stick). */
+  dashNext: boolean;
+}
+
+const botMem = new WeakMap<SumoState, Map<string, BotMem>>();
+
+/** Medium-skill bot: keeps off the edge, chases the nearest rival or the power-up, dashes when lined up. */
+function botMove(s: SumoState, botId: string, ctx: GameCtx): SumoAction | null {
+  const view = sumo.view(s, botId, ctx) as SumoView;
+  if (view.phase !== "fight") return null;
+  const slot = view.ids.indexOf(botId);
+  const me = view.snap.p.find((p) => p[0] === slot);
+  if (!me) return null;
+  let mems = botMem.get(s);
+  if (!mems) botMem.set(s, (mems = new Map()));
+  let mem = mems.get(botId);
+  if (!mem) mems.set(botId, (mem = { next: 0, sx: 0, sy: 0, dashNext: false }));
+  const now = ctx.now();
+  if (now < mem.next) return null;
+  mem.next = now + 140 + ctx.random() * 160;
+
+  const [, x, y, vx, vy, , cd = 0] = me;
+  const r = view.snap.r;
+  const stick = (dx: number, dy: number): SumoAction => {
+    const m = Math.hypot(dx, dy) || 1;
+    const jitter = (ctx.random() - 0.5) * 0.3;
+    const ax = dx / m - (dy / m) * jitter;
+    const ay = dy / m + (dx / m) * jitter;
+    const k = 100 / (Math.hypot(ax, ay) || 1);
+    mem.sx = Math.round(ax * k);
+    mem.sy = Math.round(ay * k);
+    return { type: "input", x: mem.sx, y: mem.sy };
+  };
+
+  // Where momentum takes it shortly: too close to the edge means get back to the middle first.
+  const px = x + vx * 0.4;
+  const py = y + vy * 0.4;
+  if (Math.hypot(px - CENTER, py - CENTER) > r - DISC_R * 1.5 - 25) {
+    mem.dashNext = false;
+    return stick(CENTER - px, CENTER - py);
+  }
+
+  if (mem.dashNext) {
+    mem.dashNext = false;
+    // Only if the dash (along the stick) still won't carry it off the ice.
+    const len = Math.hypot(mem.sx, mem.sy) || 1;
+    const ex = x + (mem.sx / len) * 160;
+    const ey = y + (mem.sy / len) * 160;
+    if (cd === 0 && Math.hypot(ex - CENTER, ey - CENTER) < r - 30) return { type: "dash" };
+  }
+
+  // Nearest rival, led a little by its velocity.
+  let best: { x: number; y: number; d: number } | null = null;
+  for (const p of view.snap.p) {
+    if (p[0] === slot) continue;
+    const tx = p[1] + p[3] * 0.25;
+    const ty = p[2] + p[4] * 0.25;
+    const d = Math.hypot(tx - x, ty - y);
+    if (!best || d < best.d) best = { x: tx, y: ty, d };
+  }
+  const u = view.snap.u;
+  if (u !== 0) {
+    const d = Math.hypot(u[1] - x, u[2] - y);
+    if (!best || d < best.d * 0.8) return stick(u[1] - x, u[2] - y);
+  }
+  if (!best) return stick(CENTER - x, CENTER - y);
+  // Come at the rival from the middle's side, so the shove sends it outward.
+  const ox = best.x - CENTER;
+  const oy = best.y - CENTER;
+  const om = Math.hypot(ox, oy) || 1;
+  const aimX = best.x - (ox / om) * (best.d > 160 ? 60 : 0);
+  const aimY = best.y - (oy / om) * (best.d > 160 ? 60 : 0);
+  if (best.d < 190 && cd === 0 && ctx.random() < 0.45) mem.dashNext = true;
+  return stick(aimX - x, aimY - y);
+}
+
 // ---------- game definition ----------
 
 export const sumo: GameDef<SumoState, SumoAction> = {
@@ -679,8 +771,12 @@ export const sumo: GameDef<SumoState, SumoAction> = {
 
   setup(ctx) {
     const ids = ctx.players.map((p) => p.id);
+    const winsNeeded = Number(readSettings(config.settings, ctx.settings).wins);
     const s: SumoState = {
       ids,
+      winsNeeded,
+      // First to 3 means at most 7 rounds (the default), first to 5 at most 11.
+      maxRounds: winsNeeded * 2 + 1,
       phase: "countdown",
       round: 1,
       endsAt: 0,
@@ -793,6 +889,10 @@ export const sumo: GameDef<SumoState, SumoAction> = {
     const view = buildView(s);
     viewCache.set(s, { rev: s.rev, snap: s.snap, view });
     return view;
+  },
+
+  bot(s, botId, ctx) {
+    return botMove(s, botId, ctx);
   },
 
   playerLeft(s, playerId, ctx) {

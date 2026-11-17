@@ -524,4 +524,47 @@ for (const phase of ["intro", "paint", "spots", "reveal"]) {
   check(ends.length === 1 && t.result!.winners.length === 0, "empty room ends without winners");
 }
 
+// ---------- host settings ----------
+
+{
+  const t = makeTestCtx(2, 3, { rounds: 2, paint: 45 });
+  const s: PixelsState = game.setup(t.ctx);
+  check(view(s, t.ids[0], t).rounds === 2, "view shows the host's round count");
+  tick(t, s, INTRO_MS);
+  check(s.phase === "paint" && s.endsAt === t.ctx.now() + 45_000, "45s painting");
+  check(view(s, t.ids[0], t).phaseMs === 45_000, "timer bar uses the host's paint time");
+  let guard = 0;
+  while (!t.result && guard++ < 50) tick(t, s, 45_000);
+  check(t.result && s.round === 2 && s.history.length === 2, "two rounds when the host asks");
+  const d = game.setup(makeTestCtx(2).ctx);
+  check(d.rounds === ROUNDS && d.paintMs === PAINT_MS, "defaults unchanged");
+}
+
+// ---------- practice bots ----------
+
+for (const [humans, bots] of [
+  [1, 2],
+  [0, 4],
+]) {
+  const n = humans + bots;
+  const t = makeTestCtx(n, 11, {}, bots);
+  const s: PixelsState = game.setup(t.ctx);
+  let ms = 0;
+  while (!t.result && ms < 20 * 60_000) {
+    t.advance(100);
+    ms += 100;
+    for (const id of t.ids) {
+      if (!id.startsWith("bot-")) continue;
+      const a = game.bot!(s, id, t.ctx);
+      if (a) game.action(s, id, a, t.ctx);
+    }
+    game.tick!(s, t.ctx);
+  }
+  check(t.result, `bots finish the game (${humans} human + ${bots} bots)`);
+  const botTotals = s.ids.flatMap((id, i) => (id.startsWith("bot-") ? [s.totals[i]] : []));
+  check(botTotals.every((x) => x > 20), `bots score points (${botTotals.join(", ")})`);
+  check(evs(t, "no").length < 5, "bots pace themselves under the cooldown");
+  console.log(`  bots: ${humans} human + ${bots} bots in ${Math.round(ms / 1000)}s, totals ${botTotals.join("/")}`);
+}
+
 console.log("✓ pixels: all tests passed");

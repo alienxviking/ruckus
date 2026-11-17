@@ -3,11 +3,11 @@ import type { GameRules } from "../rules-types";
 export const rules: GameRules = {
   goal: "Score the most points by digging up safe cells and treasure on one shared minefield, without blowing yourself up.",
   flow: [
-    "Everyone shares the same field: 24×16 cells for up to 3 players, 30×20 for 4 or more. A patch in the middle starts already open.",
+    "Everyone shares the same field: 24×16 cells for up to 3 players, 30×20 for 4 or more (the host can pick a smaller or bigger field, and fewer or more mines). A patch in the middle starts already open.",
     "You get 3 seconds to study the opening, then the digging starts for everyone at once.",
     "Open hidden cells. A number tells you how many mines touch that cell, so use it to work out where the mines are.",
     "Whoever opens a cell first gets it. Hidden under some safe cells are 💎 gems, 🔍 scans and ❄️ freezes (no freezes when you play alone).",
-    "The game ends when every safe cell is open or after 3 minutes, whichever comes first.",
+    "The game ends when every safe cell is open or after 3 minutes (the host can change this), whichever comes first.",
   ],
   controls: {
     desktop: [

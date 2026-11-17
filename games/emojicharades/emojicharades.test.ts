@@ -14,6 +14,7 @@ import game, {
   judge,
   keyOf,
   maskOf,
+  normalizePhrase,
   type CharadesAction,
   type CharadesState,
   type CharadesView,
@@ -427,6 +428,60 @@ function choose(g: G, phrase?: string) {
   g.s.scores[g.s.players[1]] = 500;
   while (g.s.phase !== "final") g.advance(CLUE_MS);
   ok(g.t.result!.winners.length === 2 && g.t.result!.headline.includes("tie"), "tie shares the win");
+}
+
+// ---------- host settings & custom phrases ----------
+{
+  const t = makeTestCtx(3, 4, { laps: 3, clue: 45 });
+  const s: CharadesState = game.setup(t.ctx);
+  ok(s.laps === 3 && s.order.length === 9, "3 turns each");
+  game.action(s, s.giver, { type: "choose", index: 0 }, t.ctx);
+  ok(s.endsAt - t.ctx.now() === 45_000 && (game.view(s, s.players[0], t.ctx) as CharadesView).phaseMs === 45_000, "45s clue");
+  t.advance(45_000);
+  game.tick!(s, t.ctx);
+  ok(s.phase === "reveal" && s.reason === "time", "short clue timer runs out sooner");
+  const t1 = makeTestCtx(3, 4, { laps: 1 });
+  ok((game.setup(t1.ctx) as CharadesState).order.length === 3, "1 turn each with 3 players");
+  const td = makeTestCtx(3, 4, { laps: 9, clue: 5 });
+  const sd: CharadesState = game.setup(td.ctx);
+  ok(sd.laps === 2 && sd.clueMs === CLUE_MS, "bad settings fall back");
+}
+{
+  ok(normalizePhrase("  Jurassic   Park! ") === "jurassic park", "normalizes case and punctuation");
+  ok(normalizePhrase("Café Olé’s") === "cafe ole's", "strips accents, keeps apostrophes");
+  ok(normalizePhrase("ocean's 11") === null && normalizePhrase("hi") === null, "digits / too short rejected");
+  const mine = ["Jurassic Park", "Monday Morning", "the office party", "Grandma's Cat", "Pizza Night", "Lost Keys"];
+  const t = makeTestCtx(3, 5, { words: mine.join("\n") });
+  let ends = 0;
+  t.ctx.end = () => void (ends += 1);
+  const s: CharadesState = game.setup(t.ctx);
+  ok(s.custom.length === 6, "custom phrases kept");
+  const offered: string[] = [];
+  while (s.phase !== "final") {
+    if (s.phase === "choose") {
+      offered.push(...s.options.map((o) => o.text));
+      ok(new Set(s.options.map((o) => o.text)).size === 3, "3 distinct options");
+    }
+    t.advance(CLUE_MS);
+    game.tick!(s, t.ctx);
+  }
+  // 6 turns x 3 options = 18: all 6 of ours first, the rest topped up from the built-in list.
+  ok(offered.slice(0, 6).every((p) => s.custom.includes(p)), "host phrases offered first");
+  ok(s.custom.every((p) => offered.includes(p)), "every host phrase offered");
+  ok(offered.length === 18 && offered.slice(6).every((p) => !s.custom.includes(p)), "topped up from ours");
+  ok(ends === 1, "custom game ends");
+  // Too few: built-in list.
+  const tf = makeTestCtx(3, 5, { words: "one thing\ntwo things" });
+  ok((game.setup(tf.ctx) as CharadesState).custom.length === 0, "too few custom phrases -> built-in");
+  // A custom phrase can be guessed.
+  const tg = makeTestCtx(3, 6, { words: mine });
+  const sg: CharadesState = game.setup(tg.ctx);
+  ok(sg.options.every((o) => o.cat === "custom"), "custom cat");
+  game.action(sg, sg.giver, { type: "choose", index: 0 }, tg.ctx);
+  const guesser = sg.players.find((id) => id !== sg.giver)!;
+  tg.advance(1000);
+  game.action(sg, guesser, { type: "guess", text: sg.phrase!.text.toUpperCase() }, tg.ctx);
+  ok(sg.guessed.includes(guesser), "custom phrase guessed");
 }
 
 console.log("✓ emojicharades tests passed");

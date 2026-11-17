@@ -41,7 +41,7 @@ export const POWER_KINDS = ["heavy", "turbo"] as const;
 export type PowerKind = (typeof POWER_KINDS)[number];
 export const POWER_INFO: Record<PowerKind, { icon: string; label: string; blurb: string; ms: number; color: string }> =
   {
-    heavy: { icon: "🍔", label: "Heavy", blurb: "double mass, bigger disc", ms: 6_000, color: "#fb923c" },
+    heavy: { icon: "🍔", label: "Heavy", blurb: "2.2× mass, bigger disc", ms: 6_000, color: "#fb923c" },
     turbo: { icon: "⚡", label: "Turbo", blurb: "dash recharges in 0.6s", ms: 5_000, color: "#facc15" },
   };
 export const HEAVY_MASS = 2.2;

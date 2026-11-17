@@ -1,4 +1,7 @@
 import { shuffle, type GameCtx, type GameDef } from "../../shared/game";
+import { readSettings } from "../../shared/settings";
+import { auctionBot } from "./bot";
+import { config } from "./config";
 import {
   ABANDON_MS,
   GIFT_DRUM_MS,
@@ -131,22 +134,25 @@ function rollValue(kind: Kind, random: () => number): number {
   return Math.floor(random() * 6); // 0..5
 }
 
-/** 8 crates: one 🎁 (never the first lot), 1–2 cursed, 2 junk, the rest treasure. */
-export function dealCrates(random: () => number): Crate[] {
-  const cursed = random() < 0.5 ? 1 : 2;
+/**
+ * `lots` crates (8 by default): one 🎁 (never the first lot), 1–2 cursed (2–3 with 10),
+ * 2 junk (1 with 6), the rest treasure.
+ */
+export function dealCrates(random: () => number, lots = LOTS): Crate[] {
+  const cursed = (random() < 0.5 ? 1 : 2) + (lots >= 10 ? 1 : 0);
+  const junk = lots <= 6 ? 1 : 2;
   const kinds = shuffle<Kind>(
     [
       ...Array<Kind>(cursed).fill("cursed"),
-      "junk",
-      "junk",
-      ...Array<Kind>(LOTS - 1 - cursed - 2).fill("treasure"),
+      ...Array<Kind>(junk).fill("junk"),
+      ...Array<Kind>(lots - 1 - cursed - junk).fill("treasure"),
     ],
     random,
   );
-  const giftLot = 1 + Math.floor(random() * (LOTS - 1));
+  const giftLot = 1 + Math.floor(random() * (lots - 1));
   const stamps = shuffle(range(STAMPS.length), random);
   let k = 0;
-  return range(LOTS).map((i) => {
+  return range(lots).map((i) => {
     const gift = i === giftLot;
     const kind = gift ? null : kinds[k++];
     return {
@@ -301,7 +307,7 @@ function notice(s: AuState, ctx: GameCtx, slot: number, lot: number, a: number, 
 
 /** Returns true when shared state changed (a due sale happened); accepted bids go out as events. */
 function placeBid(s: AuState, ctx: GameCtx, slot: number, lot: unknown, amount: unknown): boolean {
-  if (!isInt(lot) || !isInt(amount) || lot < 0 || lot >= LOTS) return false;
+  if (!isInt(lot) || !isInt(amount) || lot < 0 || lot >= s.crates.length) return false;
   if (s.phase !== "lot" || lot !== s.lot) {
     if (lot === s.lot && s.phase === "sold") notice(s, ctx, slot, lot, amount, "Too late, the gavel already fell!");
     return false;
@@ -349,7 +355,8 @@ export const auction: GameDef<AuState, AuAction> = {
 
   setup(ctx) {
     const ids = ctx.players.map((p) => p.id);
-    const crates = dealCrates(ctx.random);
+    const set = readSettings(config.settings, ctx.settings);
+    const crates = dealCrates(ctx.random, Number(set.crates) || LOTS);
     assignPeeks(crates, ids.length, ctx.random);
     const now = ctx.now();
     return {
@@ -414,7 +421,7 @@ export const auction: GameDef<AuState, AuAction> = {
         break;
       case "sold":
         if (now >= s.endsAt) {
-          if (s.lot + 1 < LOTS) openLot(s, ctx, s.lot + 1);
+          if (s.lot + 1 < s.crates.length) openLot(s, ctx, s.lot + 1);
           else startGift(s, ctx);
           changed = true;
         }
@@ -433,6 +440,11 @@ export const auction: GameDef<AuState, AuAction> = {
     return changed;
   },
   tickMs: 250,
+
+  bot(s, botId, ctx) {
+    if (s.over) return null;
+    return auctionBot(auction.view(s, botId, ctx) as AuView, s, botId, ctx);
+  },
 
   playerLeft(s, _id, ctx) {
     if (!s.over) updateAway(s, ctx);

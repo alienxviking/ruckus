@@ -37,8 +37,15 @@ export function stepKind(step: number): StepKind {
   return step === 0 ? "write" : step % 2 === 1 ? "draw" : "describe";
 }
 
-export function stepMs(kind: StepKind): number {
-  return kind === "write" ? WRITE_MS : kind === "draw" ? DRAW_MS : DESCRIBE_MS;
+/** Step timers per host "pace" setting: [write, draw, describe]. Normal is the classic pacing. */
+export const PACES: Record<string, [number, number, number]> = {
+  quick: [30_000, 50_000, 25_000],
+  normal: [WRITE_MS, DRAW_MS, DESCRIBE_MS],
+  relaxed: [55_000, 100_000, 50_000],
+};
+
+export function stepMs(kind: StepKind, times: readonly number[] = PACES.normal): number {
+  return kind === "write" ? times[0] : kind === "draw" ? times[1] : times[2];
 }
 
 export const STEP_ICON: Record<StepKind, string> = { write: "✍️", draw: "🎨", describe: "💬" };

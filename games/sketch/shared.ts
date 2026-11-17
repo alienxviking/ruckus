@@ -33,7 +33,10 @@ export const MAX_STROKE_ID = 16;
 /** Longest guess shown in the feed. */
 export const MAX_GUESS = 40;
 
-export type Level = "easy" | "medium" | "hard";
+/** "custom" marks a word from the host's own list. */
+export type Level = "easy" | "medium" | "hard" | "custom";
+/** The levels our own word list comes in. */
+export type BuiltinLevel = Exclude<Level, "custom">;
 
 export interface WireStroke {
   id: string;

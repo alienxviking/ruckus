@@ -1,13 +1,13 @@
 import type { GameRules } from "../rules-types";
 
 export const rules: GameRules = {
-  goal: "Work together so that everyone types the exact same word in the same round, within 8 rounds.",
+  goal: "Work together so that everyone types the exact same word in the same round, within 8 rounds (the host can change this).",
   flow: [
     "Round 1: everyone secretly types any word they like. You have 40 seconds.",
     "All the words are revealed at once, with matching words grouped together.",
-    "Every round after that, you have 60 seconds to type the one word you think best links the words from the last round.",
+    "Every round after that, you have 60 seconds (the host can change this; round 1 gets two thirds of it) to type the one word you think best links the words from the last round.",
     "Rounds reveal early once everyone has locked in. A word used in any earlier round can't be used again.",
-    "Keep going until all the words match (a Mind Meld) or 8 rounds are used up.",
+    "Keep going until all the words match (a Mind Meld) or the rounds are used up.",
   ],
   controls: {
     desktop: [
@@ -20,10 +20,10 @@ export const rules: GameRules = {
     ],
   },
   scoring: [
-    "There are no points: you all win together if every word in a round matches, or all lose if 8 rounds pass without a match.",
+    "There are no points: you all win together if every word in a round matches, or all lose if the rounds run out without a match.",
     "Capitals, accents, spaces, hyphens, a leading 'the/a/an' and simple plurals are ignored, so 'Ice-cream' matches 'ice creams'.",
     "Anyone who leaves the box empty (while still connected) stops that round from matching.",
-    "Fewer rounds earn a better rating: 1 round is Impossible?!, 2 Telepathic, 3-4 Great minds, 5-6 Getting there, 7-8 Phew!",
+    "Fewer rounds earn a better rating: 1 round is Impossible?!, 2 Telepathic, 3-4 Great minds, 5-6 Getting there, 7 or more Phew!",
   ],
   tips: [
     "Think about the most obvious link, not the cleverest one: you want to land where everyone else will.",

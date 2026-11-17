@@ -24,8 +24,20 @@ export const ITEMS: Record<ItemKind, { emoji: string; label: string; blurb: stri
   f: { emoji: "❄️", label: "Freeze", blurb: `freezes everyone else for ${FREEZE_MS / 1000}s` },
 };
 
-export function boardSize(players: number): { w: number; h: number } {
-  return players >= 4 ? { w: 30, h: 20 } : { w: 24, h: 16 };
+/** Field sizes, smallest first. "normal" is 24×16, or 30×20 for 4+ players; small/large step one down/up. */
+const SIZES = [
+  { w: 18, h: 12 },
+  { w: 24, h: 16 },
+  { w: 30, h: 20 },
+  { w: 36, h: 24 },
+];
+
+export type BoardChoice = "small" | "normal" | "large";
+
+export function boardSize(players: number, choice: BoardChoice = "normal"): { w: number; h: number } {
+  const base = players >= 4 ? 2 : 1;
+  const k = base + (choice === "small" ? -1 : choice === "large" ? 1 : 0);
+  return { ...SIZES[k] };
 }
 
 /** The up-to-8 cells touching `i` on a w×h board (row-major). */

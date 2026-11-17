@@ -1,4 +1,6 @@
 import type { GameCtx, GameDef } from "../../shared/game";
+import { readSettings } from "../../shared/settings";
+import { config } from "./config";
 import { makePuzzle } from "./puzzles";
 import {
   AUTO_MS,
@@ -14,6 +16,8 @@ import {
   READY_FIRST_MS,
   READY_MS,
   checkAnswer,
+  oddCell,
+  sumValue,
   type Puzzle,
   type PuzzleType,
 } from "./shared";
@@ -107,6 +111,9 @@ export interface PotatoState {
   endsAt: number;
   /** SECRET. When the potato goes off. Never sent anywhere before it does. */
   fuseAt: number;
+  /** Hidden fuse range for this game (host setting). */
+  fuseMin: number;
+  fuseMax: number;
   /** Disconnected holder: their throw goes automatically at this time. */
   autoAt: number | null;
   boom: Boom | null;
@@ -211,7 +218,7 @@ function startLive(s: PotatoState, ctx: GameCtx) {
   const now = ctx.now();
   s.phase = "live";
   s.liveAt = now;
-  s.fuseAt = now + FUSE_MIN_MS + Math.floor(ctx.random() * (FUSE_MAX_MS - FUSE_MIN_MS + 1));
+  s.fuseAt = now + s.fuseMin + Math.floor(ctx.random() * (s.fuseMax - s.fuseMin + 1));
   newPuzzle(s, ctx, now);
 }
 
@@ -379,13 +386,66 @@ function heckle(s: PotatoState, from: string, e: unknown, ctx: GameCtx): false {
   return false;
 }
 
+/** Fuse ranges per host setting. "normal" is the classic 12–30 s. */
+const FUSES: Record<string, [number, number]> = {
+  short: [8_000, 18_000],
+  normal: [FUSE_MIN_MS, FUSE_MAX_MS],
+  long: [20_000, 45_000],
+};
+
+// ---------- practice bots ----------
+
+interface BotMind {
+  /** Puzzle number / throw-ready moment the current plan is for. */
+  key: string;
+  /** When the bot acts on it. */
+  at: number;
+}
+const botMinds = new WeakMap<PotatoState, Map<string, BotMind>>();
+
+/** Time until the bot acts on `key`, picked once per key. */
+function botWait(s: PotatoState, id: string, key: string, now: number, lo: number, hi: number, r: () => number): number {
+  let minds = botMinds.get(s);
+  if (!minds) botMinds.set(s, (minds = new Map()));
+  let m = minds.get(id);
+  if (!m || m.key !== key) {
+    m = { key, at: now + lo + Math.floor(r() * (hi - lo)) };
+    minds.set(id, m);
+  }
+  return m.at;
+}
+
+/** A bot's answer to its visible puzzle: usually right, sometimes a near miss. */
+function botAnswer(pz: Puzzle, r: () => number): number | number[] {
+  const wrong = r() < 0.12;
+  switch (pz.t) {
+    case "sum": {
+      const i = pz.opts.indexOf(sumValue(pz));
+      return wrong ? (i + 1) % pz.opts.length : i;
+    }
+    case "ink": {
+      const i = pz.opts.indexOf(pz.ink);
+      return wrong ? (i + 1) % pz.opts.length : i;
+    }
+    case "odd": {
+      const i = oddCell(pz.cells);
+      return wrong ? (i + 1) % pz.cells.length : i;
+    }
+    case "arrows":
+      return wrong ? pz.seq.map((d, k) => (k === pz.seq.length - 1 ? (d + 1) % 4 : d)) : pz.seq.slice();
+  }
+}
+
 // ---------- the game ----------
 
 export const potato: GameDef<PotatoState, unknown> = {
   id: "potato",
 
   setup(ctx) {
-    const maxLives = ctx.players.length >= ONE_LIFE_FROM ? 1 : LIVES;
+    const set = readSettings(config.settings, ctx.settings);
+    const chosen = Number(set.lives);
+    const maxLives = chosen > 0 ? chosen : ctx.players.length >= ONE_LIFE_FROM ? 1 : LIVES;
+    const [fuseMin, fuseMax] = FUSES[String(set.fuse)] ?? FUSES.normal;
     const s: PotatoState = {
       phase: "ready",
       round: 0,
@@ -413,6 +473,8 @@ export const potato: GameDef<PotatoState, unknown> = {
       liveAt: 0,
       endsAt: 0,
       fuseAt: Number.MAX_SAFE_INTEGER,
+      fuseMin,
+      fuseMax,
       autoAt: null,
       boom: null,
       awaySince: null,
@@ -497,6 +559,26 @@ export const potato: GameDef<PotatoState, unknown> = {
   },
   // Fast enough that a BOOM lands on time; ticks only broadcast when something happened.
   tickMs: 100,
+
+  // Practice bot: reads only its own view (its puzzle, who's legal), thinks like a person,
+  // fumbles now and then, and throws at a random legal player.
+  bot(s, botId, ctx) {
+    if (s.over || s.phase !== "live" || s.holder !== botId) return null;
+    const v = potato.view(s, botId, ctx) as PotatoView;
+    const now = ctx.now();
+    if (v.armed) {
+      const at = botWait(s, botId, `t${s.round}.${s.passes}`, now, 250, 1_100, ctx.random);
+      if (now < at) return null;
+      const legal = v.seats.filter((x) => !x.out && x.id !== botId && (x.id !== v.lastFrom || v.seats.filter((y) => !y.out).length <= 2));
+      if (!legal.length) return null;
+      return { type: "throw", to: legal[Math.floor(ctx.random() * legal.length)].id };
+    }
+    const held = v.held;
+    if (!held || now < held.openAt) return null;
+    const at = botWait(s, botId, `p${held.n}`, held.openAt, 900, 2_600, ctx.random);
+    if (now < at) return null;
+    return { type: "solve", n: held.n, a: botAnswer(held.pz, ctx.random) };
+  },
 
   playerLeft(s, _id, ctx) {
     if (s.over) return;

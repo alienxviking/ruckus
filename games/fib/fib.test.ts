@@ -527,4 +527,26 @@ for (const n of [3, 10]) {
   assert(total === fromHistory, `${n} players: scores add up`);
 }
 
+// ---------- host settings ----------
+{
+  const t = makeTestCtx(3, 9, { rounds: 4, write: 30 });
+  const s: FibState = game.setup(t.ctx);
+  assert(s.totalRounds === 4 && s.factOrder.length === 4, "4 facts setting");
+  assert(s.endsAt === t.ctx.now() + 30_000, "30s writing time");
+  assert(view(t, s, t.ids[0]).writeMs === 30_000, "view carries writing time");
+  for (let r = 1; r <= 4; r++) {
+    t.advance(s.endsAt - t.ctx.now());
+    tick(t, s); // write -> pick
+    t.advance(s.endsAt - t.ctx.now());
+    tick(t, s); // pick -> reveal
+    finishReveal(t, s);
+  }
+  assert(phaseOf(s) === "final" && t.result !== null && s.history.length === 4, "game ends after 4 facts");
+}
+{
+  const t = makeTestCtx(3, 9, { rounds: 7, write: "x" });
+  const s: FibState = game.setup(t.ctx);
+  assert(s.totalRounds === ROUNDS && s.writeMs === WRITE_MS, "invalid settings use defaults");
+}
+
 console.log(`fib: all tests passed (${FACTS.length} facts)`);

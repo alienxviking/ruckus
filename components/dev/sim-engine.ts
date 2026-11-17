@@ -50,6 +50,7 @@ export class SimEngine {
       players: this.players.map((p) => ({ ...p })),
       player: (id) => this.players.find((p) => p.id === id) ?? (id === SPECTATOR.id ? SPECTATOR : undefined),
       random: Math.random,
+      settings: {},
       emit: (event, opts) => {
         const data = clone(event);
         for (const [viewer, fns] of this.listeners) {

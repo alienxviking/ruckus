@@ -10,9 +10,10 @@
 // Run a test file with:  npx tsx games/<id>/<id>.test.ts
 
 import type { GameCtx } from "./game";
+import type { Settings } from "./settings";
 import type { GameResult, Player } from "./types";
 
-export function makeTestCtx(playerCount: number, seed = 42) {
+export function makeTestCtx(playerCount: number, seed = 42, settings: Settings = {}, bots = 0) {
   let time = 1_700_000_000_000;
   let s = seed >>> 0;
   const random = () => {
@@ -30,6 +31,8 @@ export function makeTestCtx(playerCount: number, seed = 42) {
     avatar: "fox",
     connected: true,
   }));
+  // The last `bots` players are practice bots ("bot-0", ...).
+  for (let i = 0; i < bots; i++) Object.assign(players[playerCount - bots + i], { id: `bot-${i}`, name: `Bot ${i + 1}`, avatar: "robot", bot: true });
   const events: { event: unknown; to?: string; except?: string }[] = [];
   const harness = {
     ids: players.map((p) => p.id),
@@ -49,6 +52,7 @@ export function makeTestCtx(playerCount: number, seed = 42) {
       if (!harness.result) harness.result = r;
     },
     random,
+    settings,
   };
   return harness;
 }

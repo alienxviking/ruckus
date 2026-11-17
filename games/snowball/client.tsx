@@ -9,12 +9,10 @@ import {
   AMMO_PILE,
   COUNTDOWN_MS,
   FIELDS,
-  MAX_ROUNDS,
   POWER_INFO,
   ROUND_CAP_MS,
   ROUND_OVER_MS,
   SUDDEN_MS,
-  WINS_NEEDED,
   isSnap,
 } from "./shared";
 import { Arena, type ArenaData } from "./arena";
@@ -186,7 +184,7 @@ function Game({ view, me, players, byId, isPlayer, act, serverNow, onEvent, acce
     }
   } else if (phase === "roundOver") {
     head = winner ? `🏆 ${winner === me ? "You take" : `${name(winner)} takes`} round ${round}!` : "🤝 Draw: nobody left standing";
-    sub = `Next round in ${secs}s · first to ${WINS_NEEDED} wins`;
+    sub = `Next round in ${secs}s · first to ${view.winsNeeded} wins`;
   } else {
     head = "🏁 Match over";
     sub = "Final standings below";
@@ -255,7 +253,7 @@ function Game({ view, me, players, byId, isPlayer, act, serverNow, onEvent, acce
             Round {round}
             <span className="font-normal text-muted">
               {" "}
-              of {MAX_ROUNDS} max · first to {WINS_NEEDED}
+              of {view.maxRounds} max · first to {view.winsNeeded}
             </span>
           </span>
           <span className={`shrink-0 tabular-nums ${view.sudden && phase === "fight" ? "sb-pulse font-bold text-red-400" : "text-muted"}`}>
@@ -381,10 +379,10 @@ function Overlay({
   return null;
 }
 
-function Pips({ wins, color }: { wins: number; color: string }) {
+function Pips({ wins, color, need }: { wins: number; color: string; need: number }) {
   return (
     <span className="flex items-center gap-0.5" aria-hidden>
-      {Array.from({ length: Math.max(WINS_NEEDED, wins) }, (_, i) => (
+      {Array.from({ length: Math.max(need, wins) }, (_, i) => (
         <span
           key={i}
           className={`size-2 rounded-full border ${i < wins ? "animate-pop" : ""}`}
@@ -429,7 +427,7 @@ function ScoreRow({
               {p?.name ?? "Someone"}
             </span>
             {id === me && <span className="text-[10px] font-bold tracking-wide text-text/80 uppercase">you</span>}
-            <Pips wins={wins} color={color} />
+            <Pips wins={wins} color={color} need={view.winsNeeded} />
             <span className="font-mono text-xs text-muted tabular-nums" aria-hidden>
               {offline ? "🔌" : on ? "⛄" : "💫"}
               {hits > 0 ? ` 🎯${hits}` : ""}
@@ -520,7 +518,7 @@ function FinalStandings({ view, byId, me, colors }: { view: SnowView; byId: Reco
                   </span>
                 </span>
                 <span className="flex shrink-0 items-center gap-2">
-                  <Pips wins={wins(slot)} color={color} />
+                  <Pips wins={wins(slot)} color={color} need={view.winsNeeded} />
                   <span className="w-5 text-right font-mono text-lg font-bold tabular-nums">{wins(slot)}</span>
                   <span className="sr-only"> round win{wins(slot) === 1 ? "" : "s"}</span>
                 </span>

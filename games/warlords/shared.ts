@@ -1,5 +1,6 @@
 // Constants and types shared by the Warlords server and client (no secrets here).
 
+/** Defaults; the host can change the round count and plan time (see config.ts). */
 export const ROUNDS = 5;
 export const CASTLES = 5;
 export const TROOPS = 100;

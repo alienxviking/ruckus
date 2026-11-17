@@ -1,4 +1,6 @@
 import { shuffle, topScorers, type GameCtx, type GameDef } from "../../shared/game";
+import { readSettings } from "../../shared/settings";
+import { config } from "./config";
 import {
   ABANDON_MS,
   AMMO,
@@ -21,8 +23,7 @@ import {
   FX_PILE,
   HIT_H,
   KNOCK,
-  MAX_HP,
-  MAX_ROUNDS,
+  MAX_RANGE,
   PILE_R,
   PILE_REGROW_MS,
   PLAYER_R,
@@ -41,7 +42,6 @@ import {
   TICK_MS,
   TREE_CORE,
   TREE_H,
-  WINS_NEEDED,
   WORLD_H,
   WORLD_W,
   aimPoint,
@@ -128,6 +128,10 @@ export interface RoundRec {
 export interface SnowState {
   /** Participants in join order; index = slot. */
   ids: string[];
+  /** Host settings: round wins to take the match, rounds at most, and hearts per round. */
+  winsNeeded: number;
+  maxRounds: number;
+  maxHp: number;
   phase: Phase;
   round: number;
   /** Countdown / round-over deadline (0 otherwise). */
@@ -177,6 +181,10 @@ export type SnowAction = { type: "in"; x: number; y: number } | { type: "throw";
 export interface SnowView {
   phase: Phase;
   round: number;
+  winsNeeded: number;
+  maxRounds: number;
+  /** Hearts each player starts a round with. */
+  maxHp: number;
   endsAt: number;
   fightAt: number;
   field: number;
@@ -202,7 +210,7 @@ const connected = (ctx: GameCtx, id: string) => ctx.player(id)?.connected !== fa
 const fieldOf = (s: SnowState): Field => FIELDS[s.field] ?? FIELDS[0];
 const scratch = { x: 0, y: 0, h: 0, p: 0 };
 
-function newKid(slot: number, id: string): Kid {
+function newKid(slot: number, id: string, maxHp: number): Kid {
   return {
     slot,
     id,
@@ -214,7 +222,7 @@ function newKid(slot: number, id: string): Kid {
     iy: 0,
     fx: 1,
     fy: 0,
-    hp: MAX_HP,
+    hp: maxHp,
     ammo: AMMO,
     reloadAt: 0,
     lastThrow: 0,
@@ -247,7 +255,7 @@ function spawnKids(s: SnowState, ctx: GameCtx) {
       vy: 0,
       fx: dx / m,
       fy: dy / m,
-      hp: MAX_HP,
+      hp: s.maxHp,
       ammo: AMMO,
       reloadAt: 0,
       lastThrow: 0,
@@ -525,8 +533,8 @@ function finishRound(s: SnowState, ctx: GameCtx, winner: Kid | null) {
   s.history.push({ winner: s.lastWinner, order: s.outs.map((o) => o.s) });
   s.power = null;
   if (winner) s.wins[winner.slot] += 1;
-  if (winner && s.wins[winner.slot] >= WINS_NEEDED) return finishMatch(s, ctx, [winner.id], "won");
-  if (s.round >= MAX_ROUNDS) return finishMatch(s, ctx, topScorers(winsRecord(s)), "won");
+  if (winner && s.wins[winner.slot] >= s.winsNeeded) return finishMatch(s, ctx, [winner.id], "won");
+  if (s.round >= s.maxRounds) return finishMatch(s, ctx, topScorers(winsRecord(s)), "won");
   s.phase = "roundOver";
   s.endsAt = ctx.now() + ROUND_OVER_MS;
 }
@@ -603,6 +611,9 @@ function buildView(s: SnowState): SnowView {
   return {
     phase: s.phase,
     round: s.round,
+    winsNeeded: s.winsNeeded,
+    maxRounds: s.maxRounds,
+    maxHp: s.maxHp,
     endsAt: s.endsAt,
     fightAt: s.fightAt,
     field: s.field,
@@ -631,6 +642,107 @@ function refuse(ctx: GameCtx, playerId: string, seq: unknown) {
   if (typeof seq === "number") ctx.emit({ k: "no", s: seq }, { to: playerId });
 }
 
+// ---------- practice bots ----------
+// A bot only uses what everyone sees (positions, hearts, ammo, piles, the power-up). It picks the
+// nearest rival, keeps a throwing distance while strafing, restocks at piles, and throws every
+// second or so with a rough lead and some wobble: beatable, but it fights back.
+
+interface BotMem {
+  /** Next time it re-plans its walk, and next time it may throw. */
+  move: number;
+  shot: number;
+  /** Strafe side (+1 / -1), flipped now and then. */
+  side: number;
+  x: number;
+  y: number;
+}
+
+const botMemory = new WeakMap<SnowState, Map<string, BotMem>>();
+
+function botAction(s: SnowState, botId: string, ctx: GameCtx): SnowAction | null {
+  const slot = s.ids.indexOf(botId);
+  if (slot < 0 || s.phase === "final") return null;
+  const k = s.kids[slot];
+  let mems = botMemory.get(s);
+  if (!mems) botMemory.set(s, (mems = new Map()));
+  let m = mems.get(botId);
+  if (!m) mems.set(botId, (m = { move: 0, shot: 0, side: 1, x: 0, y: 0 }));
+  const walk = (x: number, y: number): SnowAction | null => {
+    if (x === m.x && y === m.y) return null;
+    m.x = x;
+    m.y = y;
+    return { type: "in", x, y };
+  };
+  if (s.phase !== "fight" || !k.alive) {
+    m.shot = 0;
+    return walk(0, 0);
+  }
+  const now = ctx.now();
+  const t = simTime(s);
+  // First throw of a round comes after a short "where is everyone" beat.
+  if (!m.shot) m.shot = now + 900 + ctx.random() * 900;
+  let target: Kid | null = null;
+  let best = Infinity;
+  for (const o of s.kids) {
+    if (!o.alive || o === k) continue;
+    const d = Math.hypot(o.x - k.x, o.y - k.y);
+    if (d < best) {
+      best = d;
+      target = o;
+    }
+  }
+  if (!target) return walk(0, 0);
+
+  // Throw: lead the target a little (flight time from shared.ts), aim off by a bit.
+  if (now >= m.shot && k.ammo > 0 && t - k.lastThrow >= THROW_CD_MS && best <= MAX_RANGE + 40) {
+    m.shot = now + 650 + ctx.random() * 900;
+    const f = makeFlight(k.x, k.y, target.x, target.y, 0);
+    const lead = (f.T / 1000) * (0.4 + ctx.random() * 0.5);
+    const miss = 18 + best * 0.06;
+    const x = target.x + target.vx * lead + (ctx.random() - 0.5) * 2 * miss;
+    const y = target.y + target.vy * lead + (ctx.random() - 0.5) * 2 * miss;
+    return { type: "throw", x: Math.round(Math.max(0, Math.min(WORLD_W, x))), y: Math.round(Math.max(0, Math.min(WORLD_H, y))) };
+  }
+  if (now < m.move) return null;
+  m.move = now + 220 + ctx.random() * 280;
+  if (ctx.random() < 0.12) m.side = -m.side;
+
+  // Where to go: a ready pile when low on snow, a nearby power-up, else a fighting distance.
+  const field = fieldOf(s);
+  let gx: number;
+  let gy: number;
+  let pile = -1;
+  let pileD = Infinity;
+  if (k.ammo <= 1) {
+    field.piles.forEach(([px, py], i) => {
+      const d = Math.hypot(px - k.x, py - k.y);
+      if (s.piles[i] <= t && d < pileD) {
+        pileD = d;
+        pile = i;
+      }
+    });
+  }
+  const pw = s.power && Math.hypot(s.power.x - k.x, s.power.y - k.y) < 260 ? s.power : null;
+  if (pile >= 0 && pileD < 450) [gx, gy] = field.piles[pile];
+  else if (pw) [gx, gy] = [pw.x, pw.y];
+  else {
+    const dx = (target.x - k.x) / (best || 1);
+    const dy = (target.y - k.y) / (best || 1);
+    const want = s.sudden ? 330 : 270;
+    const close = best > want + 60 ? 1 : best < want - 60 ? -1 : 0;
+    gx = k.x + dx * close * 120 - dy * m.side * 90;
+    gy = k.y + dy * close * 120 + dx * m.side * 90;
+  }
+  // Keep off the walls of the field.
+  gx = Math.max(70, Math.min(WORLD_W - 70, gx));
+  gy = Math.max(70, Math.min(WORLD_H - 70, gy));
+  const mx = gx - k.x;
+  const my = gy - k.y;
+  const md = Math.hypot(mx, my);
+  if (md < 12) return walk(0, 0);
+  return walk(Math.round((mx / md) * 100), Math.round((my / md) * 100));
+}
+
 // ---------- game definition ----------
 
 export const snowball: GameDef<SnowState, SnowAction> = {
@@ -639,8 +751,15 @@ export const snowball: GameDef<SnowState, SnowAction> = {
   setup(ctx) {
     const ids = ctx.players.map((p) => p.id);
     const first = Math.floor(ctx.random() * FIELD_COUNT);
+    const set = readSettings(config.settings, ctx.settings);
+    const winsNeeded = set.wins as number;
+    const maxHp = set.hearts as number;
     const s: SnowState = {
       ids,
+      winsNeeded,
+      // 3 wins -> 7 rounds at most (the original match length).
+      maxRounds: winsNeeded * 2 + 1,
+      maxHp,
       phase: "countdown",
       round: 1,
       endsAt: 0,
@@ -648,7 +767,7 @@ export const snowball: GameDef<SnowState, SnowAction> = {
       steps: 0,
       field: first,
       firstField: first,
-      kids: ids.map((id, slot) => newKid(slot, id)),
+      kids: ids.map((id, slot) => newKid(slot, id, maxHp)),
       forts: [],
       piles: [],
       power: null,
@@ -761,6 +880,10 @@ export const snowball: GameDef<SnowState, SnowAction> = {
     return false;
   },
   tickMs: TICK_MS,
+
+  bot(s, botId, ctx) {
+    return botAction(s, botId, ctx);
+  },
 
   view(s) {
     const hit = viewCache.get(s);

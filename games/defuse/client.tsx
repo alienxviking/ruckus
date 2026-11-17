@@ -253,7 +253,7 @@ function Brief({
       <p className="text-sm leading-snug">
         {mine ? (
           <>
-            <b>Only you can see the bomb.</b> Describe it out loud or in quick talk: serial, batteries, lamps, then each module. Your squad holds the manual; do what they say. 3:00 on the clock, 3 strikes and it blows (each strike speeds it up).
+            <b>Only you can see the bomb.</b> Describe it out loud or in quick talk: serial, batteries, lamps, then each module. Your squad holds the manual; do what they say. {clockText(view.bombMs)} on the clock, 3 strikes and it blows (each strike speeds it up).
           </>
         ) : isPlayer ? (
           <>
@@ -324,4 +324,9 @@ function Final({ view, who, bomb }: { view: DefuseView; who: (id: string) => Pla
       )}
     </div>
   );
+}
+
+function clockText(ms: number) {
+  const sec = Math.round(ms / 1000);
+  return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, "0")}`;
 }

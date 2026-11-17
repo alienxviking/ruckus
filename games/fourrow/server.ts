@@ -1,10 +1,11 @@
 import type { GameCtx, GameDef } from "../../shared/game";
+import { readSettings } from "../../shared/settings";
+import { config } from "./config";
 import {
   AWAY_MS,
   COLS,
   CONNECT,
   FORFEIT_MS,
-  MAX_GAMES,
   PAUSE_MS,
   ROWS,
   TARGET_WINS,
@@ -81,6 +82,12 @@ export interface FourState {
   ending: Ending | null;
   /** Seat that forfeited by leaving, if any. */
   quitter: Seat | null;
+  /** Game wins needed to take the match (host setting). */
+  target: number;
+  /** Hard cap on games per match (2 * target + 1). */
+  maxGames: number;
+  /** Full turn length in ms (host setting). */
+  turnMs: number;
   /** Anti-spam budget for hover events. */
   hoverWindow: number;
   hoverCount: number;
@@ -206,11 +213,11 @@ function nameOf(s: FourState, seat: Seat, ctx: GameCtx): string {
 
 /** Set endsAt for the current turn: 30s normally, 5s while the mover is disconnected. */
 function setTurnClock(s: FourState) {
-  const full = s.turnStartedAt + TURN_MS;
+  const full = s.turnStartedAt + s.turnMs;
   const away = s.awaySince[s.turn];
   if (away === null) {
     s.endsAt = full;
-    s.timerMs = TURN_MS;
+    s.timerMs = s.turnMs;
   } else {
     s.endsAt = Math.min(full, Math.max(s.turnStartedAt, away) + AWAY_MS);
     s.timerMs = AWAY_MS;
@@ -306,7 +313,7 @@ function endMatch(s: FourState, winners: Seat[], ending: Ending, ctx: GameCtx, q
     headline =
       ending === "forfeit"
         ? `${nameOf(s, w, ctx)} wins Four in a Row (${nameOf(s, other(w), ctx)} left)`
-        : `${nameOf(s, w, ctx)} wins Four in a Row ${score}` + (ending === "cap" ? ` after ${MAX_GAMES} games` : "");
+        : `${nameOf(s, w, ctx)} wins Four in a Row ${score}` + (ending === "cap" ? ` after ${s.maxGames} games` : "");
   }
 
   const scores: Record<string, number> = {};
@@ -317,8 +324,8 @@ function endMatch(s: FourState, winners: Seat[], ending: Ending, ctx: GameCtx, q
 /** A game just ended (win or draw): finish the match or pause before the next game. */
 function finishGame(s: FourState, ctx: GameCtx) {
   const [a, b] = s.score;
-  if (a >= TARGET_WINS || b >= TARGET_WINS) return endMatch(s, [a >= TARGET_WINS ? 0 : 1], "wins", ctx);
-  if (s.results.length >= MAX_GAMES) return endMatch(s, a === b ? [0, 1] : [a > b ? 0 : 1], "cap", ctx);
+  if (a >= s.target || b >= s.target) return endMatch(s, [a >= s.target ? 0 : 1], "wins", ctx);
+  if (s.results.length >= s.maxGames) return endMatch(s, a === b ? [0, 1] : [a > b ? 0 : 1], "cap", ctx);
   s.phase = "between";
   s.endsAt = ctx.now() + PAUSE_MS;
   s.timerMs = PAUSE_MS;
@@ -383,11 +390,80 @@ function syncPresence(s: FourState, ctx: GameCtx): boolean {
   return changed;
 }
 
+
+// ---- Practice bot -------------------------------------------------------------
+// Medium skill: takes a win, usually blocks, avoids handing over an instant win,
+// otherwise leans to the centre with some randomness. Everything is public, so it
+// reads the same board a human sees. Think time is tracked per turn (seq).
+const botMemory = new WeakMap<FourState, Map<string, { seq: number; at: number }>>();
+
+function winsAt(board: Disc[][], col: number, seat: Seat): boolean {
+  const row = landingRow(board, col);
+  if (row < 0) return false;
+  board[row][col] = seat;
+  const win = findWin(board, row, col) !== null;
+  board[row][col] = null;
+  return win;
+}
+
+function botColumn(s: FourState, me: Seat, random: () => number): number | null {
+  const board = s.board;
+  const open: number[] = [];
+  for (let c = 0; c < COLS; c++) if (board[0][c] === null) open.push(c);
+  if (!open.length) return null;
+  const them = other(me);
+  const win = open.find((c) => winsAt(board, c, me));
+  if (win !== undefined) return win;
+  const block = open.find((c) => winsAt(board, c, them));
+  if (block !== undefined && random() < 0.85) return block;
+  // Columns that don't let the opponent win right on top of our disc.
+  const safe = open.filter((c) => {
+    const row = landingRow(board, c);
+    if (row <= 0) return true;
+    board[row][c] = me;
+    const bad = winsAt(board, c, them);
+    board[row][c] = null;
+    return !bad;
+  });
+  const pool = safe.length ? safe : open;
+  const centre = (COLS - 1) / 2;
+  let best = pool[0];
+  let bestScore = -Infinity;
+  for (const c of pool) {
+    const score = -Math.abs(c - centre) + random() * 2.2;
+    if (score > bestScore) {
+      bestScore = score;
+      best = c;
+    }
+  }
+  return best;
+}
+
+function botMove(s: FourState, botId: string, ctx: GameCtx): FourAction | null {
+  if (s.phase !== "turn") return null;
+  const me = seatOf(s, botId);
+  if (me === null || me !== s.turn) return null;
+  let mem = botMemory.get(s);
+  if (!mem) botMemory.set(s, (mem = new Map()));
+  const now = ctx.now();
+  const m = mem.get(botId);
+  if (!m || m.seq !== s.seq) {
+    mem.set(botId, { seq: s.seq, at: now + 700 + ctx.random() * 1600 });
+    return null;
+  }
+  if (now < m.at) return null;
+  const col = botColumn(s, me, ctx.random);
+  return col === null ? null : { type: "drop", col };
+}
+
 export const fourrow: GameDef<FourState, FourAction> = {
   id: "fourrow",
 
   setup(ctx) {
     const [a, b] = ctx.players;
+    const settings = readSettings(config.settings, ctx.settings);
+    const target = Number(settings.wins) || TARGET_WINS;
+    const turnMs = (Number(settings.turn) || TURN_MS / 1000) * 1000;
     const starter: Seat = ctx.random() < 0.5 ? 0 : 1;
     const now = ctx.now();
     return {
@@ -403,13 +479,16 @@ export const fourrow: GameDef<FourState, FourAction> = {
       seq: 0,
       last: null,
       win: null,
-      endsAt: now + TURN_MS,
-      timerMs: TURN_MS,
+      endsAt: now + turnMs,
+      timerMs: turnMs,
       turnStartedAt: now,
       awaySince: [null, null],
       champions: null,
       ending: null,
       quitter: null,
+      target,
+      maxGames: target * 2 + 1,
+      turnMs,
       hoverWindow: 0,
       hoverCount: 0,
     };
@@ -492,8 +571,8 @@ export const fourrow: GameDef<FourState, FourAction> = {
       ending: s.ending,
       quitter: s.quitter,
       you: seatOf(s, viewerId),
-      target: TARGET_WINS,
-      maxGames: MAX_GAMES,
+      target: s.target,
+      maxGames: s.maxGames,
     };
   },
 
@@ -506,6 +585,8 @@ export const fourrow: GameDef<FourState, FourAction> = {
     const seat = seatOf(s, playerId);
     if (seat !== null) seatReturned(s, seat, ctx);
   },
+
+  bot: botMove,
 };
 
 export default fourrow;

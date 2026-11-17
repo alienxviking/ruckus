@@ -8,13 +8,11 @@ import { buzz, feedback, sfx } from "@/lib/feedback";
 import type { BookRow, MkAction, MkView, RoundRecord } from "./server";
 import {
   CARD_MEAN,
-  FLIP_MS,
   HOUSE_SPREAD,
   POS_LIMIT,
   SETTLE_MS,
   SIZE_MAX,
   STREET,
-  TRADE_MS,
   cardValue,
   isMkEvent,
   signed,
@@ -111,6 +109,8 @@ function derive(view: MkView): Derived {
 const atBest = (rows: BookRow[]) => (rows.length ? rows.filter((r) => r[1] === rows[0][1]).reduce((a, r) => a + r[2], 0) : 0);
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
 const fmt1 = (v: number) => (Number.isInteger(v) ? String(v) : v.toFixed(1));
+/** 25000 → "0:25", 93000 → "1:33". */
+const clock = (ms: number) => `${Math.floor(ms / 60_000)}:${String(Math.round(ms / 1000) % 60).padStart(2, "0")}`;
 
 // ---------- the trading floor ----------
 
@@ -249,7 +249,7 @@ function Floor({ view, byId, isPlayer, act, serverNow, onEvent, accent }: Props 
                 />
               </div>
               <div className="order-4 min-w-0">
-                <PriceChart chart={view.chart} street={view.street} players={d.n} own={d.own} ownColor={meP?.color ?? accent} settle={null} accent={accent} />
+                <PriceChart chart={view.chart} street={view.street} players={d.n} own={d.own} ownColor={meP?.color ?? accent} settle={null} accent={accent} tradeMs={view.tradeMs} flipMs={view.flipMs} />
               </div>
               <div className="order-5 min-w-0">
                 <Tape tape={view.tape} nt={view.nt} me={view.me} who={who} accent={accent} />
@@ -308,7 +308,7 @@ function Floor({ view, byId, isPlayer, act, serverNow, onEvent, accent }: Props 
         <>
           <Settlement view={view} who={who} accent={accent} serverNow={serverNow} />
           <div className="grid gap-3 @2xl:grid-cols-2">
-            <PriceChart chart={view.chart} street={view.street} players={d.n} own={d.own} ownColor={meP?.color ?? accent} settle={settle} accent={accent} />
+            <PriceChart chart={view.chart} street={view.street} players={d.n} own={d.own} ownColor={meP?.color ?? accent} settle={settle} accent={accent} tradeMs={view.tradeMs} flipMs={view.flipMs} />
             <Tape tape={view.tape} nt={view.nt} me={view.me} who={who} accent={accent} />
           </div>
         </>
@@ -389,11 +389,11 @@ function Timeline({ view, serverNow, accent }: { view: MkView; serverNow: () => 
           <b className={`tabular-nums ${bellSecs <= 10 ? "text-rose-300" : "text-text"}`}>{bellSecs}s</b>
         </span>
       </div>
-      <div className="relative mt-2 h-2.5 rounded-full bg-panel-2" role="progressbar" aria-label="Round time" aria-valuemin={0} aria-valuemax={90} aria-valuenow={90 - bellSecs}>
+      <div className="relative mt-2 h-2.5 rounded-full bg-panel-2" role="progressbar" aria-label="Round time" aria-valuemin={0} aria-valuemax={view.tradeMs / 1000} aria-valuenow={view.tradeMs / 1000 - bellSecs}>
         <div className="absolute inset-0 overflow-hidden rounded-full">
-          <GrowFill key={`${view.roundStart}-${flipped}`} start={view.roundStart} total={TRADE_MS} serverNow={serverNow} color={`${accent}aa`} />
+          <GrowFill key={`${view.roundStart}-${flipped}`} start={view.roundStart} total={view.tradeMs} serverNow={serverNow} color={`${accent}aa`} />
         </div>
-        {FLIP_MS.map((ms, i) => {
+        {view.flipMs.map((ms, i) => {
           const up = view.street[i] !== null;
           return (
             <span
@@ -401,7 +401,7 @@ function Timeline({ view, serverNow, accent }: { view: MkView; serverNow: () => 
               aria-hidden
               className="absolute top-1/2 h-4 w-3 -translate-x-1/2 -translate-y-1/2 rounded-[3px] border"
               style={{
-                left: `${(ms / TRADE_MS) * 100}%`,
+                left: `${(ms / view.tradeMs) * 100}%`,
                 borderColor: up ? "#fff" : accent,
                 background: up ? "#fff" : "var(--color-panel)",
                 transition: `background-color .4s ${EASE}`,
@@ -584,7 +584,7 @@ function Table({ view, d, accent, serverNow }: { view: MkView; d: Derived; accen
                   {c === null && i === d.flipped ? (
                     <FlipIn at={view.flipAt[i]} serverNow={serverNow} />
                   ) : (
-                    <ValuePill code={c} muted={`0:${FLIP_MS[i] / 1000}`} />
+                    <ValuePill code={c} muted={clock(view.flipMs[i] ?? 0)} />
                   )}
                 </span>
               ))}

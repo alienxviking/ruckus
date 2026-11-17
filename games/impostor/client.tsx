@@ -7,7 +7,6 @@ import { Note, StatusBanner, TimerBar, useSecondsLeft } from "@/components/game-
 import { feedback } from "@/lib/feedback";
 import type { ImpostorAction, ImpostorErrorEvent, ImpostorView } from "./server";
 import {
-  CLUE_MS,
   GUESS_MS,
   LAPS,
   MAX_CLUE,
@@ -312,7 +311,7 @@ function PhaseTimer({
   settling: boolean;
 }) {
   const secs = useSecondsLeft(view.endsAt, serverNow);
-  const total = { clues: CLUE_MS, vote: settling ? VOTE_SETTLE_MS : VOTE_MS, lastGuess: GUESS_MS, reveal: REVEAL_MS, final: 1 }[view.phase];
+  const total = { clues: view.clueMs, vote: settling ? VOTE_SETTLE_MS : VOTE_MS, lastGuess: GUESS_MS, reveal: REVEAL_MS, final: 1 }[view.phase];
   const label = {
     clues: myTurn ? "Your turn" : "Clue timer",
     vote: settling ? "Closing" : "Voting closes in",

@@ -585,4 +585,80 @@ for (const n of [2, 4, 8]) {
   assert(idle < 5_000, `aim view small (${idle})`);
 }
 
+// ---------- host settings ----------
+{
+  // Defaults match the classic game.
+  const t = makeTestCtx(2);
+  const s: BarrageState = game.setup(t.ctx);
+  assert(s.maxTurns === MAX_TURNS && s.aimMs === AIM_MS && s.endsAt === t.ctx.now() + FIRST_AIM_MS, "defaults");
+}
+{
+  // 10 turns, 10 s to aim: the game ends after turn 10 and the timers are shorter.
+  const t = makeTestCtx(2, 42, { turns: 10, aimSec: 10 });
+  const s: BarrageState = game.setup(t.ctx);
+  assert(s.endsAt === t.ctx.now() + 10_000 + (FIRST_AIM_MS - AIM_MS), "short first aim");
+  assert(view(s, t.ids[0], t).maxTurns === 10, "view shows the turn count");
+  arena(s, 420, [300, 700]);
+  for (let turn = 1; turn <= 10; turn++) {
+    assert(s.turn === turn && !t.result, `turn ${turn}`);
+    s.wind = 0;
+    volley(s, t, { 0: { angle: 160, power: 100 }, 1: { angle: 20, power: 100 } });
+    finishVolley(s, t);
+    if (turn === 1) assert(s.total === 10_000 && s.endsAt === t.ctx.now() + 10_000, "10 s aim timer");
+  }
+  assert(t.result && s.final?.reason === "turns" && t.result.headline.includes("10 turns"), "ends after 10 turns");
+}
+{
+  // Junk settings fall back to the defaults.
+  const t = makeTestCtx(2, 42, { turns: 99, aimSec: "x" });
+  const s: BarrageState = game.setup(t.ctx);
+  assert(s.maxTurns === MAX_TURNS && s.aimMs === AIM_MS, "invalid settings ignored");
+}
+
+// ---------- practice bots ----------
+for (const [n, bots] of [
+  [2, 1],
+  [3, 3],
+  [6, 5],
+] as const) {
+  const t = makeTestCtx(n, 900 + n, {}, bots);
+  const s: BarrageState = game.setup(t.ctx);
+  const botIds = t.ids.filter((id) => id.startsWith("bot-"));
+  let firedEarly = 0;
+  let guard = 0;
+  while (!t.result && guard++ < 20_000) {
+    t.advance(100);
+    game.tick!(s, t.ctx);
+    for (const id of botIds) {
+      const a = game.bot!(s, id, t.ctx);
+      if (!a) continue;
+      if (s.endsAt - t.ctx.now() > 500) firedEarly += 1;
+      game.action(s, id, a, t.ctx);
+    }
+  }
+  assert(t.result, `bot game ${n}/${bots} ends`);
+  assert(firedEarly > 0, "bots lock in before the timer runs out");
+  assert(t.ctx.now() - 1_700_000_000_000 < 15 * 60_000, "within a sane time");
+}
+{
+  // A bot doesn't fire instantly, then aims roughly at someone and locks in.
+  const t = makeTestCtx(2, 7, {}, 1);
+  const s: BarrageState = game.setup(t.ctx);
+  arena(s, 420, [300, 700]);
+  s.wind = 0;
+  assert(game.bot!(s, "bot-0", t.ctx) === null, "thinks first");
+  let a = null;
+  for (let i = 0; i < 100 && !a; i++) {
+    t.advance(100);
+    a = game.bot!(s, "bot-0", t.ctx);
+  }
+  assert(a && a.type === "fire", "fires");
+  assert(game.action(s, "bot-0", a, t.ctx) === true && s.tanks[1].locked, "bot's shot is valid");
+  assert(s.tanks[1].aim.angle > 90, "aims toward the foe on its left");
+  assert(game.bot!(s, "bot-0", t.ctx) === null, "nothing more once locked");
+  game.action(s, t.ids[0], { type: "fire", angle: 160, power: 100 }, t.ctx);
+  const booms = s.resolve!.booms.filter((b) => b.s === 1);
+  assert(booms.length > 0 && Math.abs(booms[0].x - 300) < 80, `bot's shell lands near its target (${booms[0]?.x})`);
+}
+
 console.log("✓ barrage tests passed");

@@ -6,6 +6,8 @@ export interface Player {
   color: string;
   avatar: string;
   connected: boolean;
+  /** A practice bot the host added (plays games that support bots). */
+  bot?: boolean;
 }
 
 export interface ChatMsg {
@@ -49,7 +51,40 @@ export interface RoomView {
   autoNext: boolean;
   /** The game quick play will start next, and when (server time). */
   next: { gameId: string; at: number } | null;
+  /** The host locked the room: nobody new can join (people already in can reconnect). */
+  locked: boolean;
+  /** Host settings for the picked game: choice values. Custom word lists are host-only
+   * (they'd spoil the game), so everyone just gets how many words each list has. */
+  settings: Record<string, number | string>;
+  wordCounts: Record<string, number>;
+  /**
+   * Someone is reading the rules: the game is frozen. `at` is when it froze (server time),
+   * `until` when it resumes by itself at the latest.
+   */
+  pause: { by: string[]; at: number; until: number } | null;
+  /** Total time this game has spent paused. The game clock is server time minus this. */
+  pausedMs: number;
+  /** Rule-reading pauses each player has used this game (max MAX_PAUSES). */
+  pauseUses: Record<string, number>;
+  /** Games finished this session, oldest first (for the recap). */
+  history: HistoryEntry[];
 }
+
+export interface HistoryEntry {
+  gameId: string;
+  winners: string[];
+  headline: string;
+  /** Who played, so the recap can show games played per person. */
+  players: string[];
+  at: number;
+}
+
+/** Pauses per player per game, and how long one can last. */
+export const MAX_PAUSES = 3;
+export const PAUSE_MAX_MS = 45_000;
+
+/** Quick reactions anyone can send (index on the wire). */
+export const REACTIONS = ["😂", "🔥", "😱", "👏", "💀", "❤️"] as const;
 
 export type ClientMsg =
   /** `key` is a per-browser secret proving this socket really is player `id`. */
@@ -62,6 +97,18 @@ export type ClientMsg =
   /** Host turns quick play (auto-next) on or off. */
   | { t: "auto"; on: boolean }
   | { t: "act"; a: unknown }
+  /** A player opened (on) or closed (off) the rules mid-game. The host can resume for all. */
+  | { t: "pause"; on: boolean; all?: boolean }
+  /** Float a reaction (index into REACTIONS). Rate limited. */
+  | { t: "react"; e: number }
+  /** Host tools. */
+  | { t: "kick"; id: string }
+  | { t: "host"; id: string }
+  | { t: "lock"; on: boolean }
+  /** Host changes a setting of a game (applies from its next start). Word lists: string[]. */
+  | { t: "setting"; gameId: string; key: string; value: unknown }
+  /** Host adds or removes a practice bot. */
+  | { t: "bot"; add: boolean }
   /** Clock sync / latency probe; the server answers with "pong" right away. */
   | { t: "ping"; c: number };
 
@@ -75,6 +122,9 @@ export type ServerMsg =
   | { t: "pong"; c: number; now: number }
   | { t: "game"; view: unknown; now: number }
   | { t: "ev"; e: unknown; now: number }
+  | { t: "react"; from: string; e: number; now: number }
+  /** Host only: the custom word lists of the picked game (for editing). */
+  | { t: "words"; gameId: string; words: Record<string, string[]>; now: number }
   | { t: "err"; msg: string; now: number }
   /** The server refused this socket (room full, identity clash). Don't reconnect. */
   | { t: "rejected"; msg: string; now: number };

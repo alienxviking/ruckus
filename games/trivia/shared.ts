@@ -48,9 +48,9 @@ export const CATEGORY_EMOJI: Record<Category, string> = {
 
 export const LETTERS = ["A", "B", "C", "D"] as const;
 
-/** Base points for a correct answer locked in `ms` after the question opened. */
-export function speedPoints(ms: number): number {
-  const frac = Math.min(1, Math.max(0, (QUESTION_MS - ms) / QUESTION_MS));
+/** Base points for a correct answer locked in `ms` after a `limit`-ms question opened. */
+export function speedPoints(ms: number, limit = QUESTION_MS): number {
+  const frac = Math.min(1, Math.max(0, (limit - ms) / limit));
   return BASE_POINTS + Math.round(SPEED_POINTS * frac);
 }
 

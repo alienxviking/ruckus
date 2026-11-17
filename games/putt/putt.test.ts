@@ -617,4 +617,49 @@ function playGame(n: number, seed: number, mode: "ready" | "timeout") {
   console.log(`  view sizes: aim ${aimSize} B, 8-ball full-power roll ${rollSize} B`);
 }
 
+// ---------- 10. host settings ----------
+{
+  const t = makeTestCtx(2, 5, { holes: 3, aim: 8 });
+  const s = game.setup(t.ctx);
+  assert(s.course.length === 3 && new Set(s.course).size === 3, "three holes when the host asks");
+  assert(s.endsAt === t.ctx.now() + 11_000 && s.total === 11_000, "8s aim plus 3s on the first shot");
+  game.action(s, t.ids[0], { type: "lock", a: 0, p: 10 }, t.ctx);
+  game.action(s, t.ids[1], { type: "lock", a: 1800, p: 10 }, t.ctx);
+  finishRoll(s, t);
+  assert(phaseOf(s) === "aim" && s.endsAt === t.ctx.now() + 8_000, "later shots get 8s");
+  const d = game.setup(makeTestCtx(2, 5).ctx);
+  assert(d.course.length === HOLES_PER_GAME && d.aimMs === AIM_MS && d.firstAimMs === FIRST_AIM_MS, "defaults unchanged");
+  const bad = game.setup(makeTestCtx(2, 5, { holes: 4, aim: "x" }).ctx);
+  assert(bad.course.length === HOLES_PER_GAME && bad.aimMs === AIM_MS, "invalid settings fall back");
+  console.log("  host settings: holes and aim timer");
+}
+
+// ---------- 11. practice bots ----------
+{
+  for (const [humans, bots] of [
+    [1, 2],
+    [0, 3],
+  ]) {
+    const n = humans + bots;
+    const t = makeTestCtx(n, 9, { holes: 3 }, bots);
+    const s = game.setup(t.ctx);
+    let simMs = 0;
+    const t0 = Date.now();
+    while (!t.result && simMs < 30 * 60_000) {
+      t.advance(200);
+      simMs += 200;
+      for (const id of t.ids) {
+        if (!id.startsWith("bot-")) continue;
+        const a = game.bot!(s, id, t.ctx);
+        if (a) game.action(s, id, a, t.ctx);
+      }
+      game.tick!(s, t.ctx);
+    }
+    assert(t.result, `bots finish a 3-hole game (${humans} human)`);
+    const botCards = s.balls.filter((b) => b.id.startsWith("bot-")).map((b) => b.card.reduce((x, y) => x + y, 0));
+    assert(botCards.every((c) => c < 3 * PICKUP_SCORE), `bots actually play (${botCards.join(", ")})`);
+    console.log(`  bots: ${humans} human + ${bots} bots done in ${Math.round(simMs / 1000)}s game time, cards ${botCards.join("/")}, ${Date.now() - t0} ms CPU`);
+  }
+}
+
 console.log("✓ putt tests passed");

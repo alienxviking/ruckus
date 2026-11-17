@@ -360,4 +360,46 @@ function playRound(s: PollState, t: T, pick: (i: number) => number) {
   assert(calls.length === 1 && calls[0].winners.length === 3, "three-way tie shares the win");
 }
 
+// ---------- host settings ----------
+{
+  const t = makeTestCtx(3, 9, { rounds: 5, pace: "quick" });
+  const s: PollState = game.setup(t.ctx);
+  assert(s.polls.length === 5 && view(s, s.ids[0], t).rounds === 5, "5 polls");
+  assert(s.kinds.filter((k) => k === "room").length === 1 && s.kinds.filter((k) => k === "majority").length === 1, "both twists in a short game");
+  assert(s.endsAt - t.ctx.now() === 10_000 && view(s, s.ids[0], t).phaseMs === 10_000, "quick vote timer");
+  for (let k = 0; k < 40 && phaseOf(s) !== "final"; k++) tick(s, t, 30_001);
+  assert(phaseOf(s) === "final" && s.recap.length === 5, "5-poll game ends after 5");
+  for (let seed = 1; seed < 30; seed++) {
+    const t12 = makeTestCtx(3, seed, { rounds: 12 });
+    const s12: PollState = game.setup(t12.ctx);
+    assert(s12.polls.length === 12 && s12.kinds.includes("room") && s12.kinds.includes("majority"), "12-poll twists");
+  }
+  const td = makeTestCtx(3, 9, { rounds: 7, pace: "zzz" });
+  const sd: PollState = game.setup(td.ctx);
+  assert(sd.polls.length === ROUNDS && sd.endsAt - td.ctx.now() === VOTE_MS, "bad settings fall back");
+}
+
+// ---------- practice bots ----------
+for (const [n, bots] of [
+  [4, 4],
+  [4, 3],
+  [2, 1],
+] as const) {
+  const t = makeTestCtx(n, 21 + n + bots, {}, bots);
+  const s: PollState = game.setup(t.ctx);
+  let i = 0;
+  for (; i < 20_000 && !t.result; i++) {
+    t.advance(250);
+    game.tick!(s, t.ctx);
+    for (const id of t.ids) {
+      if (!t.ctx.player(id)?.bot) continue;
+      const a = game.bot!(s, id, t.ctx);
+      if (a) game.action(s, id, a, t.ctx);
+    }
+  }
+  assert(t.result, `bots game ${n}/${bots} ended`);
+  assert(s.recap.every((r) => r.counts.reduce((a, b) => a + b, 0) >= bots), "bots voted every round");
+  if (bots === n) assert(i * 250 < 8 * 50_000, "all-bot game doesn't wait out every timer");
+}
+
 console.log("✓ poll tests passed");

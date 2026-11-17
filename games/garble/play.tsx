@@ -305,7 +305,7 @@ function TextStep({
         </div>
       </form>
       {write && !done && (
-        <p className="text-center text-xs text-muted">Keep it drawable: the next player has to sketch it in 70 seconds.</p>
+        <p className="text-center text-xs text-muted">Keep it drawable: the next player has to sketch it in {Math.round(view.times[1] / 1000)} seconds.</p>
       )}
     </div>
   );

@@ -857,4 +857,33 @@ for (const where of ["clue", "guess", "reveal"] as const) {
   assert(calls.length === 1 && calls[0].winners.length === 4 && /4-way tie/.test(calls[0].headline), "4-way tie");
 }
 
+// ---------- host settings ----------
+{
+  const t = makeTestCtx(4, 11, { laps: 2, guess: 25 });
+  const s: DialState = game.setup(t.ctx);
+  assert(s.order.length === 8, "two clues each with 4 players");
+  for (let i = 1; i < s.order.length; i++) assert(s.order[i] !== s.order[i - 1], "no giver twice in a row");
+  const giver = s.ids[s.order[0]];
+  game.action(s, giver, { type: "clue", text: "warm soup" }, t.ctx);
+  assert(s.phase === "guess" && s.endsAt === t.ctx.now() + 25_000, "25s guessing");
+  assert((game.view(s, s.ids[0], t.ctx) as DialView).phaseMs === 25_000, "view timer matches setting");
+}
+{
+  const t = makeTestCtx(3, 11, { laps: 1 });
+  const s: DialState = game.setup(t.ctx);
+  assert(s.order.length === 3 && s.guessMs === GUESS_MS, "one clue each, default guess time");
+  // Every clue-giver times out: the game ends after 3 rounds.
+  for (let r = 0; r < 3; r++) {
+    t.advance(CLUE_MS);
+    game.tick!(s, t.ctx);
+  }
+  assert(s.phase === "final" && t.result !== null, "short game ends after 3 skipped rounds");
+}
+{
+  const t = makeTestCtx(2, 11, { laps: "auto" });
+  assert((game.setup(t.ctx) as DialState).order.length === 4, "auto: two each for 2 players");
+  const t5 = makeTestCtx(5, 11, { laps: 9 });
+  assert((game.setup(t5.ctx) as DialState).order.length === 5, "invalid laps fall back to auto");
+}
+
 console.log("dial: all tests passed");

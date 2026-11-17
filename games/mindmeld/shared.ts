@@ -168,7 +168,7 @@ export const RATINGS = [
   { label: "Telepathic", rounds: "2", max: 2 },
   { label: "Great minds", rounds: "3–4", max: 4 },
   { label: "Getting there", rounds: "5–6", max: 6 },
-  { label: "Phew!", rounds: "7–8", max: MAX_ROUNDS },
+  { label: "Phew!", rounds: "7+", max: Infinity },
 ] as const;
 
 export function rating(rounds: number): string {

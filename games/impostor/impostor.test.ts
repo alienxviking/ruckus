@@ -869,3 +869,46 @@ for (const seed of [43, 44, 45, 46, 47]) {
 }
 
 console.log("impostor: all tests passed");
+
+// ---------- host settings ----------
+{
+  // Defaults are unchanged: 3 rounds, 25s clues, built-in pairs.
+  const t = makeTestCtx(4, 5);
+  const s: ImpostorState = game.setup(t.ctx);
+  assert(s.totalRounds === 3 && s.clueMs === CLUE_MS && s.endsAt === t.ctx.now() + CLUE_MS, "defaults");
+  assert(PAIRS.some((p) => p.includes(s.majorityWord)), "built-in words");
+}
+{
+  // More rounds, a shorter clue timer, and junk values fall back.
+  const t = makeTestCtx(3, 6, { rounds: 5, clueSec: 15 });
+  const s: ImpostorState = game.setup(t.ctx);
+  assert(s.totalRounds === 5 && s.endsAt === t.ctx.now() + 15_000, "5 rounds, 15s clues");
+  assert((game.view(s, t.ids[0], t.ctx) as ImpostorView).clueMs === 15_000, "view carries the clue time");
+  const u = makeTestCtx(3, 6, { rounds: 99, clueSec: "x" });
+  const s2: ImpostorState = game.setup(u.ctx);
+  assert(s2.totalRounds === 3 && s2.clueMs === CLUE_MS, "invalid settings fall back");
+  // A 5-round game really plays 5 rounds.
+  let guard = 0;
+  while (!t.result && guard++ < 2000) {
+    t.advance(1000);
+    game.tick!(s, t.ctx);
+  }
+  assert(t.result !== null && s.history.length === 5, "5 rounds played");
+}
+{
+  // Custom pairs: used as given, junk lines skipped, topped up when short.
+  const words = ["Sun / Moon", "cat | dog", "river vs lake", "nonsense", "bus / bus", "car / carpet"];
+  const t = makeTestCtx(3, 9, { words });
+  const s: ImpostorState = game.setup(t.ctx);
+  const keys = s.pairs.map((p) => p.join("+"));
+  assert(keys.slice(0, 3).join(",") === "sun+moon,cat+dog,river+lake", "three good pairs parsed");
+  assert(s.pairs.length === 3, "enough for 3 rounds, no top-up");
+  assert(keys.includes([s.majorityWord, s.oddWord].sort().join("+")) || keys.includes(`${s.majorityWord}+${s.oddWord}`) || keys.includes(`${s.oddWord}+${s.majorityWord}`), "round uses a custom pair");
+  const u = makeTestCtx(3, 9, { words: ["sun / moon", "cat / dog", "river / lake"], rounds: 5 });
+  const s2: ImpostorState = game.setup(u.ctx);
+  assert(s2.pairs.length === 5 && s2.pairs[0].join() === "sun,moon", "topped up to one pair per round");
+  const v = makeTestCtx(3, 9, { words: ["sun / moon", "cat / dog"] });
+  assert((game.setup(v.ctx) as ImpostorState).pairs.length === PAIRS.length, "too few lines: ours");
+}
+
+console.log("impostor: settings tests passed");

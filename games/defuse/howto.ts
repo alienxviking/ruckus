@@ -5,7 +5,7 @@ export const rules: GameRules = {
   flow: [
     "Each bomb has one defuser, and the job rotates so different players get a turn. Only the defuser can see and touch the bomb.",
     "Everyone else is an expert holding a few torn pages of the bomb manual. The manual is new every game, and nobody has all of it.",
-    "You get a 12-second briefing before each bomb (tap Ready to start sooner). Then the 3:00 clock starts.",
+    "You get a 12-second briefing before each bomb (tap Ready to start sooner). Then the 3:00 clock starts (the host can set it anywhere from 2 to 5 minutes).",
     "The defuser describes what they see: the wires, the button, the symbols on the keypad, the coloured flashes, the dial, plus the serial number, batteries and lights on the side. Experts check their pages and call out what to do.",
     "A bomb is defused when every module on it is solved. The first bomb has 3 modules, then 4, then 5.",
   ],

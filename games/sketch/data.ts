@@ -2,7 +2,7 @@
 // Rules: family-friendly, concrete and drawable, no brands or proper nouns,
 // lowercase letters with single spaces or hyphens, at most 16 characters.
 
-import type { Level } from "./shared";
+import type { BuiltinLevel } from "./shared";
 
 const EASY = [
   "apple", "banana", "cherry", "grapes", "lemon", "pear", "strawberry", "carrot",
@@ -58,7 +58,7 @@ const HARD = [
   "paper plane", "lava lamp", "fortune cookie", "cuckoo clock", "sleeping bag", "mousetrap", "drawbridge", "waterslide",
 ];
 
-export const WORDS: Record<Level, readonly string[]> = {
+export const WORDS: Record<BuiltinLevel, readonly string[]> = {
   easy: EASY,
   medium: MEDIUM,
   hard: HARD,

@@ -1,13 +1,13 @@
 import type { GameRules } from "../rules-types";
 
 export const rules: GameRules = {
-  goal: "Make the most profit over 3 rounds by buying when the final total looks higher than the price and selling when it looks lower.",
+  goal: "Make the most profit over 3 rounds (the host can change this) by buying when the final total looks higher than the price and selling when it looks lower.",
   flow: [
     "Each round, every player gets one secret card (A = 1 up to K = 13) and 3 street cards are dealt face down.",
     "The contract is worth the sum of all those cards: every player's card plus the 3 street cards.",
-    "You have 90 seconds to trade. The street cards flip one at a time at 25, 50 and 70 seconds.",
+    "You have 90 seconds to trade (the host can pick 60 or 120). The street cards flip one at a time, at 25, 50 and 70 seconds in a 90-second round.",
     "At the bell, every card is shown and your trades are settled at the real total. You see the results for 8 seconds.",
-    "After 3 rounds, the player with the highest total profit wins.",
+    "After the last round, the player with the highest total profit wins.",
   ],
   controls: {
     desktop: [
@@ -28,7 +28,7 @@ export const rules: GameRules = {
     "Each lot you buy earns (final total − price you paid); each lot you sell earns (price you sold at − final total).",
     "You can hold at most 15 lots long or 15 lots short at a time, and trade up to 5 lots per order.",
     "A House bot always quotes about 6 points either side of the fair guess (known street cards plus 7 for each hidden card), so there's always someone to trade with.",
-    "Profits add up over 3 rounds. Highest total wins; equal totals share the win.",
+    "Profits add up over every round. Highest total wins; equal totals share the win.",
     "If fewer than 2 traders stay connected for 20 seconds, the market closes early and scores as they stand.",
   ],
   tips: [

@@ -680,4 +680,54 @@ function checkFinished(g: G) {
   }
 }
 
+// ---------- host settings ----------
+{
+  const t = makeTestCtx(2, 7, { board: "small", turnSec: 15 });
+  const s: DotsState = game.setup(t.ctx);
+  assert(s.rows === 4 && s.cols === 4, "small board is 4x4 for two");
+  assert(s.turnMs === 15_000 && s.endsAt === t.ctx.now() + 15_000, "15s turn timer");
+  const v = game.view(s, t.ids[0], t.ctx) as DotsView;
+  assert(v.turnMs === 15_000, "view carries the configured timer");
+  t.advance(15_000);
+  game.tick!(s, t.ctx);
+  assert(s.moves === 1, "move auto-played after 15s");
+  const big: DotsState = game.setup(makeTestCtx(3, 1, { board: "large" }).ctx);
+  assert(big.rows === 7 && big.cols === 8, "large board for three");
+  const junk: DotsState = game.setup(makeTestCtx(2, 1, { board: "huge", turnSec: 7 }).ctx);
+  assert(junk.rows === 5 && junk.turnMs === TURN_MS, "invalid settings fall back to defaults");
+}
+
+// ---------- practice bots ----------
+for (const [n, bots] of [
+  [2, 1],
+  [4, 4],
+  [3, 2],
+] as const) {
+  const t = makeTestCtx(n, 11 + n, {}, bots);
+  const s: DotsState = game.setup(t.ctx);
+  let guard = 0;
+  let botMoves = 0;
+  while (!t.result && guard++ < 20_000) {
+    t.advance(100);
+    game.tick!(s, t.ctx);
+    for (const id of t.ids) {
+      if (!t.ctx.player(id)?.bot) continue;
+      const a = game.bot!(s, id, t.ctx);
+      if (a) {
+        assert(game.action(s, id, a, t.ctx) !== false, "bot move is legal");
+        botMoves++;
+      }
+    }
+    // The human (if any) plays a random line quickly.
+    const m = s.seats[s.turn];
+    if (!s.over && m && !t.ctx.player(m)?.bot) {
+      const l = open(s)[0];
+      act({ t, s, ends: [] }, m, L(l.o, l.r, l.c));
+    }
+  }
+  assert(t.result, `bots finish a ${n}-player game`);
+  assert(botMoves > 0, "bots moved themselves");
+  assert(guard * 100 < 15 * 60_000, "bot game within 15 minutes");
+}
+
 console.log("dots: all tests passed");

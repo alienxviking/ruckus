@@ -399,4 +399,22 @@ function skipReveal(s: MashupState, t: T) {
   console.log("✓ tiny groups don't crash");
 }
 
+// ---------- host settings ----------
+{
+  const t = makeTestCtx(3, 8, { rounds: 1, draw: 45 });
+  const s: MashupState = mashup.setup(t.ctx);
+  assert(s.rounds === 1 && (mashup.view(s, "p0", t.ctx) as { rounds: number }).rounds === 1, "1 round");
+  assert(s.endsAt - t.ctx.now() === 45_000 && s.phaseMs === 45_000, "45s drawing");
+  for (let k = 0; k < 3; k++) warp(s, t, 45_000);
+  assert(ph(s) === "name", "45s timers move draw stages");
+  warp(s, t, NAME_MS);
+  skipReveal(s, t);
+  warp(s, t, VOTE_MS);
+  warp(s, t, RESULTS_MS);
+  assert(ph(s) === "final" && R(t), "1-round game ends after round 1");
+  const td = makeTestCtx(3, 8, { rounds: 9, draw: 1 });
+  const sd: MashupState = mashup.setup(td.ctx);
+  assert(sd.rounds === ROUNDS && sd.drawMs === DRAW_MS, "bad settings fall back");
+}
+
 console.log("✓ mashup tests passed");

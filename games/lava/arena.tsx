@@ -23,7 +23,6 @@ import {
   CAMP_MS,
   CENTER,
   COLLAPSE_EVERY_MS,
-  COLLAPSE_START_MS,
   F_FLOAT,
   F_FLOAT_LOW,
   F_OFFLINE,
@@ -1152,7 +1151,8 @@ function drawScene(
 
   // ----- camera: fit the arena, zooming in a little as the edges crumble -----
   const fightMs = d.view.fightAt ? rt - d.view.fightAt : 0;
-  const ring = phase === "fight" && fightMs >= COLLAPSE_START_MS ? Math.max(1, R - Math.floor((fightMs - COLLAPSE_START_MS) / COLLAPSE_EVERY_MS)) : R + 1;
+  const crumbleMs = d.view.collapseMs;
+  const ring = phase === "fight" && fightMs >= crumbleMs ? Math.max(1, R - Math.floor((fightMs - crumbleMs) / COLLAPSE_EVERY_MS)) : R + 1;
   const wantK = ring > R ? 1 : 1 - (1 - Math.max(0.45, ring / (R + 1))) * 0.6;
   sc.camK += (wantK - sc.camK) * clamp01(wallDt / 500);
   const scale = s.fit / sc.camK;
@@ -1241,7 +1241,7 @@ function drawScene(
   const sprHw = sprH / kspr;
   // The next ring to crumble, and how long until it goes.
   const nextD = Math.min(ring, R + 1) - 1;
-  const nextIn = phase === "fight" && nextD >= 0 ? COLLAPSE_START_MS + (R - nextD) * COLLAPSE_EVERY_MS - fightMs : Infinity;
+  const nextIn = phase === "fight" && nextD >= 0 ? crumbleMs + (R - nextD) * COLLAPSE_EVERY_MS - fightMs : Infinity;
   for (const i of tileOrder(b)) {
     const h = b.tiles[i];
     const stage = sc.tiles[i] ?? 0;

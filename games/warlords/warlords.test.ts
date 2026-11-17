@@ -1,5 +1,5 @@
 import { assert, makeTestCtx } from "../../shared/testing";
-import game, { resolveCastle, resolveRound, rollValues, type WlState } from "./server";
+import game, { botPlan, resolveCastle, resolveRound, rollValues, type WlState } from "./server";
 import {
   AWAY_END_MS,
   CASTLES,
@@ -452,6 +452,59 @@ for (const n of [2, 12]) {
   assert(ends() === 1, "one end");
   assert(maxView < 6000, `${n} players: view stays small (${maxView} bytes)`);
   console.log(`  ${n} players: max view ${maxView} bytes, ${t.result.headline}`);
+}
+
+// ---------- host settings ----------
+{
+  const t = makeTestCtx(2, 5, { rounds: 3, planSec: 25 });
+  const s: WlState = game.setup(t.ctx);
+  assert(s.rounds === 3 && view(s, t.ids[0], t).rounds === 3, "rounds from settings");
+  assert(s.endsAt - t.ctx.now() === 35_000, "round 1 plan = 25s + 10s");
+  playRound(s, t, [[20, 20, 20, 20, 20]]);
+  assert(s.phase === "plan" && s.endsAt - t.ctx.now() === 25_000, "round 2 plan = 25s");
+  playRound(s, t, [[20, 20, 20, 20, 20]]);
+  playRound(s, t, [[20, 20, 20, 20, 20]]);
+  assert(st(s).phase === "final" && s.history.length === 3 && t.result, "three rounds then the final");
+  const bad = makeTestCtx(2, 5, { rounds: 4, planSec: "x" });
+  const b: WlState = game.setup(bad.ctx);
+  assert(b.rounds === ROUNDS && b.endsAt - bad.ctx.now() === FIRST_PLAN_MS, "invalid settings fall back to defaults");
+}
+
+// ---------- practice bots ----------
+{
+  // Bot plans are always legal and focus on a few castles.
+  let r = 1;
+  const rnd = () => ((r = (r * 16807) % 2147483647) - 1) / 2147483646;
+  for (let i = 0; i < 500; i++) {
+    const values = Array.from({ length: CASTLES }, () => 2 + Math.floor(rnd() * 8));
+    const a = botPlan(values, rnd);
+    assert(parseAlloc(a) !== null && sum(a) === 100, `legal bot plan ${a.join()}`);
+    assert(a.filter((n) => n >= 15).length >= 2, "commits to at least two castles");
+  }
+}
+for (const [n, bots] of [[3, 2], [4, 4]] as const) {
+  const t = makeTestCtx(n, 9, {}, bots);
+  const s: WlState = game.setup(t.ctx);
+  let ms = 0;
+  let botLocks = 0;
+  while (!t.result && ms < 15 * 60_000) {
+    t.advance(200);
+    ms += 200;
+    game.tick!(s, t.ctx);
+    for (const id of t.ids) {
+      if (!id.startsWith("bot-")) continue;
+      const a = game.bot!(s, id, t.ctx);
+      if (a) {
+        assert(game.action(s, id, a, t.ctx) === true, "bot lock accepted");
+        botLocks++;
+      }
+    }
+  }
+  assert(t.result && s.phase === "final" && s.history.length === ROUNDS, `${n} players with ${bots} bots: game finishes`);
+  assert(botLocks === bots * ROUNDS, "each bot locks once per round");
+  for (const rec of s.history)
+    for (let seat = n - bots; seat < n; seat++) assert(rec.src[seat] === "lock", "bots lock before the deadline");
+  if (bots === n) assert(ms < ROUNDS * 40_000, `all-bot game moves along (${ms} ms)`);
 }
 
 console.log("✓ warlords tests passed");

@@ -1,4 +1,6 @@
 import { shuffle, topScorers, type GameCtx, type GameDef } from "../../shared/game";
+import { readSettings } from "../../shared/settings";
+import { config } from "./config";
 import {
   AWAY_END_MS,
   CASTLES,
@@ -12,6 +14,7 @@ import {
   ROUNDS,
   STEP_MS,
   SUMMARY_MS,
+  TROOPS,
   VALUE_MAX,
   VALUE_MIN,
   evenSplit,
@@ -44,6 +47,10 @@ export interface WlState {
   order: string[];
   phase: Phase;
   round: number;
+  /** Rounds in this game (host setting). */
+  rounds: number;
+  /** Plan time for rounds 2+ (host setting); round 1 adds FIRST_PLAN_MS - PLAN_MS. */
+  planMs: number;
   names: string[];
   values: number[];
   /** Secret until its castle is revealed. */
@@ -125,7 +132,7 @@ function startPlan(s: WlState, ctx: GameCtx) {
   s.drafts = s.order.map(() => null);
   s.locked = s.order.map(() => false);
   s.step = 0;
-  s.phaseMs = s.round === 1 ? FIRST_PLAN_MS : PLAN_MS;
+  s.phaseMs = s.round === 1 ? s.planMs + (FIRST_PLAN_MS - PLAN_MS) : s.planMs;
   s.endsAt = ctx.now() + s.phaseMs;
 }
 
@@ -219,9 +226,9 @@ function step(s: WlState, ctx: GameCtx): boolean {
     s.phaseMs = STEP_MS + (s.dragon.castle === s.step - 1 ? DRAGON_EXTRA_MS : 0);
   } else if (s.step === CASTLES) {
     s.step += 1;
-    s.phaseMs = s.round >= ROUNDS ? LAST_SUMMARY_MS : SUMMARY_MS;
+    s.phaseMs = s.round >= s.rounds ? LAST_SUMMARY_MS : SUMMARY_MS;
   } else {
-    if (s.round >= ROUNDS) finish(s, ctx, false);
+    if (s.round >= s.rounds) finish(s, ctx, false);
     else startPlan(s, ctx);
     return true;
   }
@@ -229,14 +236,74 @@ function step(s: WlState, ctx: GameCtx): boolean {
   return true;
 }
 
+// ---------- practice bot ----------
+
+/** When each bot may lock in this round (keyed by state), so it "plans" like a person. */
+const botReadyAt = new WeakMap<WlState, Map<string, { round: number; at: number }>>();
+
+/**
+ * Medium bot: commits to two to four of the more valuable castles (with some noise, so it
+ * isn't predictable), spreads most troops over them by value and drops a few stray troops
+ * elsewhere. It only uses what its view shows (castle values), never the dragon or others' plans.
+ */
+export function botPlan(values: readonly number[], random: () => number): number[] {
+  const ranked = values
+    .map((v, c) => ({ c, w: v * (0.7 + random() * 0.6) }))
+    .sort((a, b) => b.w - a.w)
+    .map((x) => x.c);
+  const r = random();
+  const k = r < 0.35 ? 2 : r < 0.8 ? 3 : 4;
+  const chosen = ranked.slice(0, k);
+  const alloc = values.map(() => 0);
+  let left = TROOPS;
+  for (const c of ranked.slice(k)) {
+    if (random() < 0.5) {
+      const n = Math.floor(random() * 5);
+      alloc[c] = n;
+      left -= n;
+    }
+  }
+  const weights = chosen.map((c) => values[c] * (0.8 + random() * 0.4));
+  const total = weights.reduce((t, w) => t + w, 0);
+  let given = 0;
+  chosen.forEach((c, i) => {
+    const n = Math.floor((left * weights[i]) / total);
+    alloc[c] = n;
+    given += n;
+  });
+  alloc[chosen[0]] += left - given;
+  return alloc;
+}
+
+function botMove(s: WlState, botId: string, ctx: GameCtx): WlAction | null {
+  if (s.phase !== "plan") return null;
+  const v = warlords.view(s, botId, ctx) as WlView;
+  if (!v.me || v.me.locked) return null;
+  let timers = botReadyAt.get(s);
+  if (!timers) botReadyAt.set(s, (timers = new Map()));
+  const now = ctx.now();
+  const t = timers.get(botId);
+  if (!t || t.round !== v.round) {
+    // Think for a few seconds, but always lock well before the deadline.
+    const think = Math.min(2_500 + ctx.random() * 6_000, Math.max(0, (v.endsAt ?? now) - now - 3_000));
+    timers.set(botId, { round: v.round, at: now + think });
+    return null;
+  }
+  if (now < t.at) return null;
+  return { type: "lock", alloc: botPlan(v.values, ctx.random) };
+}
+
 export const warlords: GameDef<WlState, WlAction> = {
   id: "warlords",
 
   setup(ctx) {
+    const set = readSettings(config.settings, ctx.settings);
     const s: WlState = {
       order: ctx.players.map((p) => p.id),
       phase: "plan",
       round: 0,
+      rounds: Number(set.rounds) || ROUNDS,
+      planMs: (Number(set.planSec) || PLAN_MS / 1000) * 1000,
       names: [],
       values: [],
       dragon: { castle: 0, strength: DRAGON_MIN },
@@ -297,6 +364,10 @@ export const warlords: GameDef<WlState, WlAction> = {
   tick(s, ctx) {
     return step(s, ctx);
   },
+
+  bot(s, botId, ctx) {
+    return botMove(s, botId, ctx);
+  },
   tickMs: 200,
 
   view(s, viewerId): WlView {
@@ -320,7 +391,7 @@ export const warlords: GameDef<WlState, WlAction> = {
     return {
       phase: s.phase,
       round: s.round,
-      rounds: ROUNDS,
+      rounds: s.rounds,
       order: s.order,
       names: s.names,
       values: s.values,

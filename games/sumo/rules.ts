@@ -1,7 +1,7 @@
 import type { GameRules } from "../rules-types";
 
 export const rules: GameRules = {
-  goal: "Be the last disc left on the ice in a round, and win 3 rounds to become champion.",
+  goal: "Be the last disc left on the ice in a round, and win 3 rounds (the host can change this) to become champion.",
   flow: [
     "Everyone starts spread around a round ice rink. A 3-second countdown starts each round.",
     "Steer your disc and dash into rivals to knock them into the water. The ice is slippery, so you keep sliding.",
@@ -22,8 +22,8 @@ export const rules: GameRules = {
   },
   scoring: [
     "Last disc standing wins the round. If everyone left falls at the same moment, nobody gets the round.",
-    "First to 3 round wins is champion. If nobody has 3 after 7 rounds, whoever won the most rounds wins (ties share the crown).",
-    "Your dash recharges in 2.5 seconds. 🍔 Heavy makes you heavier and bigger for 6 seconds. ⚡ Turbo recharges your dash in 0.6 seconds for 5 seconds.",
+    "First to 3 round wins is champion (the host can pick 2, 3 or 5). If nobody gets there after 7 rounds (11 for first to 5, 5 for first to 2), whoever won the most rounds wins (ties share the crown).",
+    "Your dash recharges in 2.5 seconds. 🍔 Heavy gives you 2.2× the mass and a bigger disc for 6 seconds. ⚡ Turbo recharges your dash in 0.6 seconds for 5 seconds.",
     "Knockouts are counted when a rival falls within 3 seconds of you shoving them, but only round wins decide the champion.",
     "If fewer than 2 players are connected for 10 seconds, the match ends.",
   ],

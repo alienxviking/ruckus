@@ -8,7 +8,9 @@ export const EMOJI_MAX_LEN = 16;
 /** Longest guess kept in the feed. */
 export const MAX_GUESS = 48;
 
-export type Cat = "saying" | "story" | "thing" | "activity" | "food" | "place";
+export type BuiltinCat = "saying" | "story" | "thing" | "activity" | "food" | "place";
+/** "custom" = one of the host's own phrases. */
+export type Cat = BuiltinCat | "custom";
 
 export const CATS: Record<Cat, { label: string; emoji: string }> = {
   saying: { label: "Saying", emoji: "💬" },
@@ -17,9 +19,11 @@ export const CATS: Record<Cat, { label: string; emoji: string }> = {
   activity: { label: "Activity", emoji: "🏃" },
   food: { label: "Food & drink", emoji: "🍕" },
   place: { label: "Place", emoji: "📍" },
+  custom: { label: "Host's pick", emoji: "✏️" },
 };
 
-export const CAT_KEYS = Object.keys(CATS) as Cat[];
+/** The built-in categories (the ones with phrase lists). */
+export const CAT_KEYS: BuiltinCat[] = ["saying", "story", "thing", "activity", "food", "place"];
 
 /**
  * Transient events (ctx.emit).

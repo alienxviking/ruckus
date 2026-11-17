@@ -809,4 +809,31 @@ function assertPlainJson(v: unknown, path = "view") {
   assert(g.submit(1, "\u3164") === false, "invisible filler rejected in play");
 }
 
+// ---------- host settings ----------
+{
+  const t = makeTestCtx(2, 3, { rounds: 5, time: 30 });
+  const s: MmState = game.setup(t.ctx);
+  eq(s.maxRounds, 5, "5 rounds setting");
+  eq(s.endsAt, t.ctx.now() + 20_000, "round 1 gets two thirds of 30s");
+  eq((game.view(s, t.ids[0], t.ctx) as MmView).maxRounds, 5, "view has max rounds");
+  for (let r = 1; r <= 5; r++) {
+    game.action(s, t.ids[0], { type: "submit", word: `alpha${"x".repeat(r)}` }, t.ctx);
+    game.action(s, t.ids[1], { type: "submit", word: `beta${"y".repeat(r)}` }, t.ctx);
+    eq(s.phase, "reveal", `reveal r${r}`);
+    t.advance(REVEAL_MS);
+    game.tick!(s, t.ctx);
+    if (r === 1) eq(s.endsAt, t.ctx.now() + 30_000, "later rounds are 30s");
+  }
+  eq(s.phase, "failed", "fails after 5 rounds");
+  assert(t.result && t.result.winners.length === 0, "game ended");
+}
+{
+  const t = makeTestCtx(2, 3, { rounds: 6, time: 45 });
+  const s: MmState = game.setup(t.ctx);
+  eq(s.maxRounds, MAX_ROUNDS, "invalid rounds fall back");
+  eq(s.roundMs, ROUND_MS, "invalid time falls back");
+  eq(s.firstMs, FIRST_ROUND_MS, "default first round");
+  eq(rating(11), "Phew!", "long games still rated");
+}
+
 console.log("mindmeld: all tests passed");

@@ -1,7 +1,7 @@
 import type { GameRules } from "../rules-types";
 
 export const rules: GameRules = {
-  goal: "Win 2 games by being first to line up four of your discs in a row.",
+  goal: "Win the match by being first to line up four of your discs in a row.",
   flow: [
     "Two players share a board 7 columns wide and 6 rows tall. A random player starts the first game.",
     "Take turns dropping one disc into a column. It falls to the lowest empty space.",
@@ -17,9 +17,9 @@ export const rules: GameRules = {
     touch: ["Tap a column to drop a disc there."],
   },
   scoring: [
-    "Each game you win is worth 1. First to 2 game wins takes the match. Draws count for nobody.",
-    "The match stops after 5 games: whoever has more wins takes it, and an equal score is a shared win.",
-    "You have 30 seconds per move, or a disc drops into a random column for you. If you disconnect, it drops after 5 seconds.",
+    "Each game you win is worth 1. First to 2 game wins takes the match (the host can make it best of 1 or best of 5). Draws count for nobody.",
+    "The match stops after 5 games (3 or 7 for the shorter or longer match): whoever has more wins takes it, and an equal score is a shared win.",
+    "You have 30 seconds per move (the host can change this), or a disc drops into a random column for you. If you disconnect, it drops after 5 seconds.",
     "A player who stays disconnected for a full minute forfeits the match.",
   ],
   tips: [

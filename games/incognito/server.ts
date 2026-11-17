@@ -1,4 +1,6 @@
 import { shuffle, topScorers, type GameCtx, type GameDef } from "../../shared/game";
+import { readSettings } from "../../shared/settings";
+import { config } from "./config";
 import {
   ABANDON_MS,
   ACCEL,
@@ -12,12 +14,10 @@ import {
   LM_R,
   NPC_COUNT,
   PARKS,
-  PLAY_MS,
   PTS_ALL_LIT,
   PTS_MOST_LIT,
   PTS_SNIPE,
   PTS_SURVIVOR,
-  ROUNDS,
   ROUND_OVER_MS,
   SNIPE_CD_MS,
   SPRINT_MUL,
@@ -27,6 +27,7 @@ import {
   WORLD_H,
   WORLD_W,
   countBits,
+  decodePositions,
   encodePositions,
   inputDir,
   landmarkAt,
@@ -151,6 +152,9 @@ export interface RoundRec {
 
 export interface IncState {
   ids: string[];
+  /** Rounds in the game and the play time of each (host settings). */
+  rounds: number;
+  playMs: number;
   phase: Phase;
   round: number;
   parkOrder: number[];
@@ -185,6 +189,8 @@ export interface IncView {
   phase: Phase;
   round: number;
   rounds: number;
+  /** Play time of a round (ms). */
+  playMs: number;
   park: number;
   endsAt: number;
   playAt: number;
@@ -561,7 +567,7 @@ function finishRound(s: IncState, ctx: GameCtx, how: RoundHow, bonusTo: number[]
     seat.iy = 0;
     seat.sprint = false;
   }
-  if (how === "quit" || s.round >= ROUNDS) return finishGame(s, ctx, how === "quit");
+  if (how === "quit" || s.round >= s.rounds) return finishGame(s, ctx, how === "quit");
   s.phase = "roundOver";
   s.endsAt = ctx.now() + ROUND_OVER_MS;
 }
@@ -605,7 +611,7 @@ function advance(s: IncState, ctx: GameCtx): boolean {
       if (now < s.endsAt) return changed;
       s.phase = "play";
       s.playAt = now;
-      s.endsAt = now + PLAY_MS;
+      s.endsAt = now + s.playMs;
       return true;
     case "play":
       if (now < s.endsAt) return changed;
@@ -677,6 +683,197 @@ function snipe(s: IncState, slot: number, w: unknown, ctx: GameCtx): boolean {
   return true;
 }
 
+// ---------- practice bot ----------
+//
+// A bot *player* (not one of the crowd): it walks like the crowd does, lights the landmarks it
+// still needs, and darts walkers that gave themselves away in public: a sniper lit up after a
+// miss, a walker standing on a landmark as it pulses, or someone sprinting. It only reads its
+// own view (the same positions and pulses everyone gets).
+
+interface BotMem {
+  round: number;
+  lastSnap: Snap | null;
+  prev: number[] | null;
+  prevT: number;
+  /** Suspicion per walker index (this round). */
+  sus: Map<number, number>;
+  /** Walkers known to be down. */
+  down: Set<number>;
+  snipesSeen: number;
+  walking: boolean;
+  tx: number;
+  ty: number;
+  until: number;
+  giveUp: number;
+  onLandmark: boolean;
+  /** Last stick sent. */
+  ix: number;
+  iy: number;
+  /** A dart it has decided to throw, once it has "noticed" (reaction time). */
+  aim: { w: number; at: number } | null;
+}
+
+const botMem = new WeakMap<IncState, Map<string, BotMem>>();
+
+function botPickLeg(m: BotMem, park: Park, x: number, y: number, lit: number, now: number, rnd: () => number) {
+  m.onLandmark = false;
+  let ok = false;
+  if (rnd() < 0.4) {
+    const todo = park.landmarks.flatMap((l, i) => (lit & (1 << i) ? [] : [l]));
+    const l = todo.length ? todo[Math.floor(rnd() * todo.length)] : null;
+    if (l && clearPath(park, x, y, l.x, l.y)) {
+      const a = rnd() * TAU;
+      const r = Math.sqrt(rnd()) * LM_R * 0.45;
+      m.tx = l.x + Math.cos(a) * r;
+      m.ty = l.y + Math.sin(a) * r;
+      ok = m.onLandmark = true;
+    }
+  }
+  for (let k = 0; k < 14 && !ok; k++) {
+    const a = rnd() * TAU;
+    const d = LEG_MIN + rnd() * (LEG_MAX - LEG_MIN);
+    const tx = x + Math.cos(a) * d;
+    const ty = y + Math.sin(a) * d;
+    if (tx < 30 || tx > WORLD_W - 30 || ty < 30 || ty > WORLD_H - 30) continue;
+    if (!freeSpot(park, tx, ty, WALKER_R + 8) || !clearPath(park, x, y, tx, ty)) continue;
+    m.tx = tx;
+    m.ty = ty;
+    ok = true;
+  }
+  if (!ok) {
+    m.until = now + 400;
+    return;
+  }
+  m.walking = true;
+  m.giveUp = now + (Math.hypot(m.tx - x, m.ty - y) / WALK) * 1000 + 2_500;
+}
+
+function botMove(s: IncState, botId: string, ctx: GameCtx): IncAction | null {
+  const v = incognito.view(s, botId, ctx) as IncView;
+  if ((v.phase !== "intro" && v.phase !== "play") || v.you < 0) return null;
+  const slot = v.ids.indexOf(botId);
+  if (v.snipes.some((r) => r.hit === slot)) return null; // darted: out for the round
+  let mems = botMem.get(s);
+  if (!mems) botMem.set(s, (mems = new Map()));
+  let m = mems.get(botId);
+  const now = ctx.now();
+  if (!m || m.round !== v.round) {
+    m = {
+      round: v.round,
+      lastSnap: null,
+      prev: null,
+      prevT: 0,
+      sus: new Map(),
+      down: new Set(),
+      snipesSeen: 0,
+      walking: false,
+      tx: 0,
+      ty: 0,
+      until: now + ctx.random() * 1_800,
+      giveUp: 0,
+      onLandmark: false,
+      ix: 0,
+      iy: 0,
+      aim: null,
+    };
+    mems.set(botId, m);
+  }
+  const park = PARKS[v.park] ?? PARKS[0];
+  const pos = decodePositions(v.snap.p);
+  const bump = (w: number, by: number) => {
+    if (w !== v.you && !m.down.has(w)) m.sus.set(w, (m.sus.get(w) ?? 0) + by);
+  };
+
+  // ----- watch the crowd -----
+  if (m.lastSnap !== v.snap && v.snap.n === v.round) {
+    m.lastSnap = v.snap;
+    const dt = v.snap.t - m.prevT;
+    if (m.prev && m.prev.length === pos.length && dt > 0 && dt <= 400) {
+      for (let i = 0; i * 2 < pos.length; i++) {
+        const sp = (Math.hypot(pos[i * 2] - m.prev[i * 2], pos[i * 2 + 1] - m.prev[i * 2 + 1]) * 1000) / dt;
+        // Nobody but a sprinting human goes this fast.
+        if (sp > WALK * 1.35) bump(i, 0.4);
+      }
+    }
+    // Memory fades: in a crowd this big it's easy to lose track of who did what.
+    if (m.prev && dt > 0) for (const [w, k] of m.sus) if (k > 0) m.sus.set(w, k * Math.pow(0.97, dt / 1000));
+    m.prev = pos;
+    m.prevT = v.snap.t;
+    for (const f of v.snap.f ?? []) {
+      if (f[0] !== FX_PULSE) continue;
+      const l = park.landmarks[f[1]];
+      if (!l) continue;
+      for (let i = 0; i * 2 < pos.length; i++) {
+        if (Math.hypot(pos[i * 2] - l.x, pos[i * 2 + 1] - l.y) <= LM_R + 4) bump(i, 1.1);
+      }
+    }
+  }
+  for (; m.snipesSeen < v.snipes.length; m.snipesSeen++) {
+    const r = v.snipes[m.snipesSeen];
+    if (r.hit >= 0) m.down.add(r.w);
+    else {
+      m.sus.set(r.w, -99); // the dart showed it's just a bot
+      if (r.sw >= 0) bump(r.sw, 5); // a missed sniper lit up: that one's human
+    }
+    if (m.aim?.w === r.w) m.aim = null;
+  }
+
+  // ----- dart -----
+  if (v.phase === "play" && (v.darts[slot] ?? 0) > 0) {
+    if (m.aim && now >= m.aim.at && now >= v.shotAt) {
+      let w = m.aim.w;
+      m.aim = null;
+      // Sometimes it mixes the suspect up with a walker right next to them.
+      if (ctx.random() < 0.3) {
+        let near = -1;
+        let nd = 40;
+        for (let i = 0; i * 2 < pos.length; i++) {
+          const d = Math.hypot(pos[i * 2] - pos[w * 2], pos[i * 2 + 1] - pos[w * 2 + 1]);
+          if (i !== w && i !== v.you && !m.down.has(i) && d < nd) [near, nd] = [i, d];
+        }
+        if (near >= 0) w = near;
+      }
+      if (!m.down.has(w)) return { type: "snipe", w };
+    }
+    if (!m.aim) {
+      let best = -1;
+      let score = 0;
+      for (const [w, k] of m.sus) {
+        if (k > score && !m.down.has(w)) [best, score] = [w, k];
+      }
+      const late = v.endsAt - now < 20_000;
+      if (best >= 0 && score >= (late ? 1.5 : 3)) m.aim = { w: best, at: now + 1_000 + ctx.random() * 2_000 };
+    }
+  }
+
+  // ----- walk like the crowd -----
+  const x = pos[v.you * 2];
+  const y = pos[v.you * 2 + 1];
+  if (x === undefined || y === undefined) return null;
+  let ix = 0;
+  let iy = 0;
+  if (!m.walking) {
+    if (now >= m.until) botPickLeg(m, park, x, y, v.lit, now, ctx.random);
+  }
+  if (m.walking) {
+    const dx = m.tx - x;
+    const dy = m.ty - y;
+    const d = Math.hypot(dx, dy);
+    if (d < 7 || now > m.giveUp) {
+      m.walking = false;
+      // On a landmark, stay long enough to light it.
+      m.until = now + (m.onLandmark ? LIGHT_MS + 300 : 0) + PAUSE_MIN + ctx.random() * (PAUSE_MAX - PAUSE_MIN);
+    } else {
+      ix = Math.round((dx / d) * 100);
+      iy = Math.round((dy / d) * 100);
+    }
+  }
+  if (ix === m.ix && iy === m.iy) return null;
+  m.ix = ix;
+  m.iy = iy;
+  return { type: "in", x: ix, y: iy };
+}
+
 // ---------- game definition ----------
 
 export const incognito: GameDef<IncState, IncAction> = {
@@ -684,8 +881,11 @@ export const incognito: GameDef<IncState, IncAction> = {
 
   setup(ctx) {
     const ids = ctx.players.map((p) => p.id);
+    const set = readSettings(config.settings, ctx.settings);
     const s: IncState = {
       ids,
+      rounds: Number(set.rounds),
+      playMs: Number(set.time),
       phase: "intro",
       round: 1,
       parkOrder: shuffle(
@@ -782,7 +982,8 @@ export const incognito: GameDef<IncState, IncAction> = {
     return {
       phase: s.phase,
       round: s.round,
-      rounds: ROUNDS,
+      rounds: s.rounds,
+      playMs: s.playMs,
       park: s.park,
       endsAt: s.endsAt,
       playAt: s.playAt,
@@ -809,6 +1010,10 @@ export const incognito: GameDef<IncState, IncAction> = {
       abandonAt: s.aloneSince === null || s.phase === "final" ? null : s.aloneSince + ABANDON_MS,
       snap: s.snap,
     } satisfies IncView;
+  },
+
+  bot(s, botId, ctx) {
+    return botMove(s, botId, ctx);
   },
 
   playerLeft(s, playerId, ctx) {

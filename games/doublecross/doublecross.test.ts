@@ -15,6 +15,7 @@ import {
   TALK_MS,
   awards,
   heistPot,
+  pairPots,
   settle,
   tallies,
   type Choice,
@@ -541,6 +542,59 @@ const sumGains = (history: RoundRec[], seats: number) => {
   assert(get("trusting").seats.join() === "1,2", "most trusting (burned once each, three splits)");
   const none = awards([{ round: 1, heist: false, sitting: [], tables: [tb([0, 1], ["split", "split"])] }], 2);
   assert(none.length === 1 && none[0].key === "saint", "no thieves, no backstabber award");
+}
+
+// ---------- host settings ----------
+{
+  assert(pairPots(5).join() === PAIR_POTS.join(), "default pots unchanged");
+  assert(pairPots(3).join() === "4,8,14" && pairPots(7).join() === "4,6,8,10,12,14,16", "short and long pot ladders");
+  assert([1, 2, 3, 4, 7].every((n) => pairPots(n).length === n && pairPots(n).every((x) => x % 2 === 0)), "pots fit and stay even");
+  const t = makeTestCtx(4, 3, { rounds: 4, talk: 20 });
+  const s = game.setup(t.ctx);
+  assert(s.endsAt - t.ctx.now() === 20_000, "20s talk");
+  assert(view(s, s.order[0], t).rounds === 4, "view shows 4 rounds");
+  for (let r = 1; r <= 3; r++) {
+    assert(s.tables.every((tb) => tb.pot === [4, 8, 14][r - 1]), `short-game pot ${r}`);
+    playRound(t, s, () => "split");
+  }
+  assert(rnd(s) === 4 && nTables(s) === 1 && view(s, s.order[0], t).heist, "round 4 is the heist");
+  assert(s.endsAt - t.ctx.now() === 15_000, "heist talk is three quarters");
+  playRound(t, s, () => "split");
+  assert(ph(s) === "final" && t.result && s.history.length === 4, "game over after 4 rounds");
+  const d = game.setup(makeTestCtx(4).ctx);
+  assert(d.rounds === ROUNDS && d.talkMs === TALK_MS && d.heistTalkMs === HEIST_TALK_MS, "defaults unchanged");
+  console.log("  host settings: rounds and talk time");
+}
+
+// ---------- practice bots ----------
+for (const [humans, bots] of [
+  [1, 3],
+  [0, 5],
+]) {
+  const n = humans + bots;
+  const t = makeTestCtx(n, 17, {}, bots);
+  const s = game.setup(t.ctx);
+  let ms = 0;
+  let steals = 0;
+  let says = 0;
+  while (!t.result && ms < 20 * 60_000) {
+    t.advance(250);
+    ms += 250;
+    for (const id of t.ids) {
+      if (!id.startsWith("bot-")) continue;
+      const a = game.bot!(s, id, t.ctx);
+      if (a?.type === "say") says++;
+      if (a) game.action(s, id, a, t.ctx);
+    }
+    game.tick!(s, t.ctx);
+  }
+  assert(t.result && s.history.length === ROUNDS, `bots finish the game (${humans} human + ${bots} bots)`);
+  for (const r of s.history) for (const tb of r.tables) tb.seats.forEach((seat, i) => s.order[seat].startsWith("bot-") && tb.c[i] === "steal" && steals++);
+  const botAuto = s.history.some((r) => r.tables.some((tb) => tb.seats.some((seat, i) => s.order[seat].startsWith("bot-") && tb.auto[i])));
+  assert(!botAuto, "bots always pick in time");
+  assert(says > 0, "bots chat");
+  if (humans === 0) assert(ms < 6 * 60_000, `all-bot game moves on early (${ms / 1000}s)`);
+  console.log(`  bots: ${humans} human + ${bots} bots in ${Math.round(ms / 1000)}s, ${steals} bot steals, ${says} lines`);
 }
 
 console.log("✓ doublecross tests passed");

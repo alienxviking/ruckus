@@ -143,8 +143,23 @@ export type DcEvent =
   /** Someone locked a choice (never which). */
   | { k: "lock"; r: number; s: number; x: number };
 
-export const potFor = (round: number, size: number) => {
-  const base = PAIR_POTS[Math.min(PAIR_POTS.length, Math.max(1, round)) - 1];
+/**
+ * Pair-round pots for a game with `pairRounds` pair rounds (the host picks the length). Five
+ * gives PAIR_POTS; shorter games skip steps, longer ones keep climbing by 2. Always even, so a
+ * trio's 1.5x pot is whole.
+ */
+export function pairPots(pairRounds: number): number[] {
+  if (pairRounds === PAIR_POTS.length) return [...PAIR_POTS];
+  if (pairRounds < PAIR_POTS.length) {
+    const n = Math.max(1, pairRounds);
+    if (n === 1) return [PAIR_POTS[0]];
+    return Array.from({ length: n }, (_, i) => PAIR_POTS[Math.round((i * (PAIR_POTS.length - 1)) / (n - 1))]);
+  }
+  return Array.from({ length: pairRounds }, (_, i) => (i < PAIR_POTS.length - 1 ? PAIR_POTS[i] : 12 + 2 * (i - (PAIR_POTS.length - 1))));
+}
+
+export const potFor = (round: number, size: number, pots: readonly number[] = PAIR_POTS) => {
+  const base = pots[Math.min(pots.length, Math.max(1, round)) - 1];
   return size === 3 ? (base / 2) * 3 : base;
 };
 

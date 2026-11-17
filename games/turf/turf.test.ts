@@ -1064,4 +1064,50 @@ for (const [n, seed] of [
   check(t.events[0]?.to === t.ids[0] && (t.events[0].event as TurfInputEcho).rx === 41, "input echo, to you only");
 }
 
+// ---------- host settings ----------
+{
+  const t = makeTestCtx(2, 3, { seconds: 45, map: "small" });
+  const s: TurfState = game.setup(t.ctx);
+  check(s.w === 32 && s.h === 21, "small map");
+  tick(t, s, COUNTDOWN_MS);
+  check(s.phase === "play" && s.endsAt === t.ctx.now() + 45_000, "45s of play");
+  check(view(s, t.ids[0], t).playMs === 45_000, "view carries the match length");
+  for (let ms = 0; ms < 45_000 && s.phase !== "over"; ms += TICK_MS) tick(t, s);
+  check(s.phase === "over" && t.result, "ends after 45s");
+  const big: TurfState = game.setup(makeTestCtx(6, 3, { map: "large" }).ctx);
+  check(big.w * big.h < 64 * 64, "large map still fits the 2-digit tile index");
+  const dflt: TurfState = game.setup(makeTestCtx(3, 3).ctx);
+  check(dflt.w === 40 && dflt.h === 26 && dflt.playMs === PLAY_MS, "defaults unchanged");
+}
+
+// ---------- practice bots ----------
+for (const [n, bots, map] of [
+  [2, 1, "normal"],
+  [4, 4, "small"],
+  [6, 6, "large"],
+] as const) {
+  const t = makeTestCtx(n, 9 + n, { map }, bots);
+  const s: TurfState = game.setup(t.ctx);
+  let turns = 0;
+  let captures = 0;
+  for (let ms = 0; ms < COUNTDOWN_MS + PLAY_MS + 2_000 && !t.result; ms += TICK_MS) {
+    t.advance(TICK_MS);
+    game.tick!(s, t.ctx);
+    for (const id of t.ids) {
+      if (!t.ctx.player(id)?.bot) continue;
+      const a = game.bot!(s, id, t.ctx);
+      if (a) {
+        game.action(s, id, a, t.ctx);
+        turns++;
+      }
+    }
+  }
+  captures = events(t, "capture").length;
+  check(t.result, `bot game (${n}) ends`);
+  check(turns > 20, "bots steer");
+  check(captures >= bots, `bots close loops (${captures} captures)`);
+  for (const p of s.painters) if (t.ctx.player(p.id)?.bot) check(p.count > 30, `bot painted a fair share (${p.count})`);
+  checkInvariants(s, "bot game");
+}
+
 console.log("turf: all tests passed");

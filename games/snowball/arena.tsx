@@ -30,7 +30,6 @@ import {
   FX_OUT,
   FX_PICK,
   FX_PILE,
-  MAX_HP,
   MAX_RANGE,
   MIN_RANGE,
   PILE_R,
@@ -1220,8 +1219,8 @@ function drawScene(g: CanvasRenderingContext2D, sc: Scene, S: Surface, d: ArenaD
         const gap = pr * 2.7;
         // Hugging the top edge: hearts go under the name tag instead.
         const hy = y - u * 1.95 > pr * 1.6 ? y - u * 1.95 : ty + fs + 3 * dpr + pr * 1.4;
-        for (let i = 0; i < MAX_HP; i++) {
-          const hx = x + (i - (MAX_HP - 1) / 2) * gap;
+        for (let i = 0; i < view.maxHp; i++) {
+          const hx = x + (i - (view.maxHp - 1) / 2) * gap;
           g.fillStyle = i < hp ? "#f43f5e" : "rgba(30,41,59,0.35)";
           g.beginPath();
           g.arc(hx, hy, pr, 0, TAU);
@@ -1835,11 +1834,11 @@ export function Arena({
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
           <div className="flex items-center gap-2 rounded-2xl border border-line bg-panel px-3 py-2" aria-live="polite">
             <span className="sr-only">
-              {hud ? `${hud.hp} of ${MAX_HP} hearts, ${hud.ammo} snowball${hud.ammo === 1 ? "" : "s"}` : ""}
+              {hud ? `${hud.hp} of ${view.maxHp} hearts, ${hud.ammo} snowball${hud.ammo === 1 ? "" : "s"}` : ""}
               {hud && hud.power >= 0 ? `, ${POWER_INFO[POWER_KINDS[hud.power]].label} ×${hud.charges}` : ""}
             </span>
             <span className="flex gap-0.5" aria-hidden>
-              {Array.from({ length: MAX_HP }, (_, i) => (
+              {Array.from({ length: view.maxHp }, (_, i) => (
                 <span key={i} className={`text-base leading-none ${hud && i < hud.hp ? "" : "opacity-25 grayscale"}`}>
                   ❤️
                 </span>

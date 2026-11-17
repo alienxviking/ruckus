@@ -417,4 +417,56 @@ for (const x2 of [true, false]) {
   assert(json.length < 4000, `view stays small (${json.length} bytes)`);
 }
 
+// ---------- host setting: number of crates ----------
+for (const [n, cursedMin] of [[6, 1], [10, 2]] as const) {
+  const t = makeTestCtx(3, 9, { crates: n });
+  const s = game.setup(t.ctx);
+  assert(s.crates.length === n && s.crates.filter((c) => c.gift).length === 1 && !s.crates[0].gift, `${n} crates, one gift, not first`);
+  const cursed = s.crates.filter((c) => !c.gift && kindOf(c.value) === "cursed").length;
+  assert(cursed >= cursedMin && cursed <= cursedMin + 1, `${n} crates: cursed count`);
+  assert(s.crates.every((c) => c.peekers.length === 2), "every crate peeked twice");
+  startAuction(s, t);
+  let guard = 0;
+  while (!t.result && guard++ < 1000) tick(s, t, 250);
+  assert(t.result && s.crates.every((c) => c.status === "unsold"), `${n}-crate auction ends after ${n} lots`);
+  assert(view(s, t, s.ids[0]).crates.length === n, "view carries the crate count");
+}
+{
+  const t = makeTestCtx(3, 9, { crates: 7 });
+  assert(game.setup(t.ctx).crates.length === LOTS, "invalid crate count falls back to 8");
+}
+
+// ---------- practice bots ----------
+/** Drive a game with bots: tick every 250 ms and apply whatever the bots decide. */
+function runBots(t: T, s: AuState, maxMs = 10 * 60_000) {
+  const bots = t.ctx.players.filter((p) => p.bot).map((p) => p.id);
+  for (let ms = 0; ms < maxMs && !t.result; ms += 250) {
+    tick(s, t, 250);
+    for (const id of bots) {
+      const a = game.bot!(s, id, t.ctx);
+      if (a) game.action(s, id, a, t.ctx);
+    }
+  }
+}
+for (const seed of [1, 2, 3, 4, 5]) {
+  // All bots.
+  const t = makeTestCtx(4, seed, {}, 4);
+  const s = game.setup(t.ctx);
+  runBots(t, s);
+  assert(t.result, `all-bot auction ends (seed ${seed})`);
+  assert(s.crates.some((c) => c.status === "sold"), "bots buy things");
+  assert(s.cash.every((c) => c >= 0), "bots never overspend");
+  // One idle human + 2 bots on 6 crates.
+  const t2 = makeTestCtx(3, seed, { crates: 6 }, 2);
+  const s2 = game.setup(t2.ctx);
+  runBots(t2, s2);
+  assert(t2.result && !s2.abandoned, `1 human + 2 bots ends (seed ${seed})`);
+}
+{
+  // Bots wait to think before readying and bidding (no instant play).
+  const t = makeTestCtx(2, 3, {}, 1);
+  const s = game.setup(t.ctx);
+  assert(game.bot!(s, "bot-0", t.ctx) == null, "no instant ready");
+}
+
 console.log("✓ auction tests passed");

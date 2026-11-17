@@ -28,6 +28,7 @@ import {
   ROUND_MS,
   ROUND_OVER_MS,
   START_LEN,
+  WINS_NEEDED,
   TICK_MS,
   OPPOSITE,
   type Dir,
@@ -1415,6 +1416,62 @@ for (const [n, seed] of [
   act(h, a, { type: "turn", dir: "up", seq: 77, at: h.s.tick + 1 });
   const echo = h.t.events[0];
   assert(echo?.to === a && (echo.event as SnakeInputEcho).rx === 77, "input echo, to you only");
+}
+
+// ---------- host settings ----------
+{
+  const t = makeTestCtx(2, 4, { wins: 1, roundSec: 60 });
+  const s: SnakeState = game.setup(t.ctx);
+  assert(s.winsNeeded === 1 && s.maxRounds === 3 && s.roundMs === 60_000, "settings read into state");
+  const v = game.view(s, t.ids[0], t.ctx) as SnakeView;
+  assert(v.winsNeeded === 1 && v.maxRounds === 3 && v.roundMs === 60_000, "view carries the match format");
+  t.advance(COUNTDOWN_MS);
+  game.tick!(s, t.ctx);
+  assert(s.phase === "play" && s.endsAt === t.ctx.now() + 60_000, "60s round");
+  // Player 0 drops out mid-round: player 1 takes the round, and with one win needed, the match.
+  t.ctx.player(t.ids[0])!.connected = false;
+  game.playerLeft!(s, t.ids[0], t.ctx);
+  assert(t.result && t.result.winners.join() === t.ids[1], "first to 1 round ends the match after one round");
+  const dflt: SnakeState = game.setup(makeTestCtx(2, 4).ctx);
+  assert(dflt.winsNeeded === WINS_NEEDED && dflt.maxRounds === 5 && dflt.roundMs === ROUND_MS, "defaults unchanged");
+}
+
+// ---------- practice bots ----------
+for (const [n, bots] of [
+  [2, 1],
+  [4, 4],
+  [8, 8],
+] as const) {
+  const t = makeTestCtx(n, 30 + n, {}, bots);
+  const s: SnakeState = game.setup(t.ctx);
+  let ms = 0;
+  let longest = 0;
+  while (!t.result && ms < 20 * 60_000) {
+    t.advance(TICK_MS);
+    ms += TICK_MS;
+    game.tick!(s, t.ctx);
+    for (const id of t.ids) {
+      if (!t.ctx.player(id)?.bot) continue;
+      const a = game.bot!(s, id, t.ctx);
+      if (a) game.action(s, id, a, t.ctx);
+    }
+    for (const x of s.snakes) if (x.alive && t.ctx.player(x.id)?.bot) longest = Math.max(longest, x.body.length);
+  }
+  assert(t.result, `bot match (${n}) ends`);
+  assert(longest >= START_LEN + 3, `bots eat (${longest})`);
+  assert(s.history.length >= 1, "rounds were played");
+}
+{
+  // A lone bot against nobody steering: it should outlive a snake that never turns.
+  const t = makeTestCtx(2, 99, {}, 1);
+  const s: SnakeState = game.setup(t.ctx);
+  for (let i = 0; i < 2_000 && s.round === 1 && s.phase !== "roundOver"; i++) {
+    t.advance(TICK_MS);
+    game.tick!(s, t.ctx);
+    const a = game.bot!(s, "bot-0", t.ctx);
+    if (a) game.action(s, "bot-0", a, t.ctx);
+  }
+  assert(s.history[0]?.winner === "bot-0", "bot beats a snake that never steers");
 }
 
 console.log("snakes: all tests passed");

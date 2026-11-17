@@ -1,13 +1,13 @@
 import type { GameRules } from "../rules-types";
 
 export const rules: GameRules = {
-  goal: "Be the first to win 3 rounds by being the last player still standing on the floor.",
+  goal: "Be the first to win 3 rounds (the host can change this) by being the last player still standing on the floor.",
   flow: [
     "Everyone starts on a floor of hex tiles over a sea of lava. After a 3-second countdown, start moving.",
     "Every tile you step off cracks and drops into the lava a moment later. Stand on one tile for more than about a second and it cracks under you too.",
     "Bump into rivals to shove them toward the holes, and jump over a single missing tile to escape.",
     "Power-ups appear on the floor. Run over one to use it straight away: 🧱 Rebuild fixes the floor around you, 🪽 Float lets you hover over lava for 3 seconds, 💥 Shockwave cracks the floor under everyone else.",
-    "After 25 seconds the outer ring starts crumbling, then another ring every 3 seconds. Fall in and you're out until the next round.",
+    "After 25 seconds (the host can change this) the outer ring starts crumbling, then another ring every 3 seconds. Fall in and you're out until the next round.",
   ],
   controls: {
     desktop: [
@@ -21,8 +21,8 @@ export const rules: GameRules = {
   },
   scoring: [
     "The last player standing wins the round. If the last players fall together, nobody gets the round.",
-    "The first player to win 3 rounds wins the game.",
-    "If nobody reaches 3 wins after 7 rounds, whoever has won the most rounds wins (ties share the win).",
+    "The first player to win 3 rounds (or the host's choice of 2 or 5) wins the game.",
+    "If nobody gets there after 7 rounds (5 when playing to 2, 11 when playing to 5), whoever has won the most rounds wins (ties share the win).",
   ],
   tips: [
     "Keep moving, but plan a loop: every tile you leave is gone for good.",

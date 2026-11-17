@@ -1,4 +1,6 @@
 import type { GameCtx, GameDef } from "../../shared/game";
+import { readSettings } from "../../shared/settings";
+import { config } from "./config";
 import {
   FIRST_ROUND_MS,
   MAX_ROUNDS,
@@ -43,6 +45,11 @@ export interface MmState {
   order: string[];
   phase: Phase;
   round: number;
+  /** Rounds allowed before the game is lost (host setting). */
+  maxRounds: number;
+  /** Writing time for round 1 and for later rounds (host setting). */
+  firstMs: number;
+  roundMs: number;
   /** Deadline of the current writing/reveal phase (ignored while paused). */
   endsAt: number;
   /** Full length of the current phase, for timer bars. */
@@ -91,7 +98,7 @@ const shouldPause = (s: MmState, ctx: GameCtx) => presentCount(s, ctx) < MIN_PRE
 function startRound(s: MmState, ctx: GameCtx) {
   const now = ctx.now();
   s.phase = "writing";
-  s.phaseMs = s.round === 1 ? FIRST_ROUND_MS : ROUND_MS;
+  s.phaseMs = s.round === 1 ? s.firstMs : s.roundMs;
   s.endsAt = now + s.phaseMs;
   s.subs = s.order.map(() => null);
   s.pausedLeft = null;
@@ -156,7 +163,7 @@ function finishReveal(s: MmState, ctx: GameCtx) {
       winners: [...s.order],
       headline: `Mind Meld in ${n} round${n === 1 ? "" : "s"} on “${meldWord(last)}”! 🧠`,
     });
-  } else if (s.round >= MAX_ROUNDS) {
+  } else if (s.round >= s.maxRounds) {
     s.phase = "failed";
     s.reason = "rounds";
     const best = bestRound(s.history);
@@ -238,12 +245,19 @@ export const mindmeld: GameDef<MmState, MmAction> = {
   id: "mindmeld",
 
   setup(ctx) {
+    const settings = readSettings(config.settings, ctx.settings);
+    const roundMs = (Number(settings.time) || ROUND_MS / 1000) * 1000;
+    // Round 1 has nothing to link yet, so it is shorter: 40s by default.
+    const firstMs = Math.round((roundMs * FIRST_ROUND_MS) / ROUND_MS);
     const s: MmState = {
       order: ctx.players.map((p) => p.id),
       phase: "writing",
       round: 1,
+      maxRounds: Number(settings.rounds) || MAX_ROUNDS,
+      firstMs,
+      roundMs,
       endsAt: 0,
-      phaseMs: FIRST_ROUND_MS,
+      phaseMs: firstMs,
       pausedLeft: null,
       waitUntil: null,
       toppedUp: false,
@@ -298,7 +312,7 @@ export const mindmeld: GameDef<MmState, MmAction> = {
     return {
       phase: s.phase,
       round: s.round,
-      maxRounds: MAX_ROUNDS,
+      maxRounds: s.maxRounds,
       endsAt: (writing && s.pausedLeft === null) || s.phase === "reveal" ? s.endsAt : null,
       phaseMs: s.phaseMs,
       pausedLeft: writing ? s.pausedLeft : null,

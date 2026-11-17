@@ -3,10 +3,10 @@ import type { GameRules } from "../rules-types";
 export const rules: GameRules = {
   goal: "Be the last player with any dice left.",
   flow: [
-    "Everyone starts with the same number of dice: 5 each with up to 4 players, 4 each with 5–6 players, 3 each with 7–8 players.",
+    "Everyone starts with the same number of dice: 5 each with up to 4 players, 4 each with 5–6 players, 3 each with 7–8 players. The host can set a different number.",
     "Each round, everyone rolls in secret. You can see only your own dice.",
     "Players take turns bidding on how many dice on the whole table show one face, like \"four 5s\". Ones are wild: they count as every face. You can't bid on ones.",
-    "On your turn, raise the bid (more dice, or the same number of a higher face) or call Liar! on the last bid. You have 30 seconds per turn.",
+    "On your turn, raise the bid (more dice, or the same number of a higher face) or call Liar! on the last bid. You have 30 seconds per turn (the host can change this).",
     "Someone calls: every die is revealed and counted, and someone loses a die. Whoever lost the die starts the next round.",
     "Lose your last die and you're out. Play continues until one player is left.",
   ],
@@ -24,7 +24,7 @@ export const rules: GameRules = {
   scoring: [
     "Liar!: if there are fewer matching dice than bid, the bidder loses a die. If there are at least that many, the caller loses a die.",
     "Spot on (only while 3+ players still have dice): you claim the bid is exactly right. If it is, you win a die back (never above your starting number). If not, you lose a die.",
-    "If your 30 seconds run out, the game plays a move for you.",
+    "If your turn timer runs out, the game plays a move for you.",
     "The last player still holding dice wins.",
   ],
   tips: [

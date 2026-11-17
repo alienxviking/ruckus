@@ -3,9 +3,9 @@ import type { GameRules } from "../rules-types";
 export const rules: GameRules = {
   goal: "Score the most points by guessing other players' drawings fast and drawing so others can guess yours.",
   flow: [
-    "Players take turns as the artist in a random order. With 3 or fewer players, everyone draws twice.",
-    "The artist picks one of three secret words (easy, medium or hard) within 12 seconds, or the first word is picked for them.",
-    "The artist has 80 seconds to draw the word while everyone else types guesses.",
+    "Players take turns as the artist in a random order. With 3 or fewer players, everyone draws twice (the host can change how many turns each player gets).",
+    "The artist picks one of three secret words (easy, medium or hard, or from the host's own list if they typed one) within 12 seconds, or the first word is picked for them.",
+    "The artist has 80 seconds (the host can change this) to draw the word while everyone else types guesses.",
     "Halfway through and again at the three-quarter mark, a letter of the word is revealed as a hint.",
     "The turn ends when time runs out or everyone has guessed. The word is shown for 5 seconds, then the next artist starts.",
   ],

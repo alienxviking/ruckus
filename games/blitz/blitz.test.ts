@@ -743,4 +743,76 @@ function playOf(n: number, type: MicroType, seed = 11) {
   assert(Object.getPrototypeOf(v.scores) === Object.prototype, "plain objects in views");
 }
 
+// ---------- host settings ----------
+{
+  const t = makeTestCtx(2, 7, { rounds: 6, pace: "relaxed" });
+  const s: BlitzState = game.setup(t.ctx);
+  assert(s.rounds === 6 && s.order.length === 6, "6 microgames");
+  stepTo(s, t, "ready", 1);
+  assert(viewOf(s, t.ids[0], t).total === 6, "view shows the host's total");
+  let doubles = 0;
+  let guard = 0;
+  while (!t.result && guard++ < 200) {
+    if (phaseOf(s) === "ready" && s.cur!.double) doubles++;
+    if (phaseOf(s) === "play" && s.phaseAt === t.ctx.now()) {
+      const type = s.cur!.type;
+      const show = s.opensAt - s.phaseAt;
+      const want = type === "clock" || type === "tap" ? PLAY_MS[type] : show + Math.round((PLAY_MS[type] - show) * 1.5);
+      assert(s.endsAt - s.phaseAt === want, `relaxed pace stretches ${type}`);
+    }
+    step(s, t);
+  }
+  assert(t.result && s.recap.length === 6, "6-microgame match ends after 6");
+  assert(doubles === 3, "last 3 still double");
+  const bad = game.setup(makeTestCtx(2, 7, { rounds: 99 }).ctx);
+  assert(bad.rounds === ROUNDS && bad.pace === 1, "invalid settings fall back to defaults");
+}
+
+// ---------- practice bots ----------
+for (const [humans, bots, seed] of [
+  [1, 2, 5],
+  [0, 4, 9],
+  [0, 3, 21],
+] as const) {
+  const t = makeTestCtx(humans + bots, seed, { rounds: 18 }, bots);
+  const s: BlitzState = game.setup(t.ctx);
+  let ms = 0;
+  while (!t.result && ms < 10 * 60_000) {
+    t.advance(100);
+    ms += 100;
+    game.tick!(s, t.ctx);
+    for (const p of t.ctx.players) {
+      if (!p.bot) continue;
+      const a = game.bot!(s, p.id, t.ctx);
+      if (a) game.action(s, p.id, a, t.ctx);
+    }
+  }
+  assert(t.result, `bots finish a match (${humans}+${bots})`);
+  const botIds = t.ctx.players.filter((p) => p.bot).map((p) => p.id);
+  const total = botIds.reduce((sum, id) => sum + (t.result!.scores?.[id] ?? 0), 0);
+  assert(total > 0, "bots score points");
+  // Medium skill: they score, but nowhere near a perfect run (18 × up to 200, ×2 for the last 3).
+  for (const id of botIds) assert((s.hits[id] ?? 0) < 18, "bots aren't perfect");
+}
+
+// Bots answer during play, never early, and their picks are accepted.
+{
+  const t = makeTestCtx(2, 13, {}, 2);
+  const s: BlitzState = game.setup(t.ctx);
+  let answered = 0;
+  let early = 0;
+  while (!t.result) {
+    t.advance(100);
+    game.tick!(s, t.ctx);
+    for (const id of t.ids) {
+      const a = game.bot!(s, id, t.ctx);
+      if (!a) continue;
+      if (phaseOf(s) !== "play" || t.ctx.now() < s.opensAt) early++;
+      if (game.action(s, id, a, t.ctx) && a.type !== "taps") answered++;
+    }
+  }
+  assert(early === 0, "bots wait for answers to open");
+  assert(answered >= 2 * (ROUNDS - 2), `bots answer every choice round (${answered})`);
+}
+
 console.log("✓ blitz tests passed");

@@ -505,4 +505,19 @@ for (const n of [2, 4, 8]) {
   assert(MODULE_TYPES.every((m) => seen.has(m)), "every module type shows up on early bombs");
 }
 
+// ---------- 8. Host settings: the bomb timer ----------
+{
+  const t = makeTestCtx(3, 5, { clock: 120 });
+  const s: DefuseState = game.setup(t.ctx);
+  assert(s.bombMs === 120_000 && s.bomb.left === 120_000, "2:00 clock honoured");
+  for (const id of t.ids) game.action(s, id, { type: "ready" }, t.ctx);
+  assert(s.phase === "live", "all ready goes live");
+  assert(view(s, t.ids[0], t).bombMs === 120_000, "view carries the clock");
+  t.advance(120_000 + 10);
+  game.tick!(s, t.ctx);
+  assert(s.history.length === 1 && s.history[0].outcome === "boom", "short clock blows up sooner");
+  const td = makeTestCtx(3, 5, { clock: 999 });
+  assert((game.setup(td.ctx) as DefuseState).bombMs === BOMB_MS, "bad clock falls back to 3:00");
+}
+
 console.log("defuse: all tests passed");

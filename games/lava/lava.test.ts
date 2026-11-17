@@ -889,5 +889,86 @@ for (const [name, link, seed, lim] of [
   assert(lava.action(s, "p0", { type: "input", x: 0, y: 0, s: 4, at: Number.POSITIVE_INFINITY }, t.ctx) === false, "a bad stamp is refused");
 }
 
+// ---------- host settings: first to 2 ends sooner; the crumble timer moves ----------
+{
+  const t = makeTestCtx(2, 7, { wins: 2, crumble: 15_000 });
+  const s = lava.setup(t.ctx);
+  assert(s.winsNeeded === 2 && s.maxRounds === 5 && s.collapseMs === 15_000, "settings read into state");
+  const v = view(s, t);
+  assert(v.winsNeeded === 2 && v.maxRounds === 5 && v.collapseMs === 15_000, "settings in the view");
+  for (let round = 1; round <= 2; round++) {
+    startFight(s, t);
+    const b = board(s.R);
+    const hole = s.tiles.findIndex((x) => x === GONE);
+    s.runners[1].x = b.tiles[hole].x;
+    s.runners[1].y = b.tiles[hole].y;
+    fidget(s, t, [0]);
+    step(s, t);
+    if (round < 2) run(s, t, ROUND_OVER_MS + 100);
+  }
+  assert(phaseOf(s) === "final" && t.result?.winners.join() === "p0", "two round wins take the match");
+  const d = makeTestCtx(2, 7);
+  const sd = lava.setup(d.ctx);
+  assert(sd.winsNeeded === WINS_NEEDED && sd.maxRounds === MAX_ROUNDS && sd.collapseMs === COLLAPSE_START_MS, "defaults = classic");
+
+  // A 15 s crumble starts the edge going at 15 s, not 25 s.
+  const q = makeTestCtx(2, 9, { crumble: 15_000 });
+  const sq = lava.setup(q.ctx);
+  startFight(sq, q);
+  for (let ms = 0; ms < 15_500 && sq.phase === "fight"; ms += TICK_MS) {
+    fidget(sq, q, [0, 1]);
+    for (const r of sq.runners) {
+      r.x = CENTER + (r.slot ? 30 : -30);
+      r.y = CENTER;
+      r.vx = 0;
+      r.vy = 0;
+      r.alive = true;
+    }
+    board(sq.R).tiles.forEach((h, i) => {
+      if (h.d <= 1) {
+        sq.tiles[i] = 0;
+        sq.crackAt[i] = 0;
+      }
+    });
+    step(sq, q);
+  }
+  assert(sq.ring <= sq.R, `edges crumble by 15.5 s (${sq.ring})`);
+}
+
+// ---------- practice bots: an all-bot match plays itself to the end ----------
+for (const seed of [1, 2, 3]) {
+  const n = 2 + seed;
+  const t = makeTestCtx(n, seed, {}, n);
+  const s = lava.setup(t.ctx);
+  let acts = 0;
+  for (let i = 0; i < 20 * 60 * 15 && !t.result; i++) {
+    t.advance(TICK_MS);
+    lava.tick!(s, t.ctx);
+    for (const id of t.ids) {
+      const a = lava.bot!(s, id, t.ctx);
+      if (a) {
+        acts += 1;
+        lava.action(s, id, a, t.ctx);
+      }
+    }
+  }
+  assert(t.result, `all-bot match ends (seed ${seed}, round ${s.round})`);
+  assert(acts > 50, "bots steer");
+}
+// One human standing still among bots: the bots win rounds, the match ends.
+{
+  const t = makeTestCtx(3, 5, { wins: 2 }, 2);
+  const s = lava.setup(t.ctx);
+  for (let i = 0; i < 20 * 60 * 10 && !t.result; i++) {
+    t.advance(TICK_MS);
+    lava.tick!(s, t.ctx);
+    for (const id of t.ids.slice(1)) {
+      const a = lava.bot!(s, id, t.ctx);
+      if (a) lava.action(s, id, a, t.ctx);
+    }
+  }
+  assert(t.result && t.result.winners.every((w) => w.startsWith("bot-")), "bots outlast an idle human");
+}
+
 void CRACK_STAGE_MS;
 console.log("✓ lava tests passed");

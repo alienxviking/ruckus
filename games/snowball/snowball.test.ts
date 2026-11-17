@@ -551,4 +551,66 @@ function lastSnaps(t: T): Snap[] {
   assert(me.x === 900 && me.y === 600, "a teleport-sized difference jumps");
 }
 
+// ---------- host settings: first to 2, and 1 or 5 hearts ----------
+{
+  const t = makeTestCtx(2, 3, { wins: 2, hearts: 5 });
+  const s = game.setup(t.ctx);
+  assert(s.winsNeeded === 2 && s.maxRounds === 5 && s.maxHp === 5, "settings read into state");
+  const v = game.view(s, t.ids[0], t.ctx) as SnowView;
+  assert(v.winsNeeded === 2 && v.maxRounds === 5 && v.maxHp === 5, "settings in the view");
+  toFight(t, s);
+  assert(s.kids.every((k) => k.hp === 5), "5 hearts");
+  for (let round = 1; round <= 2; round++) {
+    if (round > 1) toFight(t, s);
+    s.kids[1].hp = 1;
+    clearField(s);
+    assert(hit(t, s, 0, 1) === 1, "hit lands");
+    if (round < 2) {
+      assert(s.phase === "roundOver", "round over");
+      run(t, s, ROUND_OVER_MS + TICK_MS);
+    }
+  }
+  assert((s.phase as string) === "final" && t.result?.winners.join() === t.ids[0], "two round wins take the match");
+  const one = makeTestCtx(2, 3, { hearts: 1 });
+  const s1 = game.setup(one.ctx);
+  toFight(one, s1);
+  clearField(s1);
+  hit(one, s1, 0, 1);
+  assert(!s1.kids[1].alive, "1 heart: one hit and you're out");
+  const d = makeTestCtx(2, 3);
+  const sd = game.setup(d.ctx);
+  assert(sd.winsNeeded === WINS_NEEDED && sd.maxRounds === 7 && sd.maxHp === MAX_HP, "defaults = classic");
+}
+
+// ---------- practice bots: all-bot matches and bots vs an idle human finish ----------
+for (const n of [2, 3, 5]) {
+  const t = makeTestCtx(n, n * 7, {}, n);
+  const s = game.setup(t.ctx);
+  let throws = 0;
+  for (let i = 0; i < 20 * 60 * 15 && !t.result; i++) {
+    t.advance(TICK_MS);
+    game.tick!(s, t.ctx);
+    for (const id of t.ids) {
+      const a = game.bot!(s, id, t.ctx);
+      if (a) {
+        if (a.type === "throw") throws += 1;
+        game.action(s, id, a, t.ctx);
+      }
+    }
+  }
+  assert(t.result, `all-bot match ends (${n} bots, round ${s.round})`);
+  assert(throws > 10, "bots throw");
+}
+{
+  const t = makeTestCtx(2, 11, { wins: 2 }, 1);
+  const s = game.setup(t.ctx);
+  for (let i = 0; i < 20 * 60 * 10 && !t.result; i++) {
+    t.advance(TICK_MS);
+    game.tick!(s, t.ctx);
+    const a = game.bot!(s, "bot-0", t.ctx);
+    if (a) game.action(s, "bot-0", a, t.ctx);
+  }
+  assert(t.result?.winners.join() === "bot-0", "a bot beats a player who never moves");
+}
+
 console.log("✓ snowball tests passed");

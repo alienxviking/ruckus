@@ -27,6 +27,7 @@ export const LEVELS: Record<Level, { label: string; cls: string }> = {
   easy: { label: "Easy", cls: "bg-emerald-400/20 text-emerald-300" },
   medium: { label: "Medium", cls: "bg-amber-400/20 text-amber-300" },
   hard: { label: "Hard", cls: "bg-rose-400/20 text-rose-300" },
+  custom: { label: "Custom", cls: "bg-sky-400/20 text-sky-300" },
 };
 
 function Name({ p }: { p: Player | undefined }) {

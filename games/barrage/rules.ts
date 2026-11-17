@@ -1,10 +1,10 @@
 import type { GameRules } from "../rules-types";
 
 export const rules: GameRules = {
-  goal: "Be the last tank still rolling, or have the most armour left when turn 15 ends.",
+  goal: "Be the last tank still rolling, or have the most armour left when the last turn ends (15 turns; the host can change this).",
   flow: [
     "Every tank starts with 100 armour on a hilly map, spread out from left to right.",
-    "Each turn, everyone aims in secret: set your angle, power, shell and an optional short drive. You get 20 seconds on turn 1 and 15 seconds after that.",
+    "Each turn, everyone aims in secret: set your angle, power, shell and an optional short drive. You get 15 seconds per turn (the host can change this), plus 5 extra on turn 1.",
     "Press Fire! to lock in. When everyone is locked in (or time runs out), all tanks drive, then every shell flies at the same moment.",
     "If time runs out before you lock in, your tank still fires with whatever aim you had set.",
     "Blasts hurt every tank nearby and dig craters in the ground. Then the wind shifts and the next turn starts.",
@@ -28,7 +28,7 @@ export const rules: GameRules = {
     "Damage is highest right at the blast and fades with distance. Your own shells can hurt you too.",
     "A tank at 0 armour is out. So is a tank whose ground gets blown away into the bottomless pit.",
     "You have 200 fuel for the whole game and can drive up to 40 per turn.",
-    "Last tank standing wins. If everyone left dies in the same volley, it's a draw between them. After turn 15, the most armour wins (ties share the win).",
+    "Last tank standing wins. If everyone left dies in the same volley, it's a draw between them. After the last turn, the most armour wins (ties share the win).",
   ],
   tips: [
     "The dotted aiming guide ignores wind, so check the wind gauge and aim a little into it.",

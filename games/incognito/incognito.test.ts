@@ -29,6 +29,7 @@ import {
   WALKER_R,
   WORLD_H,
   WORLD_W,
+  countBits,
   decodePositions,
   encodePositions,
   inputDir,
@@ -585,6 +586,60 @@ function park(s: IncState, slot: number, li: number) {
   // A respawn across the map: jump.
   reconcile(me, trail, 900, 600, 16.7, o, err);
   assert(me.x === 900 && me.y === 600, "a teleport-sized difference jumps");
+}
+
+// ---------- host settings: 2 short rounds ----------
+{
+  const t = makeTestCtx(3, 5, { rounds: 2, time: 60_000 });
+  const s = incognito.setup(t.ctx);
+  const v0 = view(s, t);
+  assert(v0.rounds === 2 && v0.playMs === 60_000, "the view carries the settings");
+  toPlay(s, t);
+  assert(s.endsAt - t.ctx.now() === 60_000, "60-second rounds");
+  t.advance(60_000);
+  incognito.tick!(s, t.ctx);
+  assert(phaseOf(s) === "roundOver", "time up after 60s");
+  t.advance(ROUND_OVER_MS);
+  incognito.tick!(s, t.ctx);
+  toPlay(s, t);
+  t.advance(60_000);
+  incognito.tick!(s, t.ctx);
+  assert(phaseOf(s) === "final" && s.history.length === 2, "two rounds and done");
+  const d = incognito.setup(makeTestCtx(2, 1, { rounds: 4, time: 5 }).ctx);
+  assert(d.rounds === ROUNDS && d.playMs === PLAY_MS, "bad settings fall back to the defaults");
+  console.log("✓ settings");
+}
+
+// ---------- practice bots play to the end ----------
+for (const [n, bots] of [
+  [4, 4],
+  [3, 2],
+] as const) {
+  const t = makeTestCtx(n, 21 + n, {}, bots);
+  const s = incognito.setup(t.ctx);
+  let guard = 0;
+  let snipes = 0;
+  let lit = 0;
+  while (!t.result && guard++ < 40_000) {
+    t.advance(TICK_MS);
+    incognito.tick!(s, t.ctx);
+    for (const id of t.ids) {
+      if (!t.ctx.player(id)?.bot) continue;
+      const a = incognito.bot!(s, id, t.ctx);
+      if (a) {
+        if (a.type === "snipe") snipes += 1;
+        incognito.action(s, id, a, t.ctx);
+      }
+    }
+    if (s.phase === "play") lit = Math.max(lit, ...s.seats.map((x) => countBits(x.lit)));
+  }
+  assert(t.result, `bots finish a game (${n} players, ${bots} bots)`);
+  assert(guard * TICK_MS < 15 * 60_000, "in a sane time");
+  assert(lit >= 2, `bots light landmarks (${lit})`);
+  assert(snipes > 0, "bots throw darts");
+  // A bot never darts itself or sprints (it walks like the crowd).
+  assert(s.history.every((h) => h.out.length <= n), "sane history");
+  console.log(`✓ bots (${n}/${bots}):`, t.result.headline);
 }
 
 console.log("✓ incognito: all tests passed");

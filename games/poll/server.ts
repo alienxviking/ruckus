@@ -1,5 +1,7 @@
 import type { GameCtx, GameDef } from "../../shared/game";
 import { shuffle, topScorers } from "../../shared/game";
+import { readSettings } from "../../shared/settings";
+import { config } from "./config";
 import { POLLS } from "./data";
 import {
   ABANDON_MS,
@@ -11,6 +13,7 @@ import {
   VOTE_MS,
   WOLF_BONUS,
   WOLF_MIN_VOTERS,
+  evenSplit,
   misplaced,
   predPoints,
   selfPoints,
@@ -89,6 +92,8 @@ export interface PollAward {
 
 export interface PollState {
   startedAt: number;
+  /** Phase lengths for this game (host setting). */
+  phaseMs: Record<PollPhase, number>;
   ids: string[];
   polls: number[];
   kinds: PollKind[];
@@ -157,7 +162,12 @@ export interface PollView {
   abandoned: boolean;
 }
 
-const PHASE_MS: Record<PollPhase, number> = { vote: VOTE_MS, predict: PREDICT_MS, reveal: REVEAL_MS, final: 0 };
+/** Vote / predict times per "pace" setting; "normal" is the classic 15 s / 20 s. */
+const PACES: Record<string, [number, number]> = {
+  quick: [10_000, 15_000],
+  normal: [VOTE_MS, PREDICT_MS],
+  relaxed: [25_000, 30_000],
+};
 
 const isHere = (ctx: GameCtx, id: string) => ctx.player(id)?.connected !== false;
 
@@ -180,7 +190,7 @@ function validPred(c: unknown, n: number, total: number): c is number[] {
 
 function startVote(s: PollState, ctx: GameCtx) {
   s.phase = "vote";
-  s.endsAt = ctx.now() + VOTE_MS;
+  s.endsAt = ctx.now() + s.phaseMs.vote;
   s.vote = s.ids.map(() => null);
   s.pred = s.ids.map(() => null);
   s.read = s.ids.map(() => null);
@@ -202,7 +212,7 @@ function startPredict(s: PollState, ctx: GameCtx) {
     s.spot = pool[Math.floor(ctx.random() * pool.length)] ?? voterSeats[0];
   }
   s.phase = "predict";
-  s.endsAt = ctx.now() + PREDICT_MS;
+  s.endsAt = ctx.now() + s.phaseMs.predict;
 }
 
 function startReveal(s: PollState, ctx: GameCtx) {
@@ -264,7 +274,7 @@ function startReveal(s: PollState, ctx: GameCtx) {
     best: bestPts > 0 ? { ids: s.ids.filter((_, i) => rows[i].pts === bestPts), pts: bestPts } : null,
   });
   s.phase = "reveal";
-  s.endsAt = ctx.now() + REVEAL_MS;
+  s.endsAt = ctx.now() + s.phaseMs.reveal;
 }
 
 function nextRound(s: PollState, ctx: GameCtx) {
@@ -354,22 +364,42 @@ function maybeAdvance(s: PollState, ctx: GameCtx): boolean {
   return true;
 }
 
+const botPlans = new WeakMap<PollState, Map<string, { key: string; at: number }>>();
+/** When the bot acts in the current phase (picked once per phase). */
+function botAt(s: PollState, id: string, key: string, now: number, r: () => number, [lo, hi]: [number, number]): number {
+  let plans = botPlans.get(s);
+  if (!plans) botPlans.set(s, (plans = new Map()));
+  let p = plans.get(id);
+  if (!p || p.key !== key) plans.set(id, (p = { key, at: now + lo + Math.floor(r() * (hi - lo)) }));
+  return p.at;
+}
+
 export const poll: GameDef<PollState, PollAction> = {
   id: "poll",
 
   setup(ctx) {
     const ids = ctx.players.map((p) => p.id);
+    const set = readSettings(config.settings, ctx.settings);
+    const rounds = Math.max(3, Math.min(POLLS.length, Number(set.rounds) || ROUNDS));
+    const [voteMs, predictMs] = PACES[String(set.pace)] ?? PACES.normal;
     const polls = shuffle(
       POLLS.map((_, i) => i),
       ctx.random,
-    ).slice(0, ROUNDS);
+    ).slice(0, rounds);
     const kinds: PollKind[] = polls.map(() => "normal");
-    // Twists land mid-game: Read the room in rounds 3-5, Majority rules in rounds 6-7.
-    kinds[2 + Math.floor(ctx.random() * 3)] = "room";
-    kinds[5 + Math.floor(ctx.random() * 2)] = "majority";
+    // Twists land mid-game: Read the room from round 3, Majority rules in the last few
+    // (with 8 polls: rounds 3-5 and 6-7).
+    const roomLo = 2;
+    const roomHi = Math.max(roomLo, Math.min(rounds - 4, Math.floor(rounds / 2)));
+    const room = roomLo + Math.floor(ctx.random() * (roomHi - roomLo + 1));
+    kinds[room] = "room";
+    const majLo = Math.max(room + 1, rounds - 3);
+    const majHi = Math.max(majLo, rounds - 2);
+    kinds[majLo + Math.floor(ctx.random() * (majHi - majLo + 1))] = "majority";
     const zeros = () => ids.map(() => 0);
     const s: PollState = {
       startedAt: ctx.now(),
+      phaseMs: { vote: voteMs, predict: predictMs, reveal: REVEAL_MS, final: 0 },
       ids,
       polls,
       kinds,
@@ -492,7 +522,7 @@ export const poll: GameDef<PollState, PollAction> = {
       q: poll[0],
       opts: poll.slice(1),
       endsAt: s.endsAt,
-      phaseMs: PHASE_MS[s.phase],
+      phaseMs: s.phaseMs[s.phase],
       voters: s.voters,
       spot: s.spot >= 0 && s.phase !== "vote" ? s.ids[s.spot] : null,
       seats: s.ids.map((id, i) => ({
@@ -519,6 +549,52 @@ export const poll: GameDef<PollState, PollAction> = {
       endingAt: s.lowSince !== null && !final ? s.lowSince + ABANDON_MS : null,
       abandoned: s.abandoned,
     };
+  },
+
+  // Practice bot: votes on a whim, predicts a noisy even-ish split, takes a stab at the
+  // spotlight, and taps Ready. Only uses its own view; paced like a person.
+  bot(s, botId, ctx) {
+    if (s.phase === "final") return null;
+    const v = poll.view(s, botId, ctx) as PollView;
+    const me = v.mine;
+    if (!me) return null;
+    const now = ctx.now();
+    const at = botAt(s, botId, `${v.round}.${v.phase}`, now, ctx.random, v.phase === "predict" ? [2_500, 7_000] : [1_200, 4_500]);
+    if (now < at) return null;
+    const n = v.opts.length;
+    const r = ctx.random;
+    if (v.phase === "vote") {
+      if (me.vote !== null) return null;
+      // Bots favour the first answers a little, so the room isn't perfectly random.
+      const w = v.opts.map((_, i) => 1 + (n - i) * 0.4 + r());
+      const sum = w.reduce((a, b) => a + b, 0);
+      let x = r() * sum;
+      for (let i = 0; i < n; i++) if ((x -= w[i]) <= 0) return { type: "vote", o: i };
+      return { type: "vote", o: n - 1 };
+    }
+    if (v.phase === "predict") {
+      if (me.locked) return null;
+      if (v.kind === "room") {
+        if (v.spot === botId) return { type: "self", n: Math.floor(r() * v.seats.length), lock: true };
+        return { type: "read", o: Math.floor(r() * n) };
+      }
+      const c = evenSplit(v.voters, n);
+      // Nudge a few voters around, keeping at least its own vote where it is.
+      for (let k = 0; k < Math.ceil(v.voters / 2); k++) {
+        const from = Math.floor(r() * n);
+        const to = me.vote !== null && r() < 0.5 ? me.vote : Math.floor(r() * n);
+        if (c[from] > 0 && from !== to) {
+          c[from]--;
+          c[to]++;
+        }
+      }
+      return { type: "pred", c, lock: true };
+    }
+    if (v.phase === "reveal") {
+      const mine = v.seats.find((x) => x.id === botId);
+      return mine && !mine.ready ? { type: "ready" } : null;
+    }
+    return null;
   },
 
   playerLeft(s, _playerId, ctx) {

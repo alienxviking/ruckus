@@ -1,5 +1,8 @@
 import type { GameCtx, GameDef } from "../../shared/game";
 import { shuffle, topScorers } from "../../shared/game";
+import { readSettings } from "../../shared/settings";
+import { pixelsBot } from "./bot";
+import { config } from "./config";
 import { EMBLEMS } from "./data";
 import {
   COOLDOWN_MS,
@@ -96,6 +99,9 @@ export interface PixelsState {
   aloneSince: number | null;
   winners: string[] | null;
   endReason: "done" | "abandoned" | null;
+  /** Host settings: rounds in the game and painting time per round. */
+  rounds: number;
+  paintMs: number;
 }
 
 export type PixelsAction =
@@ -310,7 +316,7 @@ function advance(s: PixelsState, ctx: GameCtx) {
   switch (s.phase) {
     case "intro":
       s.phase = "paint";
-      s.endsAt = now + PAINT_MS;
+      s.endsAt = now + s.paintMs;
       s.tokens = s.ids.map(() => SERVER_BURST);
       s.tokAt = s.ids.map(() => now);
       break;
@@ -327,7 +333,7 @@ function advance(s: PixelsState, ctx: GameCtx) {
       break;
     case "reveal":
       s.history.push({ e: s.emblems.slice(), n: s.spots!.map((sp) => sp.n), pts: s.pts!.slice() });
-      if (s.round >= ROUNDS) finish(s, ctx);
+      if (s.round >= s.rounds) finish(s, ctx);
       else startRound(s, ctx);
       break;
     case "final":
@@ -403,6 +409,7 @@ export const pixels: GameDef<PixelsState, PixelsAction> = {
   id: "pixels",
 
   setup(ctx) {
+    const set = readSettings(config.settings, ctx.settings);
     const ids = ctx.players.map((p) => p.id);
     const { w, h } = boardSize(ids.length);
     const s: PixelsState = {
@@ -431,6 +438,8 @@ export const pixels: GameDef<PixelsState, PixelsAction> = {
       aloneSince: null,
       winners: null,
       endReason: null,
+      rounds: Number(set.rounds) || ROUNDS,
+      paintMs: Number(set.paint) * 1000 || PAINT_MS,
     };
     startRound(s, ctx);
     return s;
@@ -483,6 +492,11 @@ export const pixels: GameDef<PixelsState, PixelsAction> = {
   },
   tickMs: FLUSH_MS,
 
+  bot(s, botId, ctx) {
+    if (s.phase === "final") return null;
+    return pixelsBot(s, pixels.view(s, botId, ctx) as PixelsView, ctx);
+  },
+
   playerLeft(s, _id, ctx) {
     if (s.phase !== "final") updateAlone(s, ctx);
   },
@@ -497,11 +511,11 @@ export const pixels: GameDef<PixelsState, PixelsAction> = {
     return {
       phase: s.phase,
       round: s.round,
-      rounds: ROUNDS,
+      rounds: s.rounds,
       w: s.w,
       h: s.h,
       endsAt: s.endsAt,
-      phaseMs: PHASE_MS[s.phase],
+      phaseMs: s.phase === "paint" ? s.paintMs : PHASE_MS[s.phase],
       board: encodeBoard(s),
       rev: s.rev,
       ids: s.ids,

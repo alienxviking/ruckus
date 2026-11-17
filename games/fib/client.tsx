@@ -157,7 +157,7 @@ function PhaseTimer({
   total?: number;
 }) {
   const secs = useSecondsLeft(view.endsAt, serverNow);
-  const fullMs = total ?? (view.phase === "write" ? WRITE_MS : view.phase === "pick" ? PICK_MS : REVEAL_CAP_MS + HOLD_MS);
+  const fullMs = total ?? (view.phase === "write" ? view.writeMs || WRITE_MS : view.phase === "pick" ? PICK_MS : REVEAL_CAP_MS + HOLD_MS);
   const text = label ?? (view.phase === "write" ? "Writing time" : view.phase === "pick" ? "Picking time" : "");
   const urgent = (view.phase === "write" || view.phase === "pick") && secs <= 5;
   return (

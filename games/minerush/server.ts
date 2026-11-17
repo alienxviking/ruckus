@@ -1,5 +1,7 @@
 import type { GameCtx, GameDef } from "../../shared/game";
 import { shuffle, topScorers } from "../../shared/game";
+import { readSettings } from "../../shared/settings";
+import { config } from "./config";
 import {
   ABANDON_MS,
   FLAG_POINTS,
@@ -11,6 +13,7 @@ import {
   SCAN_RADIUS,
   STUN_MS,
   boardSize,
+  type BoardChoice,
   neighbors,
   type EndReason,
   type FinalRow,
@@ -29,7 +32,8 @@ import {
 
 export type { MrAction, MrView, MrEvent } from "./shared";
 
-const MINE_RATE = 0.17;
+/** Share of the field that is mines, by the host's "Mines" setting. */
+const MINE_RATES: Record<string, number> = { few: 0.15, normal: 0.17, lots: 0.21 };
 /** Biggest share of the safe cells the starting openings may give away. */
 const OPENING_MAX_SHARE = 0.22;
 /** The extra openings for big groups should stay small. */
@@ -116,6 +120,7 @@ function layBoard(s: MrState, ctx: GameCtx, players: number) {
   const size = w * h;
   const cx = Math.floor(w / 2);
   const cy = Math.floor(h / 2);
+  let best: { mine: number[]; num: number[]; open: number[]; opened: number; centres: number[] } | null = null;
   for (let attempt = 0; ; attempt++) {
     const centres = [randInt(ctx, cy - 2, cy + 1) * w + randInt(ctx, cx - 3, cx + 2)];
     if (players >= 4) {
@@ -144,8 +149,14 @@ function layBoard(s: MrState, ctx: GameCtx, players: number) {
     });
     s.opened = sizes.reduce((a, b) => a + b, 0);
     const tooBig = s.opened > s.safeTotal * OPENING_MAX_SHARE || sizes.slice(1).some((n) => n > EXTRA_OPENING_MAX);
-    if (!tooBig || attempt >= 60) {
+    if (!tooBig) {
       s.openings = centres;
+      break;
+    }
+    // Remember the smallest giveaway, for when no attempt fits (sparse mines on a busy field).
+    if (!best || s.opened < best.opened) best = { mine: s.mine, num: s.num, open: s.open, opened: s.opened, centres };
+    if (attempt >= 60) {
+      Object.assign(s, { mine: best.mine, num: best.num, open: best.open, opened: best.opened, openings: best.centres });
       break;
     }
   }
@@ -336,16 +347,96 @@ function finish(s: MrState, ctx: GameCtx, why: EndReason) {
   ctx.end({ winners, headline, scores });
 }
 
+// ---------- practice bot ----------
+
+/** Per bot: when it may act next and its own flag op counter. */
+const botMem = new WeakMap<MrState, Map<string, { at: number; q: number }>>();
+
+/**
+ * Medium bot, working only from its own view: opens cells a number proves safe, flags cells
+ * a number proves are mines, and otherwise digs the least risky looking cell. Sometimes it
+ * skips the logic and just guesses, like a hurried human.
+ */
+function botMove(v: MrView, q: number, random: () => number): MrAction | null {
+  const { w, h, cells } = v;
+  const flagged = new Set(v.flags);
+  const safe: number[] = [];
+  const mines: number[] = [];
+  /** Highest local mine odds seen for each hidden, unflagged frontier cell. */
+  const risk = new Map<number, number>();
+  for (let c = 0; c < w * h; c++) {
+    const ch = cells.charCodeAt(c) - 48;
+    if (ch < 1 || ch > 8) continue;
+    let known = 0;
+    const unknown: number[] = [];
+    for (const nb of neighbors(w, h, c)) {
+      const x = cells[nb];
+      if (x === "x" || (x === "." && flagged.has(nb))) known += 1;
+      else if (x === ".") unknown.push(nb);
+    }
+    if (!unknown.length) continue;
+    const left = ch - known;
+    if (left <= 0) safe.push(...unknown);
+    else if (left === unknown.length) mines.push(...unknown);
+    const odds = left / unknown.length;
+    for (const u of unknown) risk.set(u, Math.max(risk.get(u) ?? 0, odds));
+  }
+  const pick = (list: number[]) => list[Math.floor(random() * list.length)];
+  const hurried = random() < 0.08;
+  if (!hurried && safe.length) return { type: "open", cell: pick(safe) };
+  if (!hurried && mines.length && v.flags.length < v.mines) return { type: "flag", cell: pick(mines), on: true, q };
+  // Guess: the safest-looking frontier cell, or a random hidden cell when that looks better.
+  const hidden: number[] = [];
+  for (let c = 0; c < w * h; c++) if (cells[c] === "." && !flagged.has(c) && !mines.includes(c)) hidden.push(c);
+  if (!hidden.length) return null;
+  let best = -1;
+  let bestRisk = Infinity;
+  for (const [c, r] of risk) {
+    if (r >= 1 || mines.includes(c)) continue;
+    const jitter = r + random() * 0.05;
+    if (jitter < bestRisk) {
+      bestRisk = jitter;
+      best = c;
+    }
+  }
+  const knownMines = cells.split("").filter((x) => x === "x").length + v.flags.length;
+  const density = Math.max(0, v.mines - knownMines) / Math.max(1, hidden.length);
+  if (best < 0 || bestRisk > density + 0.05) best = pick(hidden);
+  return { type: "open", cell: best };
+}
+
+function botAction(s: MrState, botId: string, ctx: GameCtx): MrAction | null {
+  if (s.phase !== "play") return null;
+  const p = s.ids.indexOf(botId);
+  if (p < 0) return null;
+  const now = ctx.now();
+  let mem = botMem.get(s);
+  if (!mem) botMem.set(s, (mem = new Map()));
+  const me = mem.get(botId) ?? { at: now + 400 + ctx.random() * 800, q: 0 };
+  mem.set(botId, me);
+  if (now < me.at) return null;
+  const v = minerush.view(s, botId, ctx) as MrView;
+  const row = v.ps[p];
+  if (now < row.stun || now < row.frozen) return null;
+  const move = botMove(v, Math.max(me.q, v.fq) + 1, ctx.random);
+  if (move?.type === "flag") me.q = move.q;
+  // Human-ish pace: flags are quick, digs need a little more thought.
+  me.at = now + (move?.type === "flag" ? 350 + ctx.random() * 450 : 550 + ctx.random() * 900);
+  return move;
+}
+
 // ---------- the game ----------
 
 export const minerush: GameDef<MrState, MrAction> = {
   id: "minerush",
 
   setup(ctx) {
+    const set = readSettings(config.settings, ctx.settings);
+    const playMs = (Number(set.minutes) || PLAY_MS / 60_000) * 60_000;
     const n = ctx.players.length;
-    const { w, h } = boardSize(n);
+    const { w, h } = boardSize(n, set.board as BoardChoice);
     const size = w * h;
-    const mineCount = Math.round(size * MINE_RATE);
+    const mineCount = Math.round(size * (MINE_RATES[set.mines as string] ?? MINE_RATES.normal));
     const now = ctx.now();
     const s: MrState = {
       w,
@@ -367,7 +458,7 @@ export const minerush: GameDef<MrState, MrAction> = {
       claimed: [],
       phase: "ready",
       startsAt: now + READY_MS,
-      endsAt: now + READY_MS + PLAY_MS,
+      endsAt: now + READY_MS + playMs,
       s: 0,
       enc: { key: "", cells: "", own: "" },
       aloneSince: null,
@@ -449,6 +540,10 @@ export const minerush: GameDef<MrState, MrAction> = {
     return false;
   },
   tickMs: 250,
+
+  bot(s, botId, ctx) {
+    return botAction(s, botId, ctx);
+  },
 
   playerLeft(s, _id, ctx) {
     updateAlone(s, ctx);

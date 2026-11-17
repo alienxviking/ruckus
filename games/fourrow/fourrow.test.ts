@@ -881,4 +881,63 @@ const MID_GAME = [3, 3, 2, 4, 4, 2, 5, 1, 1, 5]; // no four yet; lots of threats
   }
 }
 
+
+// ---- Host settings ----
+{
+  const t = makeTestCtx(2, 7, { wins: 1, turn: 15 });
+  const s: FourState = game.setup(t.ctx);
+  check(s.target === 1 && s.maxGames === 3 && s.turnMs === 15_000, "settings read");
+  check(s.endsAt - t.ctx.now() === 15_000, "short move timer");
+  const v = game.view(s, s.seats[0], t.ctx) as FourView;
+  check(v.target === 1 && v.maxGames === 3, "view carries match length");
+  const w = s.turn;
+  // winner stacks column 0, loser column 1
+  for (let i = 0; i < 3; i++) {
+    act(s, t, s.seats[w], { type: "drop", col: 0 });
+    act(s, t, s.seats[other(w)], { type: "drop", col: 1 });
+  }
+  act(s, t, s.seats[w], { type: "drop", col: 0 });
+  check(s.phase === "over" && t.result?.winners[0] === s.seats[w], "best of 1 ends after one win");
+}
+{
+  const t = makeTestCtx(2, 7, { wins: 99, turn: "x" });
+  const s: FourState = game.setup(t.ctx);
+  check(s.target === TARGET_WINS && s.turnMs === TURN_MS, "invalid settings fall back to defaults");
+}
+
+// ---- Bots ----
+for (const [n, bots] of [[2, 2], [2, 1]] as const) {
+  for (let seed = 1; seed <= 6; seed++) {
+    const t = makeTestCtx(n, seed, {}, bots);
+    const s: FourState = game.setup(t.ctx);
+    let steps = 0;
+    while (!t.result && steps < 20_000) {
+      steps++;
+      t.advance(200);
+      tick(s, t);
+      for (const id of s.seats) {
+        if (!t.ctx.player(id)?.bot) continue;
+        const a = game.bot!(s, id, t.ctx);
+        if (a) check(act(s, t, id, a) !== false, "bot move accepted");
+      }
+    }
+    check(t.result, `bots finish a match (seed ${seed}, ${bots} bots)`);
+    check(t.ctx.now() - 1_700_000_000_000 < 30 * 60_000, "within sane time");
+  }
+}
+// The bot takes an immediate win and blocks one.
+{
+  const t = makeTestCtx(2, 3, {}, 1);
+  const s: FourState = game.setup(t.ctx);
+  const bot = s.seats.indexOf("bot-0") as Seat;
+  s.turn = bot;
+  s.board[5][0] = bot; s.board[5][1] = bot; s.board[5][2] = bot;
+  s.board[5][5] = other(bot); s.board[5][6] = other(bot); s.board[4][6] = other(bot);
+  check(game.bot!(s, "bot-0", t.ctx) === null, "bot thinks first");
+  t.advance(3000);
+  const a = game.bot!(s, "bot-0", t.ctx) as { type: string; col: number };
+  check(a && a.type === "drop" && a.col === 3, "bot takes the win");
+  check(game.bot!(s, s.seats[other(bot)], t.ctx) === null, "bot hook ignores non-turn seats");
+}
+
 console.log("fourrow: all tests passed");

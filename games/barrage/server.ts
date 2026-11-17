@@ -1,4 +1,6 @@
 import { shuffle, type GameCtx, type GameDef } from "../../shared/game";
+import { readSettings } from "../../shared/settings";
+import { config } from "./config";
 import {
   ABYSS_Y,
   AIM_MS,
@@ -152,6 +154,9 @@ export interface BarrageState {
   /** Since when fewer than two live tanks have a connected driver (AIM phase only). */
   awaySince: number | null;
   over: boolean;
+  /** Host settings: number of turns and the aim timer (turn 1 gets a few seconds more). */
+  maxTurns: number;
+  aimMs: number;
 }
 
 export interface TankView {
@@ -624,13 +629,13 @@ function finishResolve(s: BarrageState, ctx: GameCtx) {
   if (alive.length === 1) {
     return finish(s, ctx, [alive[0].id], "last", `${nameOf(ctx, alive[0].id)}'s tank is the last one rolling`);
   }
-  if (s.turn >= MAX_TURNS) {
+  if (s.turn >= s.maxTurns) {
     const top = bestHp(alive);
     const names = top.map((t) => nameOf(ctx, t.id));
     const headline =
       top.length === 1
-        ? `${names[0]} wins Barrage with ${top[0].hp} HP left after ${MAX_TURNS} turns`
-        : `${joinNames(names)} tie on ${top[0].hp} HP after ${MAX_TURNS} turns`;
+        ? `${names[0]} wins Barrage with ${top[0].hp} HP left after ${s.maxTurns} turns`
+        : `${joinNames(names)} tie on ${top[0].hp} HP after ${s.maxTurns} turns`;
     return finish(s, ctx, top.map((t) => t.id), "turns", headline);
   }
   // Next turn: the wind drifts, specials go back in the rack, moves reset.
@@ -641,8 +646,8 @@ function finishResolve(s: BarrageState, ctx: GameCtx) {
     t.aim = { ...t.aim, weapon: "shell", move: 0 };
   }
   s.phase = "aim";
-  s.endsAt = ctx.now() + AIM_MS;
-  s.total = AIM_MS;
+  s.endsAt = ctx.now() + s.aimMs;
+  s.total = s.aimMs;
 }
 
 function forfeit(s: BarrageState, ctx: GameCtx) {
@@ -677,12 +682,107 @@ function updateAway(s: BarrageState, ctx: GameCtx): boolean {
   return false;
 }
 
+// ---------- practice bot ----------
+
+interface BotPlan {
+  turn: number;
+  at: number;
+  shot: Aim;
+}
+
+/** Each bot's plan for the current turn, so it "thinks" once and fires after a human-ish pause. */
+const botPlans = new WeakMap<BarrageState, Map<string, BotPlan>>();
+
+/**
+ * How close a shot passes to (tx, ty), flying over the ground the bot can see (no craters
+ * from this volley, no other shells). Returns Infinity when it would land on the bot itself.
+ */
+function shotMiss(terrain: number[], x: number, wind: number, angle: number, power: number, tx: number, ty: number) {
+  const L = launch(terrain, x, angle, power);
+  let px = L.x;
+  let py = L.y;
+  let vx = L.vx;
+  let vy = L.vy;
+  const ax = wind * WIND_ACCEL;
+  let best = Infinity;
+  for (let step = 1; step <= MAX_STEPS; step++) {
+    vx += ax * DT;
+    vy += GRAVITY * DT;
+    px += vx * DT;
+    py += vy * DT;
+    best = Math.min(best, Math.hypot(px - tx, py - ty));
+    if (px < 0 || px > W || py > H) break;
+    if (py >= groundAt(terrain, px)) {
+      if (Math.abs(px - x) < 50) return Infinity;
+      break;
+    }
+  }
+  return best;
+}
+
+/** Pick a target and a decent (slightly wobbly) shot at it, from what the bot's screen shows. */
+function planShot(v: BarrageView, me: TankView, random: () => number): Aim {
+  const foes = v.tanks.filter((t) => t.alive && t.id !== me.id);
+  // Mostly the nearest foe, sometimes the weakest one.
+  foes.sort((a, b) => Math.abs(a.x - me.x) - Math.abs(b.x - me.x));
+  let target = foes[0];
+  if (foes.length > 1 && random() < 0.35) target = foes.reduce((a, b) => (b.hp < a.hp ? b : a));
+  if (!target) return { angle: me.angle, power: 60, weapon: "shell", move: 0 };
+  const right = target.x > me.x;
+  const ty = tankCy(v.terrain, target.x);
+  let best = { miss: Infinity, angle: right ? 45 : 135, power: 60 };
+  for (let a = 25; a <= 75; a += 5) {
+    const angle = right ? a : 180 - a;
+    for (let power = 25; power <= MAX_POWER; power += 3) {
+      const miss = shotMiss(v.terrain, me.x, v.wind, angle, power, target.x, ty);
+      if (miss < best.miss) best = { miss, angle, power };
+    }
+  }
+  for (let power = best.power - 2; power <= best.power + 2; power++) {
+    if (power < MIN_POWER || power > MAX_POWER) continue;
+    const miss = shotMiss(v.terrain, me.x, v.wind, best.angle, power, target.x, ty);
+    if (miss < best.miss) best = { miss, angle: best.angle, power };
+  }
+  // Medium skill: a human-sized wobble on the perfect answer.
+  const angle = clamp(best.angle + randInt(random, -3, 3), 0, 180);
+  const power = clamp(best.power + randInt(random, -3, 3), MIN_POWER, MAX_POWER);
+  let weapon: Weapon = "shell";
+  const r = random();
+  if (me.heavy > 0 && v.turn >= 3 && r < 0.3) weapon = "heavy";
+  else if (me.split > 0 && r > 0.8) weapon = "split";
+  return { angle, power, weapon, move: 0 };
+}
+
+function botAction(s: BarrageState, botId: string, ctx: GameCtx): BarrageAction | null {
+  if (s.over || s.phase !== "aim") return null;
+  const tank = s.tanks.find((t) => t.id === botId);
+  if (!tank || !tank.alive || tank.locked) return null;
+  let plans = botPlans.get(s);
+  if (!plans) botPlans.set(s, (plans = new Map()));
+  const now = ctx.now();
+  let plan = plans.get(botId);
+  if (!plan || plan.turn !== s.turn) {
+    const v = barrage.view(s, botId, ctx) as BarrageView;
+    const me = v.tanks.find((t) => t.id === botId);
+    if (!me) return null;
+    const room = Math.max(0, s.endsAt - now - 2500);
+    plan = { turn: s.turn, at: now + Math.min(1500 + ctx.random() * 4000, 600 + room), shot: planShot(v, me, ctx.random) };
+    plans.set(botId, plan);
+  }
+  if (now < plan.at) return null;
+  return { type: "fire", ...plan.shot };
+}
+
 // ---------- the game ----------
 
 export const barrage: GameDef<BarrageState, BarrageAction> = {
   id: "barrage",
 
   setup(ctx) {
+    const set = readSettings(config.settings, ctx.settings);
+    const maxTurns = Number(set.turns) || MAX_TURNS;
+    const aimMs = (Number(set.aimSec) || AIM_MS / 1000) * 1000;
+    const firstAimMs = aimMs + (FIRST_AIM_MS - AIM_MS);
     const terrain = genTerrain(ctx.random);
     const n = Math.max(1, ctx.players.length);
     const span = (W - 2 * MARGIN) / n;
@@ -696,8 +796,8 @@ export const barrage: GameDef<BarrageState, BarrageAction> = {
       phase: "aim",
       turn: 1,
       wind: randInt(ctx.random, -5, 5),
-      endsAt: now + FIRST_AIM_MS,
-      total: FIRST_AIM_MS,
+      endsAt: now + firstAimMs,
+      total: firstAimMs,
       terrain,
       burnt: new Array<number>(COLS).fill(0),
       tanks: ctx.players.map((p, i) => newTank(p.id, spots[i])),
@@ -706,6 +806,8 @@ export const barrage: GameDef<BarrageState, BarrageAction> = {
       final: null,
       awaySince: null,
       over: false,
+      maxTurns,
+      aimMs,
     };
   },
 
@@ -756,6 +858,10 @@ export const barrage: GameDef<BarrageState, BarrageAction> = {
   },
   tickMs: 100,
 
+  bot(s, botId, ctx) {
+    return botAction(s, botId, ctx);
+  },
+
   playerLeft(s, _id, ctx) {
     updateAway(s, ctx);
   },
@@ -771,7 +877,7 @@ export const barrage: GameDef<BarrageState, BarrageAction> = {
     return {
       phase: s.phase,
       turn: s.turn,
-      maxTurns: MAX_TURNS,
+      maxTurns: s.maxTurns,
       wind: s.wind,
       endsAt: s.endsAt,
       total: s.total,

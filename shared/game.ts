@@ -1,3 +1,4 @@
+import type { Settings } from "./settings";
 import type { GameResult, Player } from "./types";
 
 /**
@@ -19,6 +20,11 @@ export interface GameCtx {
   /** Mark the game as finished. Safe to call more than once (later calls are ignored). */
   end(result: GameResult): void;
   random(): number;
+  /**
+   * The host's choices for this game (validated, but possibly missing keys): read them with
+   * readSettings(config.settings, ctx.settings) so defaults are filled in.
+   */
+  settings: Settings;
 }
 
 /**
@@ -52,6 +58,14 @@ export interface GameDef<S = any, A = any> {
   playerLeft?(state: S, playerId: string, ctx: GameCtx): void;
   /** A participant reconnected. */
   playerReturned?(state: S, playerId: string, ctx: GameCtx): void;
+  /**
+   * Optional practice bot. Called on every tick for each bot taking part (ids start "bot-",
+   * `ctx.player(id).bot` is true). Return an action to apply exactly as if that player sent
+   * it (through action(), with the same validation), or null to do nothing this tick.
+   * Bots only see what view(state, botId) would show a human in their seat. Pace yourself
+   * with ctx.now() so bots feel human (think time, not instant perfect play).
+   */
+  bot?(state: S, botId: string, ctx: GameCtx): A | null | undefined;
 }
 
 export function shuffle<T>(arr: T[], random: () => number = Math.random): T[] {

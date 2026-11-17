@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import type { GameClientProps } from "@/shared/client-game";
 import { Note, StatusBanner, TimerBar, useSecondsLeft } from "@/components/game-ui";
 import type { DcAction, DcView } from "./server";
-import { ROUNDS, joinNames, type Choice, type RoundRec, type TableView } from "./shared";
+import { joinNames, type Choice, type RoundRec, type TableView } from "./shared";
 import { ChatPanel, mergeMsgs, msgText, useRoundFeed, type Pending } from "./chat";
 import { ChoicePad, HeistHeader, ReadyBar, TableHeader, TablesOverview, seatState } from "./table";
 import { OUTCOME_META, RevealStage, verdictAt } from "./reveal";
@@ -136,7 +136,7 @@ function Round({ view, who, act, onEvent, serverNow, accent }: Props & { view: D
     if (verdictKey < 0) return;
     feedback(myGain > 0 ? "score" : "hit");
   }, [verdictKey, myGain]);
-  const nextLabel = view.heist ? "Final standings in" : view.round + 1 === ROUNDS ? "The Heist in" : `Round ${view.round + 1} in`;
+  const nextLabel = view.heist ? "Final standings in" : view.round + 1 === view.rounds ? "The Heist in" : `Round ${view.round + 1} in`;
 
   return (
     <>

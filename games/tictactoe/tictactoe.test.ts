@@ -133,4 +133,54 @@ function countEnds(t: ReturnType<typeof makeTestCtx>) {
   assert(t.result && t.result.winners.length === 0, "nobody wins an abandoned match");
 }
 
+// Host setting: first to 1 ends after a single won round.
+{
+  const t = makeTestCtx(2, 42, { target: 1 });
+  const s: TttState = game.setup(t.ctx);
+  assert(s.target === 1 && (game.view(s, s.seats[0], t.ctx) as TttView).target === 1, "target in state and view");
+  for (const cell of [0, 3, 1, 4, 2]) game.action(s, s.seats[s.turn], { type: "place", cell }, t.ctx);
+  assert(t.result && t.result.winners.length === 1 && s.round === 1, "one round decides it");
+  const bad = makeTestCtx(2, 42, { target: 99 });
+  assert(game.setup(bad.ctx).target === 3, "invalid setting falls back to the default");
+}
+
+// Bots: 1 human playing randomly vs a bot, and bot vs bot, both reach a result.
+for (const [humans, bots] of [[1, 1], [0, 2]] as const) {
+  for (const seed of [1, 2, 3, 4, 5]) {
+    const t = makeTestCtx(humans + bots, seed, {}, bots);
+    const s: TttState = game.setup(t.ctx);
+    let ms = 0;
+    while (!t.result && ms < 10 * 60_000) {
+      t.advance(200);
+      ms += 200;
+      game.tick!(s, t.ctx);
+      for (const id of t.ids) {
+        if (id.startsWith("bot-")) {
+          const a = game.bot!(s, id, t.ctx);
+          if (a) assert(game.action(s, id, a, t.ctx) !== false, "bot moves are legal");
+        } else if (!s.roundEnd && !s.over && s.seats[s.turn] === id && ms % 1000 === 0) {
+          const empty = s.board.flatMap((c, i) => (c === null ? [i] : []));
+          game.action(s, id, { type: "place", cell: empty[Math.floor(t.ctx.random() * empty.length)] }, t.ctx);
+        }
+      }
+    }
+    assert(t.result, `bot game ends (seed ${seed}, ${bots} bots)`);
+    assert(!s.forfeit, "ended by play, not a forfeit");
+  }
+}
+
+// Bot never moves out of turn and waits a human-ish moment before moving.
+{
+  const t = makeTestCtx(2, 7, {}, 1);
+  const s: TttState = game.setup(t.ctx);
+  const botSeat = s.seats.indexOf("bot-0");
+  if (s.turn !== botSeat) {
+    assert(game.bot!(s, "bot-0", t.ctx) == null, "bot waits for its turn");
+    game.action(s, s.seats[s.turn], { type: "place", cell: 4 }, t.ctx);
+  }
+  assert(game.bot!(s, "bot-0", t.ctx) == null, "thinks first");
+  t.advance(2100);
+  assert(game.bot!(s, "bot-0", t.ctx), "then moves");
+}
+
 console.log("tictactoe: all tests passed");

@@ -4,7 +4,7 @@
 // stepping as street cards flip) and the trade tape.
 
 import type { Trade } from "./shared";
-import { CARD_MEAN, FLIP_MS, STREET, TRADE_MS, cardValue, signed } from "./shared";
+import { CARD_MEAN, STREET, cardValue, signed } from "./shared";
 import { cardShort } from "./cards";
 import { Name, Panel, type WhoFn } from "./ui";
 
@@ -14,7 +14,6 @@ const X0 = 26;
 const X1 = 312;
 const Y0 = 10;
 const Y1 = 112;
-const T_END = TRADE_MS / 100;
 
 /** Fair value (or a trader's estimate, with `own`) once k street cards are known. */
 function stepValue(street: (number | null)[], players: number, k: number, own: number | null): number {
@@ -32,6 +31,8 @@ export function PriceChart({
   ownColor,
   settle,
   accent,
+  tradeMs,
+  flipMs,
 }: {
   chart: number[];
   street: (number | null)[];
@@ -42,9 +43,13 @@ export function PriceChart({
   /** Settlement value once the bell has rung. */
   settle: number | null;
   accent: string;
+  /** Round length and street flip times (ms after the open). */
+  tradeMs: number;
+  flipMs: number[];
 }) {
+  const T_END = tradeMs / 100;
   const flipped = street.filter((c) => c !== null).length;
-  const bounds = [0, ...FLIP_MS.map((ms) => ms / 100), T_END];
+  const bounds = [0, ...flipMs.map((ms) => ms / 100), T_END];
   const fair: { t0: number; t1: number; v: number }[] = [];
   const mine: { t0: number; t1: number; v: number }[] = [];
   for (let k = 0; k <= flipped; k++) {
@@ -100,7 +105,7 @@ export function PriceChart({
             </text>
           </g>
         ))}
-        {FLIP_MS.map((ms, i) => {
+        {flipMs.map((ms, i) => {
           const c = street[i];
           return (
             <g key={i}>

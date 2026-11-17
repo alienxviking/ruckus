@@ -1,5 +1,7 @@
 import type { GameCtx, GameDef } from "../../shared/game";
 import { shuffle, topScorers } from "../../shared/game";
+import { readSettings } from "../../shared/settings";
+import { config } from "./config";
 import {
   BOMB_RADIUS,
   COUNTDOWN_MS,
@@ -88,6 +90,8 @@ export interface PowerUp {
 }
 
 export interface TurfState {
+  /** Length of play in ms (host setting). */
+  playMs: number;
   w: number;
   h: number;
   phase: Phase;
@@ -182,6 +186,8 @@ export type PainterTuple = [
 
 export interface TurfView {
   phase: Phase;
+  /** Full length of play (ms), for the timer bar. */
+  playMs: number;
   w: number;
   h: number;
   endsAt: number;
@@ -580,7 +586,7 @@ function advanceTick(s: TurfState, ctx: GameCtx): boolean {
     if (s.phase === "countdown") {
       if (now >= s.endsAt) {
         s.phase = "play";
-        s.endsAt = now + PLAY_MS;
+        s.endsAt = now + s.playMs;
         s.stepAt = now;
         s.nextSpawnAt = now + SPAWN_FIRST_MS;
         changed = true;
@@ -605,6 +611,124 @@ function advanceTick(s: TurfState, ctx: GameCtx): boolean {
   return changed;
 }
 
+// ---------- practice bot ----------
+
+/** One straight run of a bot's plan. */
+interface Leg {
+  d: number;
+  n: number;
+}
+
+interface BotMind {
+  legs: Leg[];
+  /** Where the current leg began. */
+  sx: number;
+  sy: number;
+  /** Last position and when it last changed (to notice being stuck). */
+  lx: number;
+  ly: number;
+  movedAt: number;
+  /** Don't steer again before this (human-ish reaction). */
+  nextAt: number;
+}
+
+const botMinds = new WeakMap<TurfState, Map<string, BotMind>>();
+
+const inBounds = (s: TurfState, x: number, y: number) => x >= 0 && y >= 0 && x < s.w && y < s.h;
+
+/** A rectangle loop out of its own turf: out, across, back, and home again. */
+function loopPlan(s: TurfState, p: Painter, ctx: GameCtx): Leg[] | null {
+  const span = Math.max(4, Math.round(Math.min(s.w, s.h) / 4));
+  for (let tries = 0; tries < 8; tries++) {
+    const d1 = Math.floor(ctx.random() * 4);
+    const d2 = (d1 + (ctx.random() < 0.5 ? 1 : 3)) % 4;
+    const a = 3 + Math.floor(ctx.random() * span);
+    const b = 3 + Math.floor(ctx.random() * span);
+    const fx = p.x + DX[d1] * a;
+    const fy = p.y + DY[d1] * a;
+    if (!inBounds(s, fx, fy) || !inBounds(s, fx + DX[d2] * b, fy + DY[d2] * b)) continue;
+    return [
+      { d: d1, n: a },
+      { d: d2, n: b },
+      { d: (d1 + 2) % 4, n: a },
+      { d: (d2 + 2) % 4, n: b },
+    ];
+  }
+  return null;
+}
+
+/** Straight back to the nearest tile of its own (to close an open loop). */
+function homePlan(s: TurfState, me: number, p: Painter): Leg[] | null {
+  let best = -1;
+  let bestD = Infinity;
+  for (let i = 0; i < s.tiles.length; i++) {
+    if (s.tiles[i] !== me) continue;
+    const d = Math.abs((i % s.w) - p.x) + Math.abs(Math.floor(i / s.w) - p.y);
+    if (d > 0 && d < bestD) {
+      bestD = d;
+      best = i;
+    }
+  }
+  if (best < 0) return null;
+  const dx = (best % s.w) - p.x;
+  const dy = Math.floor(best / s.w) - p.y;
+  const legs: Leg[] = [];
+  if (dx) legs.push({ d: dx > 0 ? 1 : 3, n: Math.abs(dx) });
+  if (dy) legs.push({ d: dy > 0 ? 2 : 0, n: Math.abs(dy) });
+  return legs;
+}
+
+/**
+ * A medium painter: draws rectangular loops out of its own turf (longer on bigger maps),
+ * heads home when a plan breaks, and turns away from walls. Uses only public board info.
+ */
+function botSteer(s: TurfState, botId: string, ctx: GameCtx): TurfAction | null {
+  if (s.phase !== "play") return null;
+  const me = s.painters.findIndex((q) => q.id === botId);
+  if (me < 0) return null;
+  const p = s.painters[me];
+  const now = ctx.now();
+  let minds = botMinds.get(s);
+  if (!minds) botMinds.set(s, (minds = new Map()));
+  let m = minds.get(botId);
+  if (!m) {
+    m = { legs: [], sx: p.x, sy: p.y, lx: p.x, ly: p.y, movedAt: now, nextAt: now + 300 + ctx.random() * 500 };
+    minds.set(botId, m);
+  }
+  if (p.x !== m.lx || p.y !== m.ly) {
+    m.lx = p.x;
+    m.ly = p.y;
+    m.movedAt = now;
+  }
+  if (now < m.nextAt || now < p.frozenUntil) return null;
+
+  const leg = m.legs[0];
+  const blocked = !inBounds(s, p.x + DX[p.dir], p.y + DY[p.dir]);
+  const stuck = now - m.movedAt > 1_000;
+  const done = leg && (p.x - m.sx) * DX[leg.d] + (p.y - m.sy) * DY[leg.d] >= leg.n;
+  if (leg && !done && !blocked && !stuck) {
+    // Mid-leg: make sure we're heading the right way (a turn may not have landed yet).
+    return p.dir === leg.d || p.queue.length ? null : { type: "turn", dir: DIRS[leg.d] };
+  }
+  if (done) m.legs.shift();
+  if (!m.legs.length || blocked || stuck) {
+    const onTurf = s.tiles[p.y * s.w + p.x] === me;
+    m.legs = (onTurf || p.out === 0 ? loopPlan(s, p, ctx) : homePlan(s, me, p)) ?? homePlan(s, me, p) ?? [];
+    if (!m.legs.length) {
+      // Nowhere sensible: any open direction.
+      const open = [0, 1, 2, 3].filter((d) => inBounds(s, p.x + DX[d], p.y + DY[d]));
+      m.legs = [{ d: open[Math.floor(ctx.random() * open.length)] ?? 0, n: 3 }];
+    }
+  }
+  const next = m.legs[0];
+  m.sx = p.x;
+  m.sy = p.y;
+  m.movedAt = now;
+  // A little reaction delay before the next decision, like a person on the arrow keys.
+  m.nextAt = now + 60 + ctx.random() * 120;
+  return next.d === p.dir ? null : { type: "turn", dir: DIRS[next.d] };
+}
+
 // ---------- the game definition ----------
 
 export const turf: GameDef<TurfState, TurfAction> = {
@@ -613,9 +737,11 @@ export const turf: GameDef<TurfState, TurfAction> = {
 
   setup(ctx) {
     const roster = ctx.players.slice(0, MAX_PAINTERS);
-    const { w, h } = boardSize(roster.length);
+    const set = readSettings(config.settings, ctx.settings);
+    const { w, h } = boardSize(roster.length, String(set.map));
     const spots = shuffle(homeSpots(roster.length, w, h), ctx.random);
     const s: TurfState = {
+      playMs: Number(set.seconds) * 1000 || PLAY_MS,
       w,
       h,
       phase: "countdown",
@@ -726,6 +852,10 @@ export const turf: GameDef<TurfState, TurfAction> = {
     return changed;
   },
 
+  bot(s, botId, ctx) {
+    return botSteer(s, botId, ctx);
+  },
+
   spectatorAction(s, viewerId, action, ctx) {
     const a: unknown = action;
     if (!a || typeof a !== "object" || (a as { type?: unknown }).type !== "sync") return false;
@@ -736,6 +866,7 @@ export const turf: GameDef<TurfState, TurfAction> = {
     const you = s.painters.findIndex((p) => p.id === viewerId);
     const v: TurfView = {
       phase: s.phase,
+      playMs: s.playMs,
       w: s.w,
       h: s.h,
       endsAt: s.endsAt,

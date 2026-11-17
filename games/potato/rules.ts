@@ -3,7 +3,7 @@ import type { GameRules } from "../rules-types";
 export const rules: GameRules = {
   goal: "Be the last player still holding on to a life when everyone else has been blown up.",
   flow: [
-    "Each round the potato starts in a random player's hands with a secret fuse somewhere between 12 and 30 seconds.",
+    "Each round the potato starts in a random player's hands with a secret fuse somewhere between 12 and 30 seconds (the host can make it shorter or longer).",
     "If you're holding it, solve the tiny puzzle on your screen: a quick sum, the odd emoji out, repeat 3 arrows, or tap the colour of the ink (not the word).",
     "Solve it and the potato is ready to throw: tap any other player to send it flying. It's in the air for half a second.",
     "Whoever catches it gets a fresh puzzle and does the same. You can't throw it straight back to the person who just threw it to you, unless only two of you are left.",
@@ -23,7 +23,7 @@ export const rules: GameRules = {
     ],
   },
   scoring: [
-    "Everyone starts with 2 lives, or just 1 life when there are 9 or more players.",
+    "Everyone starts with 2 lives, or just 1 life when there are 9 or more players (the host can pick 1, 2 or 3 instead).",
     "Holding the potato when it explodes costs you 1 life. If it explodes while it's in the air, the thrower loses the life.",
     "A wrong answer doesn't cost a life, but it freezes you for a moment before a new puzzle appears.",
     "Lose your last life and you're out (you can still throw emoji heckles). The last player standing wins.",

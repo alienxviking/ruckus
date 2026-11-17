@@ -1,4 +1,6 @@
 import { shuffle, topScorers, type GameCtx, type GameDef } from "../../shared/game";
+import { readSettings } from "../../shared/settings";
+import { config } from "./config";
 import { BG, MAX_BATCH, MAX_STROKE_ID, PALETTE, SIZES, type WireStroke } from "../sketch/shared";
 import { AUTO_A, AUTO_B } from "./data";
 import {
@@ -216,6 +218,9 @@ export interface MashupView {
 }
 
 export interface MashupState {
+  /** Rounds and per-part drawing time for this game (host settings). */
+  rounds: number;
+  drawMs: number;
   players: string[];
   /** This round's seating: monster m's head is by order[m], body by order[m+1], legs by order[m+2]. */
   order: string[];
@@ -396,7 +401,7 @@ function startRound(s: MashupState, ctx: GameCtx, round: number) {
 
 function startDraw(s: MashupState, ctx: GameCtx, stage: number) {
   s.stage = stage;
-  setPhase(s, ctx, "draw", DRAW_MS);
+  setPhase(s, ctx, "draw", s.drawMs);
 }
 
 /** Whatever was drawn so far becomes the part, even if it's blank. */
@@ -558,7 +563,7 @@ function endVote(s: MashupState, ctx: GameCtx) {
 }
 
 function endResults(s: MashupState, ctx: GameCtx) {
-  if (s.round + 1 < ROUNDS) startRound(s, ctx, s.round + 1);
+  if (s.round + 1 < s.rounds) startRound(s, ctx, s.round + 1);
   else finish(s, ctx);
 }
 
@@ -805,7 +810,10 @@ export const mashup: GameDef<MashupState, MashupAction> = {
   id: "mashup",
 
   setup(ctx) {
+    const set = readSettings(config.settings, ctx.settings);
     const s: MashupState = {
+      rounds: Number(set.rounds) || ROUNDS,
+      drawMs: (Number(set.draw) || DRAW_MS / 1000) * 1000,
       players: ctx.players.map((p) => p.id),
       order: [],
       phase: "draw",
@@ -895,7 +903,7 @@ export const mashup: GameDef<MashupState, MashupAction> = {
     const v: MashupView = {
       phase: s.phase,
       round: s.round,
-      rounds: ROUNDS,
+      rounds: s.rounds,
       stage: s.stage,
       endsAt: s.endsAt,
       phaseMs: s.phaseMs,

@@ -3,10 +3,10 @@ import type { GameRules } from "../rules-types";
 export const rules: GameRules = {
   goal: "Collect the most emoji reactions from the other players on the pages you write and draw.",
   flow: [
-    "Everyone starts their own book by writing a short prompt (40 seconds). Stuck? Tap Inspire me for a random one.",
+    "Everyone starts their own book by writing a short prompt (40 seconds; the host can make all timers quicker or more relaxed). Stuck? Tap Inspire me for a random one.",
     "The books pass along. If you get words, draw them (70 seconds). If you get a drawing, describe it in words (35 seconds).",
     "You only ever see the page right before yours, so the message drifts further from the original with every pass.",
-    "This repeats once per player, up to 8 pages per book. A step ends early once everyone taps Done.",
+    "This repeats once per player, up to 8 pages per book (the host can lower the cap). A step ends early once everyone taps Done.",
     "Then every book is revealed page by page for the whole group. React to the pages you love.",
     "After the last book, the player with the most reactions wins.",
   ],
@@ -32,6 +32,6 @@ export const rules: GameRules = {
   tips: [
     "When describing, write what you actually see, not what you think the artist meant. The weirder it gets, the funnier the reveal.",
     "Each drawing has limited ink, so go for big, simple shapes over fine detail.",
-    "Keep prompts drawable: the next player has only 70 seconds to sketch them.",
+    "Keep prompts drawable: the next player has only about a minute to sketch them.",
   ],
 };

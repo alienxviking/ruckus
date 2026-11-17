@@ -1,8 +1,11 @@
 import type { GameCtx, GameDef } from "../../shared/game";
+import { readSettings } from "../../shared/settings";
+import { config } from "./config";
 
 // Reference implementation: small, turn-based, rounds handled via tick().
 
 type Mark = 0 | 1; // 0 = X, 1 = O
+/** Default round wins needed (the host can change it). */
 const TARGET = 3;
 const ROUND_PAUSE_MS = 2200;
 /** With a player disconnected this long, the match goes to whoever stayed. */
@@ -19,6 +22,8 @@ export interface TttState {
   turn: Mark;
   starter: Mark;
   score: [number, number];
+  /** Round wins needed to take the match. */
+  target: number;
   round: number;
   roundEnd: { winner: Mark | null; line: number[] | null; nextAt: number } | null;
   winner: Mark | null; // match winner
@@ -38,7 +43,6 @@ export type TttAction = { type: "place"; cell: number };
 export interface TttView extends Omit<TttState, "seats" | "awaySince"> {
   seats: [string, string];
   you: Mark | null;
-  target: number;
   /** Pause between rounds, for the "next round" progress bar. */
   pauseMs: number;
   forfeitMs: number;
@@ -91,11 +95,58 @@ function forfeit(s: TttState, ctx: GameCtx) {
   }
 }
 
+// ---------- practice bot ----------
+
+/** When each bot may move next (keyed by state), so it "thinks" like a person. */
+const botReadyAt = new WeakMap<TttState, { key: string; at: number }>();
+
+const pickFrom = (cells: number[], random: () => number) => cells[Math.floor(random() * cells.length)];
+
+/** A cell that completes a line for `mark`, if any. */
+function finishing(board: (Mark | null)[], mark: Mark): number[] {
+  const out: number[] = [];
+  for (const l of LINES) {
+    const mine = l.filter((i) => board[i] === mark).length;
+    const empty = l.filter((i) => board[i] === null);
+    if (mine === 2 && empty.length === 1) out.push(empty[0]);
+  }
+  return out;
+}
+
+/**
+ * Medium bot: takes a win, blocks an obvious threat, prefers centre and corners,
+ * but now and then misses a block or plays a loose square.
+ */
+function botMove(s: TttState, botId: string, ctx: GameCtx): TttAction | null {
+  if (s.over || s.roundEnd || s.seats[s.turn] !== botId) return null;
+  const key = `${s.round}:${s.board.join(",")}`;
+  const now = ctx.now();
+  const t = botReadyAt.get(s);
+  if (!t || t.key !== key) {
+    botReadyAt.set(s, { key, at: now + 600 + ctx.random() * 1400 });
+    return null;
+  }
+  if (now < t.at) return null;
+  const me = s.turn;
+  const empty = s.board.flatMap((c, i) => (c === null ? [i] : []));
+  if (empty.length === 0) return null;
+  const win = finishing(s.board, me);
+  if (win.length && ctx.random() < 0.95) return { type: "place", cell: pickFrom(win, ctx.random) };
+  const block = finishing(s.board, (1 - me) as Mark);
+  if (block.length && ctx.random() < 0.85) return { type: "place", cell: pickFrom(block, ctx.random) };
+  if (ctx.random() < 0.25) return { type: "place", cell: pickFrom(empty, ctx.random) };
+  if (s.board[4] === null) return { type: "place", cell: 4 };
+  const corners = [0, 2, 6, 8].filter((i) => s.board[i] === null);
+  return { type: "place", cell: pickFrom(corners.length ? corners : empty, ctx.random) };
+}
+
 export const tictactoe: GameDef<TttState, TttAction> = {
   id: "tictactoe",
 
   setup(ctx) {
     const [a, b] = ctx.players;
+    const set = readSettings(config.settings, ctx.settings);
+    const target = Number(set.target) || TARGET;
     const first: Mark = ctx.random() < 0.5 ? 0 : 1;
     return {
       seats: [a.id, b.id],
@@ -103,6 +154,7 @@ export const tictactoe: GameDef<TttState, TttAction> = {
       turn: first,
       starter: first,
       score: [0, 0],
+      target,
       round: 1,
       roundEnd: null,
       winner: null,
@@ -129,7 +181,7 @@ export const tictactoe: GameDef<TttState, TttAction> = {
       s.score[s.turn] += 1;
       s.history.push(s.turn);
       s.roundEnd = { winner: s.turn, line, nextAt: ctx.now() + ROUND_PAUSE_MS };
-      if (s.score[s.turn] >= TARGET) {
+      if (s.score[s.turn] >= s.target) {
         s.winner = s.turn;
         s.over = true;
         s.awaySince = null;
@@ -172,13 +224,16 @@ export const tictactoe: GameDef<TttState, TttAction> = {
     if (!s.over) updateAway(s, ctx);
   },
 
+  bot(s, botId, ctx) {
+    return botMove(s, botId, ctx);
+  },
+
   view(s, viewerId): TttView {
     const seat = s.seats.indexOf(viewerId);
     const { awaySince, ...rest } = s;
     return {
       ...rest,
       you: seat === -1 ? null : (seat as Mark),
-      target: TARGET,
       pauseMs: ROUND_PAUSE_MS,
       forfeitMs: FORFEIT_MS,
       forfeitAt: awaySince === null ? null : awaySince + FORFEIT_MS,

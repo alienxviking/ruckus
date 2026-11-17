@@ -1,5 +1,7 @@
 import type { GameCtx, GameDef } from "../../shared/game";
 import { shuffle, topScorers } from "../../shared/game";
+import { readSettings } from "../../shared/settings";
+import { config } from "./config";
 import { SPECTRUMS } from "./data";
 import {
   ABANDON_MS,
@@ -82,6 +84,8 @@ export interface DialState {
   round: number;
   phase: DialPhase;
   endsAt: number;
+  /** Guessing time in ms (host setting). */
+  guessMs: number;
   deck: number[];
   spec: number;
   rerolled: boolean;
@@ -158,7 +162,9 @@ export interface DialTeam {
   max: number;
 }
 
-const PHASE_MS: Record<DialPhase, number> = { clue: CLUE_MS, guess: GUESS_MS, reveal: REVEAL_MS, final: 0 };
+function phaseMs(s: DialState): number {
+  return s.phase === "clue" ? CLUE_MS : s.phase === "guess" ? s.guessMs : s.phase === "reveal" ? REVEAL_MS : 0;
+}
 
 const isHere = (ctx: GameCtx, id: string) => ctx.player(id)?.connected !== false;
 
@@ -209,7 +215,7 @@ function startGuess(s: DialState, ctx: GameCtx, clue: string) {
   s.clue = clue;
   s.phase = "guess";
   s.notice = null;
-  s.endsAt = ctx.now() + GUESS_MS;
+  s.endsAt = ctx.now() + s.guessMs;
 }
 
 /** A guesser we still wait for: connected, or only briefly away. */
@@ -362,16 +368,18 @@ export const dial: GameDef<DialState, DialAction> = {
   id: "dial",
 
   setup(ctx) {
+    const settings = readSettings(config.settings, ctx.settings);
     const ids = ctx.players.map((p) => p.id);
     const n = ids.length;
     const seats = ids.map((_, i) => i);
-    const first = shuffle(seats, ctx.random);
-    let order = first;
-    if (n <= 3) {
-      // Small games: everyone gives two clues. Never the same giver twice in a row.
-      const second = shuffle(seats, ctx.random);
-      if (n > 1 && second[0] === first[n - 1]) [second[0], second[1]] = [second[1], second[0]];
-      order = first.concat(second);
+    // Clues per player: "auto" gives small games (2-3 players) two each, bigger ones one.
+    const laps = settings.laps === "auto" ? (n <= 3 ? 2 : 1) : Number(settings.laps) || 1;
+    let order = shuffle(seats, ctx.random);
+    for (let lap = 1; lap < laps; lap++) {
+      // Never the same giver twice in a row.
+      const next = shuffle(seats, ctx.random);
+      if (n > 1 && next[0] === order[order.length - 1]) [next[0], next[1]] = [next[1], next[0]];
+      order = order.concat(next);
     }
     const s: DialState = {
       startedAt: ctx.now(),
@@ -380,6 +388,7 @@ export const dial: GameDef<DialState, DialAction> = {
       round: 0,
       phase: "clue",
       endsAt: 0,
+      guessMs: (Number(settings.guess) || GUESS_MS / 1000) * 1000,
       deck: shuffle(
         SPECTRUMS.map((_, i) => i),
         ctx.random,
@@ -531,7 +540,7 @@ export const dial: GameDef<DialState, DialAction> = {
       giver: s.ids[giver] ?? "",
       next: s.round + 1 < s.order.length ? s.ids[s.order[s.round + 1]] : null,
       endsAt: s.endsAt,
-      phaseMs: PHASE_MS[s.phase],
+      phaseMs: phaseMs(s),
       left,
       right,
       rerolled: s.rerolled,

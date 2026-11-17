@@ -639,4 +639,83 @@ for (const n of [1, 2, 3, 4, 8]) {
   console.log(`  traffic: busy 8p ≈ ${kbps.toFixed(2)} KB/s per client, full view ${full} B`);
 }
 
+// ---------- host settings ----------
+
+{
+  // Shorter game, small field, lots of mines.
+  const t = makeTestCtx(2, 5, { minutes: 2, board: "small", mines: "lots" });
+  const s: MrState = game.setup(t.ctx);
+  assert(s.w === 18 && s.h === 12, "small field");
+  assert(s.mineCount === Math.round(18 * 12 * 0.21), "lots of mines");
+  assert(s.endsAt - s.startsAt === 120_000, "2 minutes");
+  toPlay(t, s);
+  t.advance(120_000 - 1);
+  game.tick!(s, t.ctx);
+  assert(!t.result, "still going just before 2 minutes");
+  t.advance(1);
+  game.tick!(s, t.ctx);
+  assert(t.result && s.why === "time", "ends after 2 minutes");
+}
+{
+  // Large field for a big group, few mines; view still small.
+  const t = makeTestCtx(8, 6, { board: "large", mines: "few", minutes: 5 });
+  const s: MrState = game.setup(t.ctx);
+  assert(s.w === 36 && s.h === 24 && s.mineCount === Math.round(36 * 24 * 0.15), "large field, few mines");
+  assert(s.endsAt - s.startsAt === 300_000, "5 minutes");
+  assert(s.openings.length === 3 && s.opened <= s.safeTotal * 0.3, "openings still sane");
+  assert(JSON.stringify(view(s, t.ids[0], t)).length < 4096, "view stays small");
+}
+{
+  // Defaults (and junk) keep the classic game.
+  const t = makeTestCtx(2, 5, { minutes: 7, board: "huge" });
+  const s: MrState = game.setup(t.ctx);
+  assert(s.w === 24 && s.h === 16 && s.endsAt - s.startsAt === PLAY_MS && s.mineCount === Math.round(24 * 16 * 0.17), "defaults");
+}
+
+// ---------- practice bots ----------
+
+function runBots(n: number, bots: number, seed: number, settings = {}) {
+  const t = makeTestCtx(n, seed, settings, bots);
+  const s: MrState = game.setup(t.ctx);
+  const botIds = t.ids.filter((id) => id.startsWith("bot-"));
+  let acted = 0;
+  let guard = 0;
+  while (!t.result && guard++ < 10_000) {
+    t.advance(250);
+    game.tick!(s, t.ctx);
+    for (const id of botIds) {
+      const a = game.bot!(s, id, t.ctx);
+      if (!a) continue;
+      acted += 1;
+      game.action(s, id, a, t.ctx);
+    }
+  }
+  return { t, s, acted };
+}
+{
+  const { t, s, acted } = runBots(2, 1, 31);
+  assert(t.result, "1 human + 1 bot game ends");
+  assert(acted > 50 && s.stats[1].opened > 20, `the bot digs (${acted} actions, ${s.stats[1].opened} cells)`);
+  assert(s.stats[1].opened - s.stats[1].booms * 10 > 0, "the bot scores something");
+}
+for (const seed of [1, 2, 3]) {
+  const { t, s } = runBots(4, 4, seed, { minutes: 2, board: "small" });
+  assert(t.result && (s.why === "cleared" || s.why === "time"), `all-bot game ends (${seed})`);
+  const right = s.fin!.reduce((a, r) => a + r.right, 0);
+  const wrong = s.fin!.reduce((a, r) => a + r.wrong, 0);
+  assert(wrong === 0 || right > wrong, "bot flags are mostly right");
+  assert(t.ctx.now() - 1_700_000_000_000 <= 125_000, "within the time limit");
+}
+{
+  // Bots don't act during the countdown, nor while stunned.
+  const t = makeTestCtx(2, 9, {}, 1);
+  const s: MrState = game.setup(t.ctx);
+  t.advance(1000);
+  assert(game.bot!(s, "bot-0", t.ctx) === null, "waits for the start");
+  toPlay(t, s);
+  s.ps[1].stun = t.ctx.now() + 5000;
+  t.advance(2000);
+  assert(game.bot!(s, "bot-0", t.ctx) === null, "stunned bots wait");
+}
+
 console.log("✓ minerush tests passed");

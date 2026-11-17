@@ -1,13 +1,13 @@
 import type { GameRules } from "../rules-types";
 
 export const rules: GameRules = {
-  goal: "Finish the 6 rounds with the most points by knowing when to trust and when to steal.",
+  goal: "Finish the 6 rounds (the host can pick 4 or 8) with the most points by knowing when to trust and when to steal.",
   flow: [
     "Each round you're seated at a private table with one partner (or two, if there's an odd number of players). The game avoids repeat partners where it can.",
-    "You get 40 seconds to chat privately: make promises, bluff or beg. Tap Done talking when you're finished: once every player is done, everyone moves on early.",
+    "You get 40 seconds (the host can change this) to chat privately: make promises, bluff or beg. Tap Done talking when you're finished: once every player is done, everyone moves on early.",
     "Then you have 10 seconds to secretly pick Split or Steal. You can change your mind until the timer ends or everyone has picked.",
     "The cards flip and everyone's choice is shown to the whole room, so your reputation follows you into later rounds.",
-    "Round 6 is the Heist: everyone sits at one big table with a pot of about 30 points and 30 seconds to talk.",
+    "The last round is the Heist: everyone sits at one big table with a pot of about 30 points and a little less time to talk (30 seconds by default).",
   ],
   controls: {
     desktop: [
@@ -20,7 +20,7 @@ export const rules: GameRules = {
     ],
   },
   scoring: [
-    "Pots grow each round: 4, 6, 8, 10, then 14 points (half as much again at a table of three).",
+    "Pots grow each round: 4, 6, 8, 10, then 14 points in a 6-round game (half as much again at a table of three).",
     "Everyone splits: the pot is shared evenly. Exactly one thief: they take the whole pot and the others get 0. Two or more thieves: nobody gets anything.",
     "Don't pick in time and you automatically Split.",
     "After the Heist, the highest total wins. Tied players share the win.",

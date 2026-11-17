@@ -6,7 +6,7 @@ import type { Player } from "@/shared/types";
 import { Note, StatusBanner, TimerBar, useSecondsLeft } from "@/components/game-ui";
 import { feedback, sfx } from "@/lib/feedback";
 import type { PlayerLine, TriviaAction, TriviaView } from "./server";
-import { LETTERS, QUESTION_MS, STREAK_CAP, fmt } from "./shared";
+import { CATEGORIES, LETTERS, STREAK_CAP, fmt } from "./shared";
 import { FinalScreen } from "./final";
 import { Leaderboard, Lineup, LockedIn, SoloStats } from "./standings";
 import { AnswerButton, CategoryChip, DiffPill, TriviaStyles, cssVars, ordinal, personOf, seconds, type AnswerLook } from "./ui";
@@ -320,7 +320,7 @@ function Intro({
         }}
       >
         <span className="label">
-          {view.total} questions · {view.total} categories
+          {view.total} questions · {Math.min(view.total, CATEGORIES.length)} categories
         </span>
         <h2 className="font-display text-3xl font-black @lg:text-4xl">Get ready!</h2>
         <div
@@ -333,7 +333,7 @@ function Intro({
         </div>
         <ul className="grid gap-x-6 gap-y-1.5 text-left text-sm text-muted @xl:grid-cols-2">
           {[
-            ["⏱", `${QUESTION_MS / 1000} seconds per question`],
+            ["⏱", `${view.questionMs / 1000} seconds per question`],
             ["⚡", "Faster right answers score more, up to 1,000"],
             ["🔥", `Answer streaks earn up to +${STREAK_CAP}`],
             ["⌨️", "Press 1–4 or A–D to answer"],

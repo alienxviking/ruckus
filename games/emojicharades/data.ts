@@ -2,7 +2,7 @@
 // Original, generic phrases and common (public-domain) sayings. Lowercase letters,
 // spaces, apostrophes and hyphens only, so the letter mask and matching stay simple.
 
-import type { Cat } from "./shared";
+import type { BuiltinCat } from "./shared";
 
 const list = (s: string) =>
   s
@@ -10,7 +10,7 @@ const list = (s: string) =>
     .map((l) => l.trim())
     .filter(Boolean);
 
-export const PHRASES: Record<Cat, string[]> = {
+export const PHRASES: Record<BuiltinCat, string[]> = {
   saying: list(`
     early bird gets the worm
     break a leg

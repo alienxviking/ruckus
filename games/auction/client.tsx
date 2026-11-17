@@ -5,7 +5,7 @@ import type { GameClientProps } from "@/shared/client-game";
 import type { Player } from "@/shared/types";
 import { Note, StatusBanner, TimerBar, useSecondsLeft } from "@/components/game-ui";
 import type { AuAction, AuView } from "./server";
-import { HIST, INTRO_MS, LOTS, NO_BID_MS, STAGE_MS, STAMPS, STEPS, contents, isAuEvent, kindOf, signed, type Bid } from "./shared";
+import { HIST, INTRO_MS, NO_BID_MS, STAGE_MS, STAMPS, STEPS, contents, isAuEvent, kindOf, signed, type Bid } from "./shared";
 import { AuStyles, GAIN, GOLD, LOSS, Name, kindColor, makeWho, pnlColor, useLatest, usePassed, type Who } from "./ui";
 import { CrateArt, Burst, Contents, Rays, RevealBack, RevealFront, Smoke, Stamp } from "./crate";
 import { FinalStandings, Leaderboard, LotsStrip, PeekGrid, Recap, giftOf, standings } from "./panels";
@@ -212,7 +212,7 @@ function Who_({ p, you }: { p: Player; you?: boolean }) {
 function status(view: AuView, who: Who, lead: Bid | null, open: boolean): { key: string; node: ReactNode; color?: string } {
   const lot = view.lot;
   const crate = view.crates[lot];
-  const tag = `Lot ${lot + 1}/${LOTS}`;
+  const tag = `Lot ${lot + 1}/${view.crates.length}`;
   if (view.phase === "lot") {
     if (!open) return { key: `intro${lot}`, node: <>{crate.gift ? "🎁 " : "📦 "}{tag} is up!</> };
     if (!lead) return { key: `open${lot}`, node: <>{tag}: bidding is open!</> };
@@ -386,7 +386,7 @@ function LotStage({
         </div>
         <div className="min-w-0 flex-1">
           <div className="label">
-            Lot {view.lot + 1} of {LOTS}
+            Lot {view.lot + 1} of {view.crates.length}
           </div>
           <div className="truncate text-sm font-semibold">{crate.gift ? "🎁 Double or nothing" : `“${STAMPS[crate.stamp] ?? "Crate"}” crate`}</div>
           <div className="mt-2 min-h-[5.5rem]">
@@ -419,7 +419,7 @@ function LotStage({
       <div className="mt-3">
         {sold ? (
           <div className="flex items-center gap-2 text-xs text-muted">
-            <span className="shrink-0">{view.lot + 1 < LOTS ? "Next lot" : "Final reveal"}</span>
+            <span className="shrink-0">{view.lot + 1 < view.crates.length ? "Next lot" : "Final reveal"}</span>
             <div className="flex-1">
               <TimerBar endsAt={view.endsAt} total={view.phaseMs} serverNow={serverNow} color="var(--color-muted)" />
             </div>
@@ -672,7 +672,7 @@ function BidPad({ view, who, bidding, open, accent }: { view: AuView; who: Who; 
   }, [keys]);
 
   let hint: ReactNode;
-  if (view.phase === "sold") hint = view.lot + 1 < LOTS ? "Next lot coming up…" : "That was the last lot!";
+  if (view.phase === "sold") hint = view.lot + 1 < view.crates.length ? "Next lot coming up…" : "That was the last lot!";
   else if (!open) hint = "Get ready…";
   else if (leading) hint = <b style={{ color: meP.color }}>You&apos;re on top! 🙌</b>;
   else if (pend) hint = <span style={{ color: meP.color }}>Sending ${pend.a}…</span>;

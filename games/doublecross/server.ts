@@ -1,4 +1,7 @@
 import { shuffle, topScorers, type GameCtx, type GameDef } from "../../shared/game";
+import { readSettings } from "../../shared/settings";
+import { dcBot } from "./bot";
+import { config } from "./config";
 import {
   AWAY_END_MS,
   CHOOSE_MS,
@@ -17,6 +20,7 @@ import {
   cleanText,
   heistPot,
   joinNames,
+  pairPots,
   plural,
   potFor,
   settle,
@@ -78,6 +82,11 @@ export interface DcState {
   /** Bumped on every ready/lock event so clients can order events against views. */
   rev: number;
   endedEarly: boolean;
+  /** Host settings: rounds in the game (the last is the heist), their pair pots, talk times. */
+  rounds: number;
+  pots: number[];
+  talkMs: number;
+  heistTalkMs: number;
 }
 
 const seatsOf = (s: DcState) => s.order.map((_, i) => i);
@@ -153,13 +162,13 @@ export function makeTables(seats: number[], met: number[][], trios: number[], ra
 
 function startRound(s: DcState, ctx: GameCtx) {
   trackAway(s, ctx);
-  if (s.round >= ROUNDS) return finish(s, ctx, false);
+  if (s.round >= s.rounds) return finish(s, ctx, false);
   const seats = eligible(s, ctx);
   if (seats.length < 2) return finish(s, ctx, true);
   s.round += 1;
-  const heist = s.round === ROUNDS;
+  const heist = s.round === s.rounds;
   const groups = heist ? [seats] : makeTables(seats, s.met, s.trios, ctx.random);
-  s.tables = groups.map((g) => ({ seats: g, pot: heist ? heistPot(g.length) : potFor(s.round, g.length), msgs: [], count: 0 }));
+  s.tables = groups.map((g) => ({ seats: g, pot: heist ? heistPot(g.length) : potFor(s.round, g.length, s.pots), msgs: [], count: 0 }));
   s.seatTable = s.order.map(() => -1);
   s.tables.forEach((t, i) => {
     for (const seat of t.seats) s.seatTable[seat] = i;
@@ -173,7 +182,7 @@ function startRound(s: DcState, ctx: GameCtx) {
   s.says = s.order.map(() => []);
   s.phase = "talk";
   s.step = 0;
-  s.phaseMs = heist ? HEIST_TALK_MS : TALK_MS;
+  s.phaseMs = heist ? s.heistTalkMs : s.talkMs;
   s.endsAt = ctx.now() + s.phaseMs;
 }
 
@@ -198,7 +207,7 @@ export function resultMs(heist: boolean, crew: number) {
 
 /** The flip: choices become public, pots pay out. No choice = split. */
 function flip(s: DcState, ctx: GameCtx) {
-  const heist = s.round === ROUNDS;
+  const heist = s.round === s.rounds;
   const rec: RoundRec = {
     round: s.round,
     heist,
@@ -332,6 +341,9 @@ export const doublecross: GameDef<DcState, DcAction> = {
   id: "doublecross",
 
   setup(ctx) {
+    const set = readSettings(config.settings, ctx.settings);
+    const rounds = Number(set.rounds) || ROUNDS;
+    const talkMs = Number(set.talk) * 1000 || TALK_MS;
     const n = ctx.players.length;
     const s: DcState = {
       order: ctx.players.map((p) => p.id),
@@ -355,6 +367,10 @@ export const doublecross: GameDef<DcState, DcAction> = {
       msgSeq: 0,
       rev: 0,
       endedEarly: false,
+      rounds,
+      pots: pairPots(rounds - 1),
+      talkMs,
+      heistTalkMs: Math.round((talkMs * HEIST_TALK_MS) / TALK_MS),
     };
     startRound(s, ctx);
     return s;
@@ -410,8 +426,8 @@ export const doublecross: GameDef<DcState, DcAction> = {
     return {
       phase: s.phase,
       round: s.round,
-      rounds: ROUNDS,
-      heist: s.round === ROUNDS,
+      rounds: s.rounds,
+      heist: s.round === s.rounds,
       step: s.step,
       endsAt: final ? null : s.endsAt,
       phaseMs: s.phaseMs,
@@ -436,6 +452,11 @@ export const doublecross: GameDef<DcState, DcAction> = {
       awayEndsAt: s.awaySince === null || final ? null : s.awaySince + AWAY_END_MS,
       endedEarly: s.endedEarly,
     };
+  },
+
+  bot(s, botId, ctx) {
+    if (s.phase === "final") return null;
+    return dcBot(s, doublecross.view(s, botId, ctx) as DcView, ctx);
   },
 
   playerLeft(s, playerId, ctx) {

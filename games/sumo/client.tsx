@@ -8,13 +8,11 @@ import type { FallRec, SumoAction, SumoView } from "./server";
 import {
   COUNTDOWN_MS,
   DASH_CD_MS,
-  MAX_ROUNDS,
   POWER_INFO,
   ROUND_OVER_MS,
   SHRINK_END_MS,
   SHRINK_START_MS,
   TURBO_CD_MS,
-  WINS_NEEDED,
   isSnap,
 } from "./shared";
 import { Rink, type InputState, type RinkData } from "./rink";
@@ -361,7 +359,7 @@ function Game({
     head = winner
       ? `🏆 ${winner === me ? "You take" : `${name(winner)} takes`} round ${round}!`
       : "🤝 Draw: the last ones fell in together";
-    sub = `Next round in ${secs}s · first to ${WINS_NEEDED} wins`;
+    sub = `Next round in ${secs}s · first to ${view.winsNeeded} wins`;
   } else {
     head = "🏁 Match over";
     sub = "Final standings below";
@@ -436,7 +434,7 @@ function Game({
             Round {round}
             <span className="font-normal text-muted">
               {" "}
-              of {MAX_ROUNDS} max · first to {WINS_NEEDED}
+              of {view.maxRounds} max · first to {view.winsNeeded}
             </span>
           </span>
           <span
@@ -580,10 +578,10 @@ function Overlay({
   return null;
 }
 
-function Pips({ wins, color }: { wins: number; color: string }) {
+function Pips({ wins, need, color }: { wins: number; need: number; color: string }) {
   return (
     <span className="flex items-center gap-0.5" aria-hidden>
-      {Array.from({ length: Math.max(WINS_NEEDED, wins) }, (_, i) => (
+      {Array.from({ length: Math.max(need, wins) }, (_, i) => (
         <span
           key={i}
           className={`size-2 rounded-full border ${i < wins ? "animate-pop" : ""}`}
@@ -628,7 +626,7 @@ function ScoreRow({
               {p?.name ?? "Someone"}
             </span>
             {id === me && <span className="text-[10px] font-bold tracking-wide text-text/80 uppercase">you</span>}
-            <Pips wins={wins} color={color} />
+            <Pips wins={wins} need={view.winsNeeded} color={color} />
             <span className="font-mono text-xs text-muted tabular-nums" aria-hidden>
               {offline ? "🔌" : on ? "🧊" : "💦"}
               {kos > 0 ? ` 💥${kos}` : ""}
@@ -754,7 +752,7 @@ function FinalStandings({
                   </span>
                 </span>
                 <span className="flex shrink-0 items-center gap-2">
-                  <Pips wins={wins(slot)} color={color} />
+                  <Pips wins={wins(slot)} need={view.winsNeeded} color={color} />
                   <span className="w-5 text-right font-mono text-lg font-bold tabular-nums">{wins(slot)}</span>
                   <span className="sr-only"> round win{wins(slot) === 1 ? "" : "s"}</span>
                 </span>

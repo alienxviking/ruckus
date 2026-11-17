@@ -13,7 +13,6 @@ import {
   LANDMARKS,
   NPC_COUNT,
   PARKS,
-  PLAY_MS,
   PTS_ALL_LIT,
   PTS_MOST_LIT,
   PTS_SNIPE,
@@ -336,7 +335,7 @@ function Game({ view, me, players, byId, isPlayer, act, serverNow, onEvent, acce
     clock = `darts unlock in ${secs}s`;
   } else if (phase === "play") {
     timerEnds = view.endsAt;
-    timerTotal = PLAY_MS;
+    timerTotal = view.playMs;
     clock = `${mmss(secs)} left`;
   } else if (phase === "roundOver") {
     timerEnds = view.endsAt;

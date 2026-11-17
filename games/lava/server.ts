@@ -1,10 +1,11 @@
 import { shuffle, topScorers, type GameCtx, type GameDef } from "../../shared/game";
+import { readSettings } from "../../shared/settings";
+import { config } from "./config";
 import {
   ABANDON_MS,
   CAMP_MS,
   CENTER,
   COLLAPSE_EVERY_MS,
-  COLLAPSE_START_MS,
   COUNTDOWN_MS,
   F_FLOAT,
   F_FLOAT_LOW,
@@ -21,7 +22,6 @@ import {
   JUMP_CD_STEPS,
   JUMP_STEPS,
   MAX_POWERS,
-  MAX_ROUNDS,
   PLAYER_R,
   POWER_EVERY_MS,
   POWER_FIRST_MS,
@@ -33,7 +33,6 @@ import {
   SUBSTEPS,
   SUB_MS,
   TICK_MS,
-  WINS_NEEDED,
   arenaRadius,
   board,
   crackStage,
@@ -148,6 +147,10 @@ export interface LavaState {
   ids: string[];
   /** Arena radius in tiles. */
   R: number;
+  /** Host settings: round wins to take the match, rounds at most, and when the edges start crumbling. */
+  winsNeeded: number;
+  maxRounds: number;
+  collapseMs: number;
   phase: Phase;
   round: number;
   endsAt: number;
@@ -191,6 +194,10 @@ export interface LavaView {
   phase: Phase;
   round: number;
   R: number;
+  winsNeeded: number;
+  maxRounds: number;
+  /** Ms into a round before the outer ring starts crumbling. */
+  collapseMs: number;
   endsAt: number;
   fightAt: number;
   ids: string[];
@@ -388,8 +395,8 @@ function crackStep(s: LavaState, t: number) {
 /** The outer rings crumble in turn once the round has run a while. */
 function collapseStep(s: LavaState, ctx: GameCtx, t: number) {
   const ms = t - s.fightAt;
-  if (ms < COLLAPSE_START_MS) return;
-  const ring = s.R - Math.floor((ms - COLLAPSE_START_MS) / COLLAPSE_EVERY_MS);
+  if (ms < s.collapseMs) return;
+  const ring = s.R - Math.floor((ms - s.collapseMs) / COLLAPSE_EVERY_MS);
   if (ring >= s.ring) return;
   s.ring = Math.max(0, ring);
   const b = board(s.R);
@@ -675,8 +682,8 @@ function finishRound(s: LavaState, ctx: GameCtx, winner: Runner | null) {
   s.history.push({ winner: s.lastWinner, order: s.falls.map((f) => f.s) });
   s.powers = [];
   if (winner) s.wins[winner.slot] += 1;
-  if (winner && s.wins[winner.slot] >= WINS_NEEDED) return finishMatch(s, ctx, [winner.id], "won");
-  if (s.round >= MAX_ROUNDS) return finishMatch(s, ctx, topScorers(winsRecord(s)), "won");
+  if (winner && s.wins[winner.slot] >= s.winsNeeded) return finishMatch(s, ctx, [winner.id], "won");
+  if (s.round >= s.maxRounds) return finishMatch(s, ctx, topScorers(winsRecord(s)), "won");
   s.phase = "roundOver";
   s.endsAt = ctx.now() + ROUND_OVER_MS;
 }
@@ -744,6 +751,9 @@ function buildView(s: LavaState): LavaView {
     phase: s.phase,
     round: s.round,
     R: s.R,
+    winsNeeded: s.winsNeeded,
+    maxRounds: s.maxRounds,
+    collapseMs: s.collapseMs,
     endsAt: s.endsAt,
     fightAt: s.fightAt,
     ids: s.ids.slice(),
@@ -773,6 +783,113 @@ function readInput(a: Record<string, unknown>): [number, number] | null {
   return [(x * k) / 100, (y * k) / 100];
 }
 
+// ---------- practice bots ----------
+// A bot reads only what everyone sees (positions, tile stages, power-ups, the crumble timer) and
+// steers like a person would: a fresh look every 150-350 ms, aim a bit off, jump single gaps.
+
+interface BotMem {
+  next: number;
+  x: number;
+  y: number;
+}
+
+const botMemory = new WeakMap<LavaState, Map<string, BotMem>>();
+const BOT_DIRS = Array.from({ length: 16 }, (_, k) => [Math.cos((k * Math.PI) / 8), Math.sin((k * Math.PI) / 8)] as const);
+const BOT_LOOK = [
+  [18, 1.2],
+  [40, 1],
+  [75, 0.8],
+  [120, 0.5],
+] as const;
+
+/** How good it is to be standing at (x, y) soon. */
+function botTileScore(s: LavaState, b: Board, x: number, y: number, edgeSoon: boolean): number {
+  const i = tileAt(b, x, y);
+  if (i < 0 || s.tiles[i] === GONE) return -100;
+  const h = b.tiles[i];
+  let v = -h.d * (edgeSoon ? 4 : 1);
+  if (s.tiles[i] > 0) v -= 25 + s.tiles[i] * 10;
+  // Open floor beats a lonely tile with holes all round.
+  for (const nb of b.near[i]) if (s.tiles[nb] === 0) v += 4;
+  if (h.d >= s.ring || (edgeSoon && h.d >= s.ring - 1)) v -= 45;
+  if (s.powers.some((p) => p.tile === i)) v += 12;
+  return v;
+}
+
+function botAction(s: LavaState, botId: string, ctx: GameCtx): LavaAction | null {
+  const slot = s.ids.indexOf(botId);
+  if (slot < 0 || s.phase === "final") return null;
+  const r = s.runners[slot];
+  let mems = botMemory.get(s);
+  if (!mems) botMemory.set(s, (mems = new Map()));
+  let m = mems.get(botId);
+  if (!m) mems.set(botId, (m = { next: 0, x: 0, y: 0 }));
+  const send = (x: number, y: number): LavaAction | null => {
+    if (x === m.x && y === m.y) return null;
+    m.x = x;
+    m.y = y;
+    return { type: "input", x, y };
+  };
+  if (s.phase !== "fight" || !r.alive || !s.fightAt) return send(0, 0);
+  const now = ctx.now();
+  const b = board(s.R);
+  const t = simTime(s);
+  const edgeSoon = t - s.fightAt > s.collapseMs - 2_500;
+  const sp = Math.hypot(r.vx, r.vy);
+
+  // Jump a single gap right ahead (the way the stick points, which is where a jump goes)
+  // when there's floor on the other side.
+  const ready = s.steps - r.jumpStep >= JUMP_CD_STEPS && !airborne(s, r) && !r.jumpQueued && r.floatUntil <= t;
+  const stick = Math.hypot(r.ix, r.iy);
+  if (ready && sp > 60 && stick > 0.5 && (r.vx * r.ix + r.vy * r.iy) / (sp * stick) > 0.6) {
+    const ux = r.ix / stick;
+    const uy = r.iy / stick;
+    const near = tileAt(b, r.x + ux * 38, r.y + uy * 38);
+    const far = botTileScore(s, b, r.x + ux * 115, r.y + uy * 115, edgeSoon);
+    if ((near < 0 || s.tiles[near] === GONE) && far > -60) return { type: "jump" };
+  }
+  if (now < m.next) return null;
+  m.next = now + 120 + ctx.random() * 160;
+
+  // Score 16 directions by the floor along them, favouring the way we're already going.
+  let best = -Infinity;
+  let bx = 0;
+  let by = 0;
+  const target = s.powers.length ? b.tiles[s.powers[0].tile] : null;
+  // Plan from where momentum is already carrying us.
+  const ox = r.x + r.vx * 0.2;
+  const oy = r.y + r.vy * 0.2;
+  const rivals = s.runners.filter((o) => o.alive && o !== r);
+  for (const [dx, dy] of BOT_DIRS) {
+    let v = 0;
+    for (const [dist, w] of BOT_LOOK) {
+      const px = ox + dx * dist;
+      const py = oy + dy * dist;
+      v += w * botTileScore(s, b, px, py, edgeSoon);
+      // Crowds mean bumps, and bumps mean lava.
+      for (const o of rivals) if (Math.hypot(o.x - px, o.y - py) < 70) v -= 12 * w;
+    }
+    v += (dx * m.x + dy * m.y) / 100 * 8;
+    if (target) {
+      const tx = target.x - r.x;
+      const ty = target.y - r.y;
+      const tm = Math.hypot(tx, ty);
+      if (tm < 260 && tm > 1) v += ((dx * tx + dy * ty) / tm) * 10;
+    }
+    v += ctx.random() * 8;
+    if (v > best) {
+      best = v;
+      bx = dx;
+      by = dy;
+    }
+  }
+  // Slightly off aim, like a thumb on a stick.
+  const wobble = (ctx.random() - 0.5) * 0.3;
+  const c = Math.cos(wobble);
+  const sn = Math.sin(wobble);
+  return send(Math.round((bx * c - by * sn) * 100), Math.round((bx * sn + by * c) * 100));
+}
+
 // ---------- game definition ----------
 
 export const lava: GameDef<LavaState, LavaAction> = {
@@ -781,9 +898,15 @@ export const lava: GameDef<LavaState, LavaAction> = {
   setup(ctx) {
     const ids = ctx.players.map((p) => p.id);
     const R = arenaRadius(ids.length);
+    const set = readSettings(config.settings, ctx.settings);
+    const winsNeeded = set.wins as number;
     const s: LavaState = {
       ids,
       R,
+      winsNeeded,
+      // 3 wins -> 7 rounds at most (the original match length).
+      maxRounds: winsNeeded * 2 + 1,
+      collapseMs: set.crumble as number,
       phase: "countdown",
       round: 1,
       endsAt: 0,
@@ -897,6 +1020,10 @@ export const lava: GameDef<LavaState, LavaAction> = {
     return false;
   },
   tickMs: TICK_MS,
+
+  bot(s, botId, ctx) {
+    return botAction(s, botId, ctx);
+  },
 
   view(s) {
     const hit = viewCache.get(s);

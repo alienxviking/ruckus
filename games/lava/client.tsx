@@ -7,13 +7,10 @@ import { Note, StatusBanner, TimerBar, useSecondsLeft } from "@/components/game-
 import type { FallRec, LavaAction, LavaView } from "./server";
 import {
   COLLAPSE_EVERY_MS,
-  COLLAPSE_START_MS,
   COUNTDOWN_MS,
-  MAX_ROUNDS,
   POWER_INFO,
   POWER_KINDS,
   ROUND_OVER_MS,
-  WINS_NEEDED,
   isSnap,
 } from "./shared";
 import { Arena, type ArenaData, type InputState } from "./arena";
@@ -136,6 +133,11 @@ function isButton(t: EventTarget | null) {
   );
 }
 
+// Host settings ride in the view.
+const winsNeeded = (v: LavaView) => v.winsNeeded;
+const maxRounds = (v: LavaView) => v.maxRounds;
+const collapseMs = (v: LavaView) => v.collapseMs;
+
 function isView(v: unknown): v is LavaView {
   if (!v || typeof v !== "object") return false;
   const x = v as Partial<LavaView>;
@@ -186,6 +188,7 @@ function Game({
   const now = useServerClock(serverNow, 250);
   const secs = useSecondsLeft(view.endsAt, serverNow);
   const { phase, round, ids, R } = view;
+  const crumbleMs = collapseMs(view);
 
   const colorKey = ids.map((id) => byId[id]?.color ?? "").join("\n");
   const colors = useMemo(() => displayColors(colorKey), [colorKey]);
@@ -198,7 +201,7 @@ function Game({
   const canInput = mySlot >= 0 && phase !== "final";
   const canJump = mySlot >= 0 && imAlive && phase === "fight";
   const fightMs = phase === "fight" && view.fightAt ? Math.max(0, now - view.fightAt) : 0;
-  const collapsing = phase === "fight" && fightMs >= COLLAPSE_START_MS;
+  const collapsing = phase === "fight" && fightMs >= crumbleMs;
   const abandonIn = view.abandonAt ? Math.max(0, Math.ceil((view.abandonAt - now) / 1000)) : null;
   const name = (id: string | null | undefined) => (id ? (byId[id]?.name ?? "Someone") : "Someone");
 
@@ -334,7 +337,7 @@ function Game({
 
   // ----- status copy -----
   const winner = view.lastWinner;
-  const ringsLeft = collapsing ? Math.max(0, R - Math.floor((fightMs - COLLAPSE_START_MS) / COLLAPSE_EVERY_MS)) : R + 1;
+  const ringsLeft = collapsing ? Math.max(0, R - Math.floor((fightMs - crumbleMs) / COLLAPSE_EVERY_MS)) : R + 1;
   let head: ReactNode;
   let sub: ReactNode;
   if (phase === "countdown") {
@@ -354,7 +357,7 @@ function Game({
     head = winner
       ? `🏆 ${winner === me ? "You take" : `${name(winner)} takes`} round ${round}!`
       : "🤝 Draw: the last ones melted together";
-    sub = `Next round in ${secs}s · first to ${WINS_NEEDED} wins`;
+    sub = `Next round in ${secs}s · first to ${winsNeeded(view)} wins`;
   } else {
     head = "🏁 Match over";
     sub = "Final standings below";
@@ -375,12 +378,12 @@ function Game({
     clock = `starts in ${secs}`;
   } else if (phase === "fight") {
     if (!collapsing) {
-      timerEnds = view.fightAt + COLLAPSE_START_MS;
-      timerTotal = COLLAPSE_START_MS;
-      clock = `edges crumble in ${Math.max(1, Math.ceil((COLLAPSE_START_MS - fightMs) / 1000))}s`;
+      timerEnds = view.fightAt + crumbleMs;
+      timerTotal = crumbleMs;
+      clock = `edges crumble in ${Math.max(1, Math.ceil((crumbleMs - fightMs) / 1000))}s`;
     } else if (ringsLeft > 0) {
-      const k = Math.floor((fightMs - COLLAPSE_START_MS) / COLLAPSE_EVERY_MS) + 1;
-      timerEnds = view.fightAt + COLLAPSE_START_MS + k * COLLAPSE_EVERY_MS;
+      const k = Math.floor((fightMs - crumbleMs) / COLLAPSE_EVERY_MS) + 1;
+      timerEnds = view.fightAt + crumbleMs + k * COLLAPSE_EVERY_MS;
       timerTotal = COLLAPSE_EVERY_MS;
       timerColor = "#f87171";
       clock = ringsLeft <= 1 ? "last tile next!" : `${ringsLeft} ring${ringsLeft === 1 ? "" : "s"} left`;
@@ -427,7 +430,7 @@ function Game({
             Round {round}
             <span className="font-normal text-muted">
               {" "}
-              of {MAX_ROUNDS} max · first to {WINS_NEEDED}
+              of {maxRounds(view)} max · first to {winsNeeded(view)}
             </span>
           </span>
           <span
@@ -544,7 +547,7 @@ function Overlay({
         </div>
       );
     }
-    if (fightMs >= COLLAPSE_START_MS && fightMs < COLLAPSE_START_MS + 1800) {
+    if (fightMs >= collapseMs(view) && fightMs < collapseMs(view) + 1800) {
       return (
         <div className="pointer-events-none absolute inset-x-0 top-3 flex justify-center">
           <span className="lava-banner rounded-full bg-red-500/90 px-4 py-1 font-display text-sm font-black tracking-wide text-white shadow-lg shadow-black/40 @xl:text-lg">
@@ -581,10 +584,10 @@ function Overlay({
   return null;
 }
 
-function Pips({ wins, color }: { wins: number; color: string }) {
+function Pips({ wins, color, need }: { wins: number; color: string; need: number }) {
   return (
     <span className="flex items-center gap-0.5" aria-hidden>
-      {Array.from({ length: Math.max(WINS_NEEDED, wins) }, (_, i) => (
+      {Array.from({ length: Math.max(need, wins) }, (_, i) => (
         <span
           key={i}
           className={`size-2 rounded-full border ${i < wins ? "animate-pop" : ""}`}
@@ -629,7 +632,7 @@ function ScoreRow({
               {p?.name ?? "Someone"}
             </span>
             {id === me && <span className="text-[10px] font-bold tracking-wide text-text/80 uppercase">you</span>}
-            <Pips wins={wins} color={color} />
+            <Pips wins={wins} color={color} need={winsNeeded(view)} />
             <span className="font-mono text-xs text-muted tabular-nums" aria-hidden>
               {offline ? "🔌" : on ? "🏃" : "🔥"}
               {kos > 0 ? ` 💥${kos}` : ""}
@@ -750,7 +753,7 @@ function FinalStandings({
                   </span>
                 </span>
                 <span className="flex shrink-0 items-center gap-2">
-                  <Pips wins={wins(slot)} color={color} />
+                  <Pips wins={wins(slot)} color={color} need={winsNeeded(view)} />
                   <span className="w-5 text-right font-mono text-lg font-bold tabular-nums">{wins(slot)}</span>
                   <span className="sr-only"> round win{wins(slot) === 1 ? "" : "s"}</span>
                 </span>

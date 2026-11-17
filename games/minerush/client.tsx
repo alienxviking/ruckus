@@ -9,7 +9,6 @@ import {
   GEM_POINTS,
   ITEMS,
   MINE_PENALTY,
-  PLAY_MS,
   READY_MS,
   neighbors,
   type FinalRow,
@@ -385,11 +384,11 @@ function Game({ view, byId, isPlayer, act, serverNow, onEvent, accent }: Props &
             {view.phase === "ready" ? (
               <TimerBar endsAt={view.startsAt} total={READY_MS} serverNow={serverNow} color={accent} />
             ) : (
-              <TimerBar endsAt={view.endsAt} total={PLAY_MS} serverNow={serverNow} color={accent} />
+              <TimerBar endsAt={view.endsAt} total={view.endsAt - view.startsAt} serverNow={serverNow} color={accent} />
             )}
           </div>
           <span className="w-12 text-right font-mono text-sm font-bold tabular-nums" aria-label="Time left">
-            {fmtClock(view.phase === "ready" ? PLAY_MS : view.endsAt - now)}
+            {fmtClock(view.phase === "ready" ? view.endsAt - view.startsAt : view.endsAt - now)}
           </span>
         </div>
       )}

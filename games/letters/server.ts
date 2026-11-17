@@ -1,7 +1,8 @@
 import { shuffle, topScorers, type GameCtx, type GameDef } from "../../shared/game";
+import { readSettings } from "../../shared/settings";
+import { config } from "./config";
 import { CATEGORIES } from "./data";
 import {
-  ANSWER_MS,
   CATEGORIES_PER_ROUND,
   LETTERS,
   MAX_ANSWER,
@@ -9,7 +10,6 @@ import {
   REJOIN_MS,
   RESULTS_MS,
   REVIEW_MS,
-  ROUNDS,
   SHARED_POINTS,
   UNIQUE_POINTS,
   answerKey,
@@ -42,6 +42,8 @@ export interface LettersState {
   order: string[];
   /** Letter and categories for every round, picked up front so nothing repeats. Never sent to clients. */
   plan: { letter: string; categories: string[] }[];
+  /** Writing time per round (host setting). */
+  answerMs: number;
   phase: Phase;
   /** 0-based index into `plan`. */
   round: number;
@@ -98,8 +100,8 @@ function startRound(s: LettersState, ctx: GameCtx, round: number) {
   const blank = <T>(make: () => T) => s.order.map(make);
   s.round = round;
   s.phase = "answer";
-  s.phaseMs = ANSWER_MS;
-  s.endsAt = ctx.now() + ANSWER_MS;
+  s.phaseMs = s.answerMs;
+  s.endsAt = ctx.now() + s.answerMs;
   s.answers = blank(() => Array<string>(CATEGORIES_PER_ROUND).fill(""));
   s.activeAt = blank(() => 0);
   s.done = blank(() => false);
@@ -166,7 +168,7 @@ function toResults(s: LettersState, ctx: GameCtx) {
 }
 
 function afterResults(s: LettersState, ctx: GameCtx) {
-  if (s.round + 1 >= ROUNDS) return finish(s, ctx, false);
+  if (s.round + 1 >= s.plan.length) return finish(s, ctx, false);
   if (onlineCount(s, ctx) >= MIN_PLAYERS) return startRound(s, ctx, s.round + 1);
   if (!s.waiting) {
     // Give dropped players a moment to come back before calling it.
@@ -258,7 +260,8 @@ export const letters: GameDef<LettersState, unknown> = {
 
   setup(ctx) {
     const order = ctx.players.map((p) => p.id);
-    const letters = shuffle([...LETTERS], ctx.random).slice(0, ROUNDS);
+    const set = readSettings(config.settings, ctx.settings);
+    const letters = shuffle([...LETTERS], ctx.random).slice(0, Number(set.rounds));
     const cats = shuffle([...CATEGORIES], ctx.random);
     const plan = letters.map((letter, r) => ({
       letter,
@@ -267,10 +270,11 @@ export const letters: GameDef<LettersState, unknown> = {
     const s: LettersState = {
       order,
       plan,
+      answerMs: Number(set.answerSec) * 1000,
       phase: "answer",
       round: 0,
       endsAt: null,
-      phaseMs: ANSWER_MS,
+      phaseMs: Number(set.answerSec) * 1000,
       answers: [],
       activeAt: [],
       done: [],
@@ -379,7 +383,7 @@ export const letters: GameDef<LettersState, unknown> = {
     const v: LettersView = {
       phase: s.phase,
       round: s.round + 1,
-      rounds: ROUNDS,
+      rounds: s.plan.length,
       letter,
       categories,
       endsAt: s.endsAt,

@@ -1,11 +1,11 @@
 import type { GameRules } from "../rules-types";
 
 export const rules: GameRules = {
-  goal: "Score the most points across 12 lightning-fast microgames.",
+  goal: "Score the most points across a run of lightning-fast microgames.",
   flow: [
-    "A match is 12 microgames picked from: Odd one out, Count flash, Quick maths, Ink colour, Stop the clock, Bigger, Memory, Tap frenzy, Find the pair, Majority, Anagram and Fruit maths.",
+    "A match is 12 microgames (the host can pick 6 or 18) picked from: Odd one out, Count flash, Quick maths, Ink colour, Stop the clock, Bigger, Memory, Tap frenzy, Find the pair, Majority, Anagram and Fruit maths.",
     "Before each one, a title card shows its name and a one-line instruction. Read it fast!",
-    "Everyone plays at the same time. Each microgame lasts only 5 to 8 seconds.",
+    "Everyone plays at the same time. Each microgame lasts only 5 to 8 seconds (a bit longer if the host picks Relaxed pace).",
     "You get one answer per microgame, so you can't change it. The round ends early once everyone has answered.",
     "Results show for a moment, then the next microgame starts. The last 3 count double.",
   ],
@@ -27,7 +27,7 @@ export const rules: GameRules = {
     "Stop the clock (aim for exactly 5.00 seconds) and Tap frenzy (most taps in 5 seconds) pay by rank: 200, 150, 100, 75, 50, 40, 30, 25, 20, 15, 10, 5. Ties share a rank.",
     "Stop the clock only scores if you stop within 1.5 seconds of 5.00.",
     "The last 3 microgames are worth double, so up to 400 each.",
-    "Highest total after all 12 wins. Equal totals share the win.",
+    "Highest total after the last microgame wins. Equal totals share the win.",
   ],
   tips: [
     "Speed matters, but a wrong answer scores nothing. Take half a second to be sure.",

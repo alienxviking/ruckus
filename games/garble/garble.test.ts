@@ -538,4 +538,27 @@ function runReveal(s: GarbleState, t: T, each?: () => void) {
   assert(JSON.stringify(game.view(s, b, t.ctx)).length < 30_000, "final view stays small with 12 books");
 }
 
+// ---------- host settings ----------
+{
+  // Defaults: classic pacing and up to 8 pages.
+  const d = makeTestCtx(10, 3);
+  const sd = game.setup(d.ctx);
+  assert(sd.steps === 8 && sd.endsAt - d.ctx.now() === WRITE_MS, "defaults unchanged");
+  // Fewer pages and quick timers.
+  const t = makeTestCtx(6, 3, { pages: 4, pace: "quick" });
+  const s = game.setup(t.ctx);
+  assert(s.steps === 4, "pages cap honoured");
+  assert(s.endsAt - t.ctx.now() === 30_000 && view(s, t.ids[0], t).phaseMs === 30_000, "quick write timer");
+  playStep(s, t, (i) => `p${i}`);
+  assert(s.endsAt - t.ctx.now() === 50_000, "quick draw timer");
+  for (let step = 1; step < 4; step++) playStep(s, t, (i) => `p${step}-${i}`);
+  assert(phaseOf(s) === "reveal" && s.books.every((bk) => bk.pages.length === 4), "books stop at 4 pages");
+  runReveal(s, t);
+  assert(phaseOf(s) === "final" && t.result, "short game finishes");
+  // Invalid values fall back to the defaults.
+  const b = makeTestCtx(9, 3, { pages: 5, pace: "warp" });
+  const sb = game.setup(b.ctx);
+  assert(sb.steps === 8 && sb.endsAt - b.ctx.now() === WRITE_MS, "invalid settings fall back");
+}
+
 console.log("✓ garble tests passed");

@@ -1,5 +1,5 @@
 import { assert, makeTestCtx } from "../../shared/testing";
-import game, { type MkState, type MkView } from "./server";
+import game, { botPlan, flipTimes, type MkState, type MkView } from "./server";
 import {
   ABANDON_MS,
   FLIP_MS,
@@ -560,6 +560,80 @@ for (const n of [2, 3, 8]) {
   const vals = new Set<number>();
   for (let c = 0; c < 52; c++) vals.add(cardValue(c));
   assert(vals.size === 13 && Math.min(...vals) === 1 && Math.max(...vals) === 13, "A=1 … K=13");
+}
+
+// ---------- host settings ----------
+{
+  const t = makeTestCtx(3, 5, { rounds: 1, roundMs: 60_000 });
+  const s: MkState = game.setup(t.ctx);
+  const v = view(s, t, "p0");
+  assert(v.rounds === 1 && v.tradeMs === 60_000 && same(v.flipMs, [17_000, 33_000, 47_000]), "settings in the view");
+  assert(s.endsAt - t.ctx.now() === 60_000, "60s round");
+  t.advance(16_999);
+  game.tick!(s, t.ctx);
+  assert(flippedOf(s) === 0, "first flip not yet");
+  t.advance(1);
+  game.tick!(s, t.ctx);
+  assert(flippedOf(s) === 1, "first flip at 17s");
+  t.advance(60_000 - 17_000);
+  game.tick!(s, t.ctx);
+  assert(phaseOf(s) === "settle", "bell at 60s");
+  t.advance(SETTLE_MS);
+  game.tick!(s, t.ctx);
+  assert(t.result && s.history.length === 1, "one round only");
+  const d = view(game.setup(makeTestCtx(3).ctx) as MkState, t, "p0");
+  assert(d.rounds === ROUNDS && d.tradeMs === TRADE_MS && same(d.flipMs, FLIP_MS), "defaults unchanged");
+  assert(same(flipTimes(120_000), [33_000, 67_000, 93_000]), "120s flips");
+  const bad: MkState = game.setup(makeTestCtx(3, 1, { rounds: 4, roundMs: "x" }).ctx);
+  assert(bad.rounds === ROUNDS && bad.tradeMs === TRADE_MS, "invalid settings fall back");
+}
+
+// ---------- practice bots ----------
+{
+  for (const [n, bots, seed] of [
+    [4, 4, 1],
+    [3, 2, 2],
+    [2, 1, 3],
+  ] as const) {
+    const t = makeTestCtx(n, seed, {}, bots);
+    const s: MkState = game.setup(t.ctx);
+    let sent = 0;
+    let botFills = 0;
+    let quoted = false;
+    for (let i = 0; i < 20_000 && !t.result; i++) {
+      t.advance(250);
+      game.tick!(s, t.ctx);
+      for (const id of s.ids) {
+        if (!t.ctx.player(id)?.bot) continue;
+        const a = game.bot!(s, id, t.ctx);
+        if (a == null) continue;
+        sent++;
+        game.action(s, id, a, t.ctx);
+        const slot = s.ids.indexOf(id);
+        if (s.bids.some((q) => q.o === slot) || s.asks.some((q) => q.o === slot)) quoted = true;
+      }
+      if (s.phase === "trade") {
+        for (let k = 0; k < s.ids.length; k++) {
+          const p = s.led[k].bq - s.led[k].sq;
+          assert(Math.abs(p) <= POS_LIMIT, "bots stay inside the position limit");
+        }
+      }
+      if (s.phase === "settle" && s.history.length) botFills = Math.max(botFills, s.history.reduce((a, h) => a + h.trades, 0));
+    }
+    assert(t.result && s.phase === "final", `${n}p with ${bots} bots: game finishes`);
+    assert(s.history.length === ROUNDS, "all rounds played");
+    assert(sent > 20, `bots act (${sent})`);
+    console.log(`  (${n}p, ${bots} bots: ${sent} bot actions, ${s.history.map((h) => h.trades).join("/")} trades, totals ${s.totals.join(",")})`);
+    // Against the House alone a bot rarely has an edge, but bots trade with each other.
+    if (bots >= 2) assert(botFills > 0, "bots trade");
+    assert(quoted, "bots make a market");
+  }
+  // A bot snaps up an offer far below what its card says the contract is worth.
+  const t = makeTestCtx(3, 4, {}, 1);
+  const s: MkState = game.setup(t.ctx);
+  const v = view(s, t, "bot-0");
+  const plan = botPlan({ ...v, card: 12, fair: 35, asks: [[0, 20, 3]], bids: [] }, () => 0.5);
+  assert(plan[0]?.type === "trade" && plan[0].side === "buy", "bot buys a cheap offer");
 }
 
 console.log("✓ market tests passed");

@@ -1,12 +1,12 @@
 import { pick, shuffle, topScorers, type GameCtx, type GameDef } from "../../shared/game";
+import { readSettings } from "../../shared/settings";
+import { config } from "./config";
 import { QUESTIONS } from "./data";
 import {
   ABANDON_MS,
   CATEGORIES,
   INTRO_MS,
-  QUESTION_MS,
   REVEAL_MS,
-  TOTAL_QUESTIONS,
   fmt,
   speedPoints,
   streakBonus,
@@ -53,6 +53,8 @@ export interface TriviaState {
   phase: Phase;
   ids: string[];
   qs: Picked[];
+  /** Time to answer each question (host setting). */
+  questionMs: number;
   round: number;
   startedAt: number;
   endsAt: number;
@@ -105,6 +107,8 @@ export interface TriviaView {
   total: number;
   endsAt: number;
   phaseMs: number;
+  /** Time to answer each question. */
+  questionMs: number;
   question: PublicQuestion | null;
   /** Correct choice, only during the reveal. */
   answer: number | null;
@@ -117,7 +121,7 @@ export interface TriviaView {
   you: boolean;
 }
 
-const PHASE_MS: Record<Phase, number> = { intro: INTRO_MS, question: QUESTION_MS, reveal: REVEAL_MS, final: 0 };
+const PHASE_MS: Record<Exclude<Phase, "question">, number> = { intro: INTRO_MS, reveal: REVEAL_MS, final: 0 };
 
 /** Difficulty ramp across a game: warm up easy, finish hard. */
 const RAMP: Difficulty[] = ["easy", "easy", "easy", "medium", "medium", "medium", "medium", "hard", "hard", "hard"];
@@ -125,15 +129,15 @@ const RAMP: Difficulty[] = ["easy", "easy", "easy", "medium", "medium", "medium"
 const BY_CAT: Record<string, number[]> = {};
 QUESTIONS.forEach((qq, i) => (BY_CAT[qq.cat] ??= []).push(i));
 
-function pickQuestions(random: () => number): Picked[] {
+function pickQuestions(random: () => number, total: number): Picked[] {
   // One question per category, so a game spans 10 different categories.
   const cats = shuffle([...CATEGORIES], random).filter((c) => BY_CAT[c]?.length);
   const used = new Set<number>();
   const out: Picked[] = [];
-  for (let i = 0; i < TOTAL_QUESTIONS; i++) {
+  for (let i = 0; i < total; i++) {
     const pool = BY_CAT[cats[i % cats.length]] ?? [];
     const fresh = pool.filter((id) => !used.has(id));
-    const wanted = fresh.filter((id) => QUESTIONS[id].diff === RAMP[i % RAMP.length]);
+    const wanted = fresh.filter((id) => QUESTIONS[id].diff === RAMP[Math.floor((i * RAMP.length) / total)]);
     const any = QUESTIONS.map((_, id) => id).filter((id) => !used.has(id));
     const choices = wanted.length ? wanted : fresh.length ? fresh : any;
     if (!choices.length) break;
@@ -166,7 +170,7 @@ function startQuestion(s: TriviaState, ctx: GameCtx, round: number) {
   s.answers = s.ids.map(() => null);
   s.outcomes = null;
   s.startedAt = ctx.now();
-  s.endsAt = s.startedAt + QUESTION_MS;
+  s.endsAt = s.startedAt + s.questionMs;
 }
 
 function reveal(s: TriviaState, ctx: GameCtx) {
@@ -180,7 +184,7 @@ function reveal(s: TriviaState, ctx: GameCtx) {
       st.correct += 1;
       st.fastestMs = st.fastestMs === null ? a.ms : Math.min(st.fastestMs, a.ms);
       const bonus = streakBonus(st.streak);
-      const points = speedPoints(a.ms) + bonus;
+      const points = speedPoints(a.ms, s.questionMs) + bonus;
       st.score += points;
       return { choice: a.choice, correct: true, points, bonus, streak: st.streak, lost: 0, ms: a.ms };
     }
@@ -246,10 +250,12 @@ export const trivia: GameDef<TriviaState, unknown> = {
   setup(ctx) {
     const ids = ctx.players.map((p) => p.id);
     const now = ctx.now();
+    const set = readSettings(config.settings, ctx.settings);
     return {
       phase: "intro",
       ids,
-      qs: pickQuestions(ctx.random),
+      qs: pickQuestions(ctx.random, Number(set.questions)),
+      questionMs: Number(set.seconds) * 1000,
       round: 0,
       startedAt: now,
       endsAt: now + INTRO_MS,
@@ -323,7 +329,8 @@ export const trivia: GameDef<TriviaState, unknown> = {
       qNum: Math.min(s.round + 1, s.qs.length),
       total: s.qs.length,
       endsAt: s.endsAt,
-      phaseMs: PHASE_MS[s.phase],
+      phaseMs: s.phase === "question" ? s.questionMs : PHASE_MS[s.phase],
+      questionMs: s.questionMs,
       question: live && current ? publicQuestion(current) : null,
       answer: revealing && current ? current.answer : null,
       myChoice: live && seat !== -1 ? (s.answers[seat]?.choice ?? null) : null,
@@ -353,6 +360,34 @@ export const trivia: GameDef<TriviaState, unknown> = {
       you: seat !== -1,
     };
   },
+};
+
+/**
+ * Practice bot. It can't see the answer: it "knows" a question with a chance that falls with
+ * difficulty (like a decent pub-quiz player) and otherwise guesses, and it takes 2.5-9 s to
+ * lock in (a bit quicker when it knows). Each question's decision is made once and remembered.
+ */
+const botPlans = new WeakMap<TriviaState, Map<string, { q: number; at: number; choice: number }>>();
+const KNOWS: Record<Difficulty, number> = { easy: 0.8, medium: 0.6, hard: 0.4 };
+
+trivia.bot = (s, botId, ctx) => {
+  if (s.phase !== "question") return null;
+  const seat = s.ids.indexOf(botId);
+  if (seat === -1 || s.answers[seat] !== null) return null;
+  let plans = botPlans.get(s);
+  if (!plans) botPlans.set(s, (plans = new Map()));
+  const q = s.round + 1;
+  let plan = plans.get(botId);
+  if (!plan || plan.q !== q) {
+    const p = s.qs[s.round];
+    const knows = ctx.random() < KNOWS[QUESTIONS[p.id].diff];
+    const choice = knows ? p.answer : Math.floor(ctx.random() * 4);
+    const window = Math.min(s.questionMs - 1_000, (knows ? 6_000 : 9_000) - 2_500);
+    plan = { q, at: s.startedAt + 2_500 + Math.round(ctx.random() * window * 0.9), choice };
+    plans.set(botId, plan);
+  }
+  if (ctx.now() < plan.at) return null;
+  return { type: "answer", choice: plan.choice, q };
 };
 
 export default trivia;

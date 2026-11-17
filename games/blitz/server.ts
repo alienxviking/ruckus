@@ -1,4 +1,7 @@
 import { shuffle, topScorers, type GameCtx, type GameDef } from "../../shared/game";
+import { readSettings } from "../../shared/settings";
+import { botMove } from "./bot";
+import { config } from "./config";
 import { generate } from "./puzzles";
 import {
   CLOCK_MAX_OFF_MS,
@@ -25,7 +28,7 @@ import {
   type RoundResult,
 } from "./shared";
 
-// Blitz: twelve microgames back to back. Each one goes READY (title card, no
+// Blitz: twelve microgames back to back (the host can pick 6 or 18). Each one goes READY (title card, no
 // puzzle in the view) -> PLAY (the puzzle; answers hidden) -> RESULT (everything
 // revealed). Phases advance in tick() from absolute deadlines in state.
 
@@ -59,6 +62,10 @@ interface Current {
 
 export interface BlitzState {
   ids: string[];
+  /** Microgames in this match (host setting). */
+  rounds: number;
+  /** Answer-time multiplier (host setting: 1 normal, 1.5 relaxed). */
+  pace: number;
   order: MicroType[];
   /** 1-based microgame number (0 during the intro). */
   round: number;
@@ -148,9 +155,12 @@ const nameOf = (ctx: GameCtx, id: string) => ctx.player(id)?.name ?? "Someone";
 const isInt = (v: unknown, lo: number, hi: number): v is number =>
   Number.isInteger(v) && (v as number) >= lo && (v as number) <= hi;
 
-export function isDouble(round: number) {
-  return round > ROUNDS - DOUBLE_LAST;
+export function isDouble(round: number, rounds = ROUNDS) {
+  return round > rounds - DOUBLE_LAST;
 }
+
+/** Microgames with a fixed length: the pace setting never stretches them. */
+const FIXED_LENGTH: readonly MicroType[] = ["clock", "tap"];
 
 /** A playing order with no type twice in a row, using every type before repeating. */
 export function buildOrder(random: () => number, rounds = ROUNDS): MicroType[] {
@@ -173,7 +183,7 @@ function toReady(s: BlitzState, ctx: GameCtx) {
   s.round += 1;
   const type = s.order[s.round - 1];
   const g = generate(type, ctx.random);
-  s.cur = { type, double: isDouble(s.round), pz: g.pz, answer: g.answer };
+  s.cur = { type, double: isDouble(s.round, s.rounds), pz: g.pz, answer: g.answer };
   s.phase = "ready";
   s.phaseAt = ctx.now();
   s.endsAt = s.phaseAt + READY_MS;
@@ -187,8 +197,10 @@ function toPlay(s: BlitzState, ctx: GameCtx) {
   const now = ctx.now();
   s.phase = "play";
   s.phaseAt = now;
-  s.endsAt = now + PLAY_MS[cur.type];
-  s.opensAt = now + showMs(cur);
+  const show = showMs(cur);
+  const scale = FIXED_LENGTH.includes(cur.type) ? 1 : s.pace;
+  s.endsAt = now + show + Math.round((PLAY_MS[cur.type] - show) * scale);
+  s.opensAt = now + show;
   s.showOver = s.opensAt <= now;
   s.answers = dict();
   s.taps = dict(s.ids, 0);
@@ -326,9 +338,13 @@ export const blitz: GameDef<BlitzState, BlitzAction> = {
   setup(ctx) {
     const ids = ctx.players.map((p) => p.id);
     const now = ctx.now();
+    const set = readSettings(config.settings, ctx.settings);
+    const rounds = set.rounds as number;
     return {
       ids,
-      order: buildOrder(ctx.random),
+      rounds,
+      pace: set.pace === "relaxed" ? 1.5 : 1,
+      order: buildOrder(ctx.random, rounds),
       round: 0,
       phase: "intro",
       phaseAt: now,
@@ -434,7 +450,7 @@ export const blitz: GameDef<BlitzState, BlitzAction> = {
     if (s.phase === "intro") toReady(s, ctx);
     else if (s.phase === "ready") toPlay(s, ctx);
     else if (s.phase === "result") {
-      if (s.round >= ROUNDS) finish(s, ctx);
+      if (s.round >= s.rounds) finish(s, ctx);
       else toReady(s, ctx);
     }
     return true;
@@ -458,7 +474,7 @@ export const blitz: GameDef<BlitzState, BlitzAction> = {
     return {
       phase: s.phase,
       round: s.round,
-      total: ROUNDS,
+      total: s.rounds,
       endsAt: s.endsAt,
       phaseAt: s.phaseAt,
       phaseMs: s.endsAt - s.phaseAt,
@@ -477,6 +493,11 @@ export const blitz: GameDef<BlitzState, BlitzAction> = {
       recap: s.recap,
     };
   },
+};
+
+blitz.bot = (s, botId, ctx) => {
+  if (s.over || s.phase !== "play") return null;
+  return botMove(s, blitz.view(s, botId, ctx) as BlitzView, botId, ctx);
 };
 
 export default blitz;

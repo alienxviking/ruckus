@@ -1,4 +1,6 @@
 import { shuffle, topScorers, type GameCtx, type GameDef } from "../../shared/game";
+import { readSettings } from "../../shared/settings";
+import { config } from "./config";
 import {
   ABANDON_MS,
   FLASH_R,
@@ -25,12 +27,10 @@ import {
   MAPS,
   MAX_CURES,
   MAX_FLASHES,
-  PLAY_MS,
   PTS_BITE,
   PTS_CURE,
   PTS_SURVIVE,
   PTS_WIPEOUT,
-  ROUNDS,
   ROUND_OVER_MS,
   R_S,
   R_Z,
@@ -130,6 +130,9 @@ export interface RoundRec {
 
 export interface OBState {
   ids: string[];
+  /** Host settings: rounds in the game and how long each round's hunt lasts. */
+  rounds: number;
+  playMs: number;
   phase: Phase;
   round: number;
   mapOrder: number[];
@@ -168,6 +171,8 @@ export interface OBView {
   phase: Phase;
   round: number;
   rounds: number;
+  /** Length of a round's hunt (ms). */
+  playMs: number;
   map: number;
   endsAt: number;
   playAt: number;
@@ -365,7 +370,7 @@ function finishRound(s: OBState, ctx: GameCtx, how: RoundHow) {
     cures: s.cures.slice(),
     survivors,
     originals,
-    ms: s.playAt ? Math.max(0, Math.min(PLAY_MS, ctx.now() - s.playAt)) : 0,
+    ms: s.playAt ? Math.max(0, Math.min(s.playMs, ctx.now() - s.playAt)) : 0,
   };
   s.history.push(rec);
   s.result = rec;
@@ -375,7 +380,7 @@ function finishRound(s: OBState, ctx: GameCtx, how: RoundHow) {
     seat.lungeUntil = 0;
   }
   s.dirty = true;
-  if (how === "quit" || s.round >= ROUNDS) return finishGame(s, ctx, how === "quit");
+  if (how === "quit" || s.round >= s.rounds) return finishGame(s, ctx, how === "quit");
   s.phase = "roundOver";
   s.endsAt = ctx.now() + ROUND_OVER_MS;
 }
@@ -557,7 +562,7 @@ function advance(s: OBState, ctx: GameCtx): boolean {
       if (now < s.endsAt) return changed;
       s.phase = "play";
       s.playAt = now;
-      s.endsAt = now + PLAY_MS;
+      s.endsAt = now + s.playMs;
       return true;
     case "play":
       if (now >= s.nextItemAt) {
@@ -621,6 +626,142 @@ function applyUse(s: OBState, slot: number): boolean {
   return true;
 }
 
+// ---------- practice bots ----------
+// A bot only uses what everyone sees (positions, who's a zombie, flags, items). Survivors run
+// from the nearest zombies toward open floor and grab items; zombies chase the nearest human
+// and lunge when close. A fresh look every 150-300 ms, and a random detour when stuck on a wall.
+
+interface BotMem {
+  next: number;
+  x: number;
+  y: number;
+  /** Progress check: where it was a moment ago, and a detour direction until `detourUntil`. */
+  px: number;
+  py: number;
+  checkAt: number;
+  dx: number;
+  dy: number;
+  detourUntil: number;
+}
+
+const botMemory = new WeakMap<OBState, Map<string, BotMem>>();
+const BOT_DIRS = Array.from({ length: 16 }, (_, k) => [Math.cos((k * Math.PI) / 8), Math.sin((k * Math.PI) / 8)] as const);
+
+/** Can a body of radius r stand at (x, y)? Doors only stop zombies. */
+function botClear(map: MapDef, x: number, y: number, r: number, zombie: boolean): boolean {
+  if (x < r || y < r || x > WORLD_W - r || y > WORLD_H - r) return false;
+  const hits = (rc: [number, number, number, number]) => {
+    const cx = Math.max(rc[0], Math.min(rc[0] + rc[2], x));
+    const cy = Math.max(rc[1], Math.min(rc[1] + rc[3], y));
+    return (x - cx) ** 2 + (y - cy) ** 2 < r * r;
+  };
+  if (map.walls.some(hits)) return false;
+  return !(zombie && map.doors.some(hits));
+}
+
+function botAction(s: OBState, botId: string, ctx: GameCtx): OBAction | null {
+  const slot = s.ids.indexOf(botId);
+  if (slot < 0) return null;
+  const me = s.seats[slot];
+  let mems = botMemory.get(s);
+  if (!mems) botMemory.set(s, (mems = new Map()));
+  let m = mems.get(botId);
+  if (!m) mems.set(botId, (m = { next: 0, x: 0, y: 0, px: me.x, py: me.y, checkAt: 0, dx: 0, dy: 0, detourUntil: 0 }));
+  const steer = (x: number, y: number): OBAction | null => {
+    if (x === m.x && y === m.y) return null;
+    m.x = x;
+    m.y = y;
+    return { type: "in", x, y };
+  };
+  if (s.phase !== "intro" && s.phase !== "play") return steer(0, 0);
+  const now = ctx.now();
+  const t = simNow(s);
+  const map = mapNow(s);
+  const zombie = me.zombie;
+  if (zombie && s.phase === "intro") return steer(0, 0);
+  const rivals = s.seats
+    .map((o, i) => ({ o, i, d: Math.hypot(o.x - me.x, o.y - me.y) }))
+    .filter(({ i }) => i !== slot);
+
+  if (s.phase === "play") {
+    if (zombie) {
+      // Lunge at a close human roughly ahead.
+      const prey = rivals.filter(({ o }) => !o.zombie && t >= o.shieldUntil).sort((a, b) => a.d - b.d)[0];
+      if (prey && prey.d < 115 && t >= me.lungeReady && t >= me.stunUntil && (me.ix || me.iy)) {
+        const ahead = ((prey.o.x - me.x) * me.ix + (prey.o.y - me.y) * me.iy) / (prey.d || 1);
+        if (ahead > 0.8 && ctx.random() < 0.35) return { type: "use" };
+      }
+    } else if (me.flash) {
+      // Flash when a zombie that can move is right on top of us.
+      const close = rivals.some(({ o, d }) => o.zombie && t >= o.stunUntil && d < 85);
+      if (close && ctx.random() < 0.4) return { type: "use" };
+    }
+  }
+  if (now < m.next) return null;
+  m.next = now + 150 + ctx.random() * 150;
+
+  // Stuck against a wall? Take a short random detour.
+  if (now >= m.checkAt) {
+    const moved = Math.hypot(me.x - m.px, me.y - m.py);
+    if ((m.x || m.y) && moved < 25 && now >= m.detourUntil) {
+      const [dx, dy] = BOT_DIRS[Math.floor(ctx.random() * BOT_DIRS.length)];
+      m.dx = dx;
+      m.dy = dy;
+      m.detourUntil = now + 500 + ctx.random() * 600;
+    }
+    m.px = me.x;
+    m.py = me.y;
+    m.checkAt = now + 900;
+  }
+  if (now < m.detourUntil && botClear(map, me.x + m.dx * 30, me.y + m.dy * 30, zombie ? R_Z : R_S, zombie)) {
+    return steer(Math.round(m.dx * 100), Math.round(m.dy * 100));
+  }
+
+  const r = zombie ? R_Z : R_S;
+  // Who to chase (zombie: nearest human; survivor with a cure: a nearby curable zombie).
+  let goal: { x: number; y: number } | null = null;
+  if (zombie) {
+    const prey = rivals.filter(({ o }) => !o.zombie).sort((a, b) => a.d - b.d)[0];
+    if (prey) goal = prey.o;
+  } else {
+    const patient = me.cure ? rivals.filter(({ o, d }) => o.zombie && !o.original && d < 220).sort((a, b) => a.d - b.d)[0] : undefined;
+    if (patient) goal = patient.o;
+    else {
+      const item = s.items
+        .filter((it) => (it.kind === ITEM_CURE ? !me.cure : !me.flash))
+        .map((it) => ({ it, d: Math.hypot(it.x - me.x, it.y - me.y) }))
+        .sort((a, b) => a.d - b.d)[0];
+      if (item && item.d < 300) goal = item.it;
+    }
+  }
+  const threats = zombie ? [] : rivals.filter(({ o, d }) => o.zombie && d < 380 && !(me.cure && !o.original && d < 220));
+  let best = -Infinity;
+  let bx = 0;
+  let by = 0;
+  for (const [dx, dy] of BOT_DIRS) {
+    const ax = me.x + dx * 28;
+    const ay = me.y + dy * 28;
+    if (!botClear(map, ax, ay, r, zombie)) continue;
+    const fx = me.x + dx * 70;
+    const fy = me.y + dy * 70;
+    let v = botClear(map, fx, fy, r, zombie) ? 10 : 0;
+    if (goal) v += (Math.hypot(goal.x - me.x, goal.y - me.y) - Math.hypot(goal.x - fx, goal.y - fy)) * 0.6;
+    for (const { o, d } of threats) v += ((Math.hypot(o.x - fx, o.y - fy) - d) * 160) / Math.max(60, d);
+    // Corners are traps: drift back toward the middle a little.
+    v -= (Math.abs(fx - WORLD_W / 2) / WORLD_W + Math.abs(fy - WORLD_H / 2) / WORLD_H) * (threats.length ? 25 : 6);
+    v += (dx * m.x + dy * m.y) * 0.05 + ctx.random() * 6;
+    if (v > best) {
+      best = v;
+      bx = dx;
+      by = dy;
+    }
+  }
+  if (best === -Infinity) return steer(0, 0);
+  // Calm survivors with nowhere to be amble rather than stand still (and not every look).
+  if (!zombie && !goal && !threats.length && ctx.random() < 0.3) return null;
+  return steer(Math.round(bx * 100), Math.round(by * 100));
+}
+
 // ---------- game definition ----------
 
 export const outbreak: GameDef<OBState, OBAction> = {
@@ -628,8 +769,11 @@ export const outbreak: GameDef<OBState, OBAction> = {
 
   setup(ctx) {
     const ids = ctx.players.map((p) => p.id);
+    const set = readSettings(config.settings, ctx.settings);
     const s: OBState = {
       ids,
+      rounds: set.rounds as number,
+      playMs: (set.playSec as number) * 1000,
       phase: "intro",
       round: 1,
       mapOrder: shuffle(
@@ -717,11 +861,16 @@ export const outbreak: GameDef<OBState, OBAction> = {
   },
   tickMs: TICK_MS,
 
+  bot(s, botId, ctx) {
+    return botAction(s, botId, ctx);
+  },
+
   view(s) {
     return {
       phase: s.phase,
       round: s.round,
-      rounds: ROUNDS,
+      rounds: s.rounds,
+      playMs: s.playMs,
       map: s.map,
       endsAt: s.endsAt,
       playAt: s.playAt,

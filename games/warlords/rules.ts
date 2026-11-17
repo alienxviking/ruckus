@@ -1,13 +1,13 @@
 import type { GameRules } from "../rules-types";
 
 export const rules: GameRules = {
-  goal: "Score the most points over 5 rounds by sending bigger armies than everyone else to the right castles.",
+  goal: "Score the most points over 5 rounds (the host can change this) by sending bigger armies than everyone else to the right castles.",
   flow: [
     "Each round shows five castles, each worth 2 to 9 points. One of them secretly hides a dragon with 10 to 40 strength.",
-    "In secret, split your 100 troops across the five castles, then lock in. You get 50 seconds in round 1 and 40 seconds after that.",
+    "In secret, split your 100 troops across the five castles, then lock in. You get 40 seconds (the host can change this), plus 10 extra in round 1.",
     "When everyone has locked in (or time runs out), the castles are revealed one by one.",
     "After the reveal you see the round's points. Everyone's past armies stay visible, so you can study how people play.",
-    "After 5 rounds, the player with the most points wins.",
+    "After the last round, the player with the most points wins.",
   ],
   controls: {
     desktop: [
@@ -27,7 +27,7 @@ export const rules: GameRules = {
     "At the dragon's castle, the biggest army must also be bigger than the dragon. If not, the dragon keeps it and nobody scores.",
     "A castle nobody sends troops to scores for nobody. You don't have to use all 100 troops.",
     "If you don't lock in, your last unlocked plan is used. If you never touched the board, your troops are split evenly (20 each).",
-    "Most points after 5 rounds wins; ties share the win. If fewer than 2 players are online for 30 seconds, the game ends with the current scores.",
+    "Most points after the last round wins; ties share the win. If fewer than 2 players are online for 30 seconds, the game ends with the current scores.",
   ],
   tips: [
     "You can't win everything. Pick two or three castles to win big and leave the rest nearly empty.",

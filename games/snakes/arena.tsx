@@ -823,7 +823,7 @@ function drawScene(g: CanvasRenderingContext2D, sc: Scene, s: Surface, p: Props,
   }
 
   // Who's who: arrows and labels before the round starts (and the YOU tag a moment after).
-  const playAge = latest.phase === "play" ? p.serverNow - (latest.endsAt - ROUND_MS) : Infinity;
+  const playAge = latest.phase === "play" ? p.serverNow - (latest.endsAt - (latest.roundMs || ROUND_MS)) : Infinity;
   if (latest.phase === "countdown" || playAge < 1600) {
     const fade = latest.phase === "countdown" ? spawn : clamp01(1 - playAge / 1600);
     const bob = reduced ? 0 : Math.sin(now / 210) * cell * 0.14;

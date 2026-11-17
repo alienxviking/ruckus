@@ -10,7 +10,6 @@ import {
   F_FLASH,
   F_STUN,
   INTRO_MS,
-  PLAY_MS,
   PTS_BITE,
   PTS_CURE,
   PTS_SURVIVE,
@@ -240,7 +239,7 @@ function Game({ view, me, players, byId, isPlayer, act, serverNow, onEvent, acce
     clock = `zombies wake in ${secs}s`;
   } else if (phase === "play") {
     timerEnds = view.endsAt;
-    timerTotal = PLAY_MS;
+    timerTotal = view.playMs;
     clock = `${mmss(secs)} left`;
   } else if (phase === "roundOver") {
     timerEnds = view.endsAt;

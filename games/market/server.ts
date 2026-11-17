@@ -1,6 +1,9 @@
 import { shuffle, type GameCtx, type GameDef } from "../../shared/game";
+import { readSettings } from "../../shared/settings";
+import { config } from "./config";
 import {
   ABANDON_MS,
+  CARD_MEAN,
   CHART_MAX,
   FLIP_MS,
   HOUSE,
@@ -66,6 +69,10 @@ export interface MkState {
   ids: string[];
   phase: Phase;
   round: number;
+  /** Host settings: rounds to play, trading time, and when the street cards flip (ms after the open). */
+  rounds: number;
+  tradeMs: number;
+  flipMs: number[];
   roundStart: number;
   endsAt: number;
   flipAt: number[];
@@ -107,6 +114,9 @@ export interface MkView {
   phase: Phase;
   round: number;
   rounds: number;
+  /** Trading time per round and the street flip times (ms after the open). */
+  tradeMs: number;
+  flipMs: number[];
   /** Participants by slot. */
   ids: string[];
   roundStart: number;
@@ -319,6 +329,12 @@ function syncHouse(s: MkState) {
   if (!same(hb, t.bid) || !same(ha, t.ask)) requoteHouse(s);
 }
 
+/** Street flip times for a round of `tradeMs`: the default 25/50/70 s of 90, scaled to whole seconds. */
+export function flipTimes(tradeMs: number): number[] {
+  if (tradeMs === TRADE_MS) return FLIP_MS.slice();
+  return FLIP_MS.map((ms) => Math.round((ms * tradeMs) / TRADE_MS / 1000) * 1000);
+}
+
 const streetShown = (s: MkState) => s.street.map((c, i) => (i < s.flipped ? c : null));
 
 function startRound(s: MkState, ctx: GameCtx, round: number) {
@@ -333,8 +349,8 @@ function startRound(s: MkState, ctx: GameCtx, round: number) {
   s.street = deck.slice(s.ids.length, s.ids.length + STREET);
   s.flipped = 0;
   s.roundStart = now;
-  s.endsAt = now + TRADE_MS;
-  s.flipAt = FLIP_MS.map((ms) => now + ms);
+  s.endsAt = now + s.tradeMs;
+  s.flipAt = s.flipMs.map((ms) => now + ms);
   s.bids = [];
   s.asks = [];
   s.led = s.ids.map(newLedger);
@@ -420,15 +436,68 @@ function parseSide(v: unknown): QSide | null {
   return v === "bid" || v === "ask" ? v : null;
 }
 
+// ---------- practice bot ----------
+
+interface BotMem {
+  /** Round + street cards up when the plan was made (a flip throws it away). */
+  key: string;
+  /** Don't act before this time. */
+  at: number;
+  /** Actions still to send, one per tick. */
+  queue: MkAction[];
+}
+const botMem = new WeakMap<MkState, Map<string, BotMem>>();
+
+/**
+ * One decision for a bot trader, from what its own view shows: its card, the street,
+ * the book and its fills. It values the contract at the public fair value with its own
+ * card swapped in, leans against its inventory, takes quotes that are clearly mispriced
+ * and otherwise makes a market a few points either side of its guess.
+ */
+export function botPlan(v: MkView, rand: () => number): MkAction[] {
+  if (v.phase !== "trade" || v.me < 0 || v.card === null || !v.mine) return [];
+  const pos = v.mine[0] - v.mine[2];
+  const guess = v.fair - CARD_MEAN + cardValue(v.card) - pos * 0.4 + (rand() - 0.5) * 2;
+  const edge = 2 + rand() * 2;
+  const bestAsk = v.asks.find((r) => r[0] !== v.me);
+  const bestBid = v.bids.find((r) => r[0] !== v.me);
+  const size = 1 + Math.floor(rand() * 3);
+  if (bestAsk && bestAsk[1] <= guess - edge && pos < POS_LIMIT) {
+    return [{ type: "trade", side: "buy", qty: Math.min(size, bestAsk[2]), price: bestAsk[1] }];
+  }
+  if (bestBid && bestBid[1] >= guess + edge && pos > -POS_LIMIT) {
+    return [{ type: "trade", side: "sell", qty: Math.min(size, bestBid[2]), price: bestBid[1] }];
+  }
+  if (rand() < 0.35) return []; // just watch for a moment
+  const clampP = (p: number) => Math.max(1, Math.min(v.maxPrice, Math.round(p)));
+  const bid = clampP(guess - edge);
+  const ask = Math.max(bid + 1, clampP(guess + edge));
+  const myBid = v.bids.find((r) => r[0] === v.me);
+  const myAsk = v.asks.find((r) => r[0] === v.me);
+  if (myBid && myAsk && Math.abs(myBid[1] - bid) <= 1 && Math.abs(myAsk[1] - ask) <= 1) return [];
+  const plan: MkAction[] = [];
+  if (myBid || myAsk) plan.push({ type: "cancel", side: "both" });
+  const q = 1 + Math.floor(rand() * 2);
+  if (pos < POS_LIMIT) plan.push({ type: "quote", side: "bid", price: bid, size: q });
+  if (pos > -POS_LIMIT && ask <= v.maxPrice) plan.push({ type: "quote", side: "ask", price: ask, size: q });
+  return plan;
+}
+
 export const market: GameDef<MkState, MkAction> = {
   id: "market",
 
   setup(ctx) {
     const ids = ctx.players.map((p) => p.id);
+    const set = readSettings(config.settings, ctx.settings);
+    const rounds = typeof set.rounds === "number" ? set.rounds : ROUNDS;
+    const tradeMs = typeof set.roundMs === "number" ? set.roundMs : TRADE_MS;
     const s: MkState = {
       ids,
       phase: "trade",
       round: 0,
+      rounds,
+      tradeMs,
+      flipMs: flipTimes(tradeMs),
       roundStart: 0,
       endsAt: 0,
       flipAt: [],
@@ -550,7 +619,7 @@ export const market: GameDef<MkState, MkAction> = {
         changed = true;
       }
     } else if (s.phase === "settle" && now >= s.endsAt) {
-      if (s.round >= ROUNDS || s.abandoned) finish(s, ctx);
+      if (s.round >= s.rounds || s.abandoned) finish(s, ctx);
       else startRound(s, ctx, s.round + 1);
       changed = true;
     }
@@ -574,6 +643,26 @@ export const market: GameDef<MkState, MkAction> = {
     if (!s.over) updateAway(s, ctx);
   },
 
+  bot(s, botId, ctx) {
+    if (s.over || s.phase !== "trade" || !s.ids.includes(botId)) return null;
+    let all = botMem.get(s);
+    if (!all) botMem.set(s, (all = new Map()));
+    const now = ctx.now();
+    const key = `${s.round}:${s.flipped}`;
+    let m = all.get(botId);
+    if (!m || m.key !== key) {
+      // New round or a street card just flipped: take a moment to look at it.
+      m = { key, at: now + 800 + ctx.random() * 2200, queue: [] };
+      all.set(botId, m);
+      return null;
+    }
+    if (m.queue.length) return m.queue.shift() ?? null;
+    if (now < m.at || now >= s.endsAt) return null;
+    m.at = now + 1500 + ctx.random() * 3000;
+    m.queue = botPlan(market.view(s, botId, ctx) as MkView, ctx.random);
+    return m.queue.shift() ?? null;
+  },
+
   view(s, viewerId): MkView {
     const me = s.ids.indexOf(viewerId);
     const trading = s.phase === "trade";
@@ -582,7 +671,9 @@ export const market: GameDef<MkState, MkAction> = {
     return {
       phase: s.phase,
       round: s.round,
-      rounds: ROUNDS,
+      rounds: s.rounds,
+      tradeMs: s.tradeMs,
+      flipMs: s.flipMs,
       ids: s.ids,
       roundStart: s.roundStart,
       endsAt: s.endsAt,

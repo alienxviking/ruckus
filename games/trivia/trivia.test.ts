@@ -454,3 +454,73 @@ for (const n of [3, 4]) {
 }
 
 console.log("trivia: all tests passed");
+
+// ---------- host settings and bots ----------
+
+/** Run a game the way the room does: tick, then let each bot act. */
+function runWithBots(t: Harness, s: TriviaState, stepMs = 200, limitMs = 30 * 60_000) {
+  for (let elapsed = 0; !t.result && elapsed < limitMs; elapsed += stepMs) {
+    t.advance(stepMs);
+    game.tick!(s, t.ctx);
+    for (const id of t.ids) {
+      if (!t.ctx.player(id)?.bot) continue;
+      const a = game.bot!(s, id, t.ctx);
+      if (a != null) game.action(s, id, a, t.ctx);
+    }
+  }
+}
+{
+  // Defaults unchanged.
+  const t = makeTestCtx(2, 3);
+  const s: TriviaState = game.setup(t.ctx);
+  assert(s.qs.length === TOTAL_QUESTIONS && s.questionMs === QUESTION_MS, "defaults");
+  const v = game.view(s, t.ids[0], t.ctx) as TriviaView;
+  assert(v.questionMs === QUESTION_MS && v.total === 10, "view defaults");
+}
+{
+  // 5 questions, 10 seconds each: the game is shorter and the clock and speed points follow.
+  const t = makeTestCtx(2, 4, { questions: 5, seconds: 10 });
+  const s: TriviaState = game.setup(t.ctx);
+  assert(s.qs.length === 5 && new Set(s.qs.map((p) => QUESTIONS[p.id].cat)).size === 5, "5 questions, 5 categories");
+  assert(QUESTIONS[s.qs[0].id].diff === "easy" && QUESTIONS[s.qs[4].id].diff === "hard", "ramp squeezed to 5");
+  t.advance(INTRO_MS);
+  game.tick!(s, t.ctx);
+  assert(s.phase === "question" && s.endsAt - t.ctx.now() === 10_000, "10s question");
+  assert((game.view(s, t.ids[0], t.ctx) as TriviaView).phaseMs === 10_000, "timer bar length");
+  t.advance(5_000);
+  game.action(s, t.ids[0], { type: "answer", choice: s.qs[0].answer, q: 1 }, t.ctx);
+  game.action(s, t.ids[1], { type: "answer", choice: (s.qs[0].answer + 1) % 4, q: 1 }, t.ctx);
+  assert(s.stats[0].score === 750, "half of 10s = 750");
+  let guard = 0;
+  while (!t.result && guard++ < 500) {
+    t.advance(1000);
+    game.tick!(s, t.ctx);
+  }
+  assert(t.result !== null && s.history.length === 5, "ends after 5");
+  const u = makeTestCtx(2, 4, { questions: 12, seconds: "fast" });
+  const s2: TriviaState = game.setup(u.ctx);
+  assert(s2.qs.length === 10 && s2.questionMs === QUESTION_MS, "invalid settings fall back");
+  const w = makeTestCtx(1, 4, { questions: 15 });
+  assert((game.setup(w.ctx) as TriviaState).qs.length === 15, "15 questions");
+}
+{
+  // All bots: the game finishes, bots answer in time with human-ish delays and score something.
+  const t = makeTestCtx(4, 11, {}, 4);
+  const s: TriviaState = game.setup(t.ctx);
+  runWithBots(t, s);
+  assert(t.result !== null && s.history.length === 10, "all-bot game ends");
+  const total = s.stats.reduce((a, st) => a + st.correct, 0);
+  assert(total > 10 && total < 40, `bots are good but not perfect (${total}/40)`);
+  assert(s.stats.every((st) => st.fastestMs === null || st.fastestMs >= 2_500), "no instant answers");
+}
+{
+  // One human (who never answers) plus bots, 5 short questions: still ends.
+  const t = makeTestCtx(3, 12, { questions: 5, seconds: 10 }, 2);
+  const s: TriviaState = game.setup(t.ctx);
+  runWithBots(t, s);
+  assert(t.result !== null && s.history.length === 5, "human + bots game ends");
+  assert(s.stats[1].correct + s.stats[2].correct > 0 && s.stats[0].correct === 0, "bots answered, the idle human didn't");
+  assert(game.bot!(s, "bot-0", t.ctx) == null, "bot is quiet once the game is over");
+}
+
+console.log("trivia: settings and bot tests passed");

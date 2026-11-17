@@ -594,3 +594,49 @@ assert(big.maxLives === 1, "12 players: one life each");
 }
 
 console.log("✓ potato tests passed");
+
+// ---------- host settings ----------
+{
+  const t = makeTestCtx(4, 7, { lives: 3, fuse: "short" });
+  const s: PotatoState = game.setup(t.ctx);
+  assert(s.maxLives === 3 && s.seats.every((x) => x.lives === 3), "lives setting honoured");
+  goLive(s, t);
+  const len = s.fuseAt - s.liveAt;
+  assert(len >= 8_000 && len <= 18_000, `short fuse is 8-18s, got ${len}`);
+  const t9 = makeTestCtx(10, 7, { lives: 2 });
+  assert((game.setup(t9.ctx) as PotatoState).maxLives === 2, "explicit lives beat the 9+ rule");
+  const td = makeTestCtx(4, 7, { lives: 99, fuse: "nope" });
+  const sd: PotatoState = game.setup(td.ctx);
+  assert(sd.maxLives === 2 && sd.fuseMin === FUSE_MIN_MS && sd.fuseMax === FUSE_MAX_MS, "bad settings fall back to defaults");
+}
+
+// ---------- practice bots ----------
+function botGame(players: number, bots: number, seed: number) {
+  const t = makeTestCtx(players, seed, {}, bots);
+  const s: PotatoState = game.setup(t.ctx);
+  let solves = 0;
+  for (let i = 0; i < 20_000 && !t.result; i++) {
+    t.advance(100);
+    tick(s, t);
+    for (const id of t.ids) {
+      if (!t.ctx.player(id)?.bot) continue;
+      const a = game.bot!(s, id, t.ctx);
+      if (a) {
+        if ((a as { type: string }).type === "solve") solves++;
+        act(s, id, a, t);
+      }
+    }
+  }
+  assert(t.result, `bot game (${players}p/${bots} bots) reached an end`);
+  assert(solves > 0, "bots solved puzzles");
+  return s;
+}
+botGame(4, 4, 11);
+botGame(3, 3, 12);
+{
+  // 1 idle human + 2 bots: the human just keeps blowing up; bots keep passing.
+  const s = botGame(3, 2, 13);
+  assert(s.seats.some((x) => x.id.startsWith("bot-") && x.throws > 0), "bots threw");
+}
+
+console.log("✓ potato settings + bot tests passed");

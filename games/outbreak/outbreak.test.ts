@@ -513,4 +513,59 @@ const lastSnap = (t: T): Snap => {
   assert(me.x === 900 && me.y === 600, "a teleport-sized difference jumps");
 }
 
+// ---------- host settings: 2 short rounds ----------
+{
+  const t = makeTestCtx(3, 9, { rounds: 2, playSec: 45 });
+  const s = game.setup(t.ctx);
+  const v = game.view(s, t.ids[0], t.ctx) as OBView;
+  assert(v.rounds === 2 && v.playMs === 45_000, "settings in the view");
+  toPlay(t, s);
+  park(s);
+  assert(Math.abs(s.endsAt - t.ctx.now() - 45_000) <= 100, "45 s round");
+  run(t, s, 45_000 + 100);
+  assert(ph(s) === "roundOver" && how(s) === "time", "round 1 ends at 45 s");
+  run(t, s, ROUND_OVER_MS + 100);
+  toPlay(t, s);
+  park(s);
+  run(t, s, 45_000 + 100);
+  assert(ph(s) === "final" && t.result !== null, "game over after 2 rounds");
+  const d = start(3);
+  const vd = game.view(d.s, d.t.ids[0], d.t.ctx) as OBView;
+  assert(vd.rounds === 3 && vd.playMs === PLAY_MS, "defaults = classic");
+}
+
+// ---------- practice bots: all-bot games and bots with a human finish ----------
+for (const n of [2, 4, 8]) {
+  const t = makeTestCtx(n, n * 5, {}, n);
+  const s = game.setup(t.ctx);
+  let acts = 0;
+  for (let i = 0; i < 20 * 60 * 10 && !t.result; i++) {
+    t.advance(TICK_MS);
+    game.tick!(s, t.ctx);
+    for (const id of t.ids) {
+      const a = game.bot!(s, id, t.ctx);
+      if (a) {
+        acts++;
+        game.action(s, id, a, t.ctx);
+      }
+    }
+  }
+  assert(t.result, `all-bot game ends (${n} bots)`);
+  assert(acts > 100, "bots move");
+}
+{
+  const t = makeTestCtx(4, 21, {}, 3);
+  const s = game.setup(t.ctx);
+  for (let i = 0; i < 20 * 60 * 10 && !t.result; i++) {
+    t.advance(TICK_MS);
+    game.tick!(s, t.ctx);
+    for (const id of t.ids.slice(1)) {
+      const a = game.bot!(s, id, t.ctx);
+      if (a) game.action(s, id, a, t.ctx);
+    }
+  }
+  assert(t.result, "a game with one idle human and bots ends");
+  assert(s.history.some((h) => h.bites.some((b) => b > 0)), "bot zombies bite someone");
+}
+
 console.log("✓ outbreak: all tests passed");

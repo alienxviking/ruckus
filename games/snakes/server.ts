@@ -1,4 +1,6 @@
 import { shuffle, topScorers, type GameCtx, type GameDef } from "../../shared/game";
+import { readSettings } from "../../shared/settings";
+import { config } from "./config";
 import {
   COUNTDOWN_MS,
   DELTA,
@@ -112,6 +114,10 @@ export interface FeedItem {
 }
 
 export interface SnakeState {
+  /** Round wins that take the match, most rounds and round length (host settings). */
+  winsNeeded: number;
+  maxRounds: number;
+  roundMs: number;
   w: number;
   h: number;
   /** Participants in join order. */
@@ -212,6 +218,10 @@ export interface SnakeV {
 
 export interface SnakeView {
   phase: Phase;
+  /** Match format (host settings): round wins needed, most rounds, round length in ms. */
+  winsNeeded: number;
+  maxRounds: number;
+  roundMs: number;
   endsAt: number;
   w: number;
   h: number;
@@ -497,8 +507,8 @@ function finishRound(s: SnakeState, ctx: GameCtx, winner: string | null, reason:
   s.history.push({ winner, reason });
   for (const sn of s.snakes) sn.queue = [];
   if (winner) s.roundWins[winner] = (s.roundWins[winner] ?? 0) + 1;
-  if (winner && s.roundWins[winner] >= WINS_NEEDED) return finishMatch(s, ctx, [winner], "won");
-  if (s.round >= MAX_ROUNDS) return finishMatch(s, ctx, topScorers(s.roundWins), "won");
+  if (winner && s.roundWins[winner] >= s.winsNeeded) return finishMatch(s, ctx, [winner], "won");
+  if (s.round >= s.maxRounds) return finishMatch(s, ctx, topScorers(s.roundWins), "won");
   s.phase = "roundOver";
   s.endsAt = ctx.now() + ROUND_OVER_MS;
 }
@@ -539,7 +549,7 @@ function advance(s: SnakeState, ctx: GameCtx): boolean {
     case "countdown":
       if (now < s.endsAt) return false;
       s.phase = "play";
-      s.endsAt = now + ROUND_MS;
+      s.endsAt = now + s.roundMs;
       s.stepAt = now;
       s.goldenAt = now + goldenDelay(ctx);
       // Anyone who dropped during the countdown forfeits this round.
@@ -576,6 +586,9 @@ function flatCells(s: SnakeState, cells: number[]): number[] {
 export function buildView(s: SnakeState, now: number): SnakeView {
   return {
     phase: s.phase,
+    winsNeeded: s.winsNeeded,
+    maxRounds: s.maxRounds,
+    roundMs: s.roundMs,
     endsAt: s.endsAt,
     w: s.w,
     h: s.h,
@@ -672,13 +685,120 @@ function sendKeyframe(s: SnakeState, viewerId: string, ctx: GameCtx): false {
   return false;
 }
 
+// ---------- practice bot ----------
+
+/** Cells reachable from `start` without crossing `blocked`, counting up to `cap`. */
+function roomFrom(s: SnakeState, blocked: Uint8Array, start: number, cap: number): number {
+  const seen = new Uint8Array(s.w * s.h);
+  const stack = [start];
+  seen[start] = 1;
+  let n = 0;
+  while (stack.length && n < cap) {
+    const c = stack.pop()!;
+    n += 1;
+    const x = c % s.w;
+    const around = [x > 0 ? c - 1 : -1, x < s.w - 1 ? c + 1 : -1, c >= s.w ? c - s.w : -1, c < s.w * (s.h - 1) ? c + s.w : -1];
+    for (const k of around) {
+      if (k >= 0 && !seen[k] && !blocked[k]) {
+        seen[k] = 1;
+        stack.push(k);
+      }
+    }
+  }
+  return n;
+}
+
+/**
+ * A medium snake: heads for the nearest pellet (or the gold star), avoids walls, bodies and
+ * cells a rival head could reach, and usually checks it isn't steering into a dead end.
+ * It reads only what everyone sees (bodies, food), never anyone's queued turns.
+ */
+function botTurn(s: SnakeState, botId: string, ctx: GameCtx): SnakeAction | null {
+  if (s.phase !== "play") return null;
+  const sn = s.snakes.find((x) => x.id === botId);
+  if (!sn || !sn.alive || sn.queue.length) return null;
+  // Now and then it's a beat slow, like anyone.
+  if (ctx.random() < 0.08) return null;
+  const { w, h } = s;
+  const head = sn.body[0];
+  const hx = head % w;
+  const hy = Math.floor(head / w);
+
+  const blocked = new Uint8Array(w * h);
+  const danger = new Uint8Array(w * h);
+  for (const o of s.snakes) {
+    if (!o.alive) continue;
+    // Tails move on unless the snake is growing; keep it simple and treat bodies as solid.
+    for (const c of o.body) blocked[c] = 1;
+    if (o === sn) continue;
+    const ox = o.body[0] % w;
+    const oy = Math.floor(o.body[0] / w);
+    for (const [dx, dy] of Object.values(DELTA)) {
+      const x = ox + dx;
+      const y = oy + dy;
+      if (x >= 0 && y >= 0 && x < w && y < h) danger[y * w + x] = 1;
+    }
+  }
+
+  // Target: the gold star if it's close-ish, else the nearest pellet.
+  let tx = -1;
+  let ty = -1;
+  let best = Infinity;
+  const consider = (c: number, bonus: number) => {
+    const d = Math.abs((c % w) - hx) + Math.abs(Math.floor(c / w) - hy) - bonus;
+    if (d < best) {
+      best = d;
+      tx = c % w;
+      ty = Math.floor(c / w);
+    }
+  };
+  for (const c of s.food) consider(c, 0);
+  if (s.golden !== null) consider(s.golden, 6);
+
+  const len = lenOf(sn);
+  const careful = ctx.random() < 0.85;
+  let pick: Dir = sn.dir;
+  let pickScore = -Infinity;
+  for (const d of DIRS) {
+    if (d === OPPOSITE[sn.dir]) continue;
+    const [dx, dy] = DELTA[d];
+    const x = hx + dx;
+    const y = hy + dy;
+    let score: number;
+    if (x < 0 || y < 0 || x >= w || y >= h || blocked[y * w + x]) score = -10_000;
+    else {
+      const c = y * w + x;
+      score = 0;
+      if (danger[c]) score -= 400;
+      if (careful) {
+        const room = roomFrom(s, blocked, c, len * 2 + 8);
+        if (room < len + 2) score -= 2_000 - room;
+      }
+      if (tx >= 0) score -= (Math.abs(tx - x) + Math.abs(ty - y)) * 3;
+      if (d === sn.dir) score += 1;
+      score += ctx.random(); // break ties
+    }
+    if (score > pickScore) {
+      pickScore = score;
+      pick = d;
+    }
+  }
+  return pick === sn.dir ? null : { type: "turn", dir: pick };
+}
+
 export const snakes: GameDef<SnakeState, SnakeAction> = {
   id: "snakes",
 
   setup(ctx) {
     const ids = ctx.players.map((p) => p.id);
     const grid = ids.length <= 3 ? SMALL_GRID : LARGE_GRID;
+    const set = readSettings(config.settings, ctx.settings);
+    const winsNeeded = Number(set.wins) || WINS_NEEDED;
     const s: SnakeState = {
+      winsNeeded,
+      // 2 wins -> up to 5 rounds, as before; 1 -> 3, 3 -> 7.
+      maxRounds: winsNeeded === WINS_NEEDED ? MAX_ROUNDS : winsNeeded * 2 + 1,
+      roundMs: Number(set.roundSec) * 1000 || ROUND_MS,
       w: grid.w,
       h: grid.h,
       ids,
@@ -749,6 +869,10 @@ export const snakes: GameDef<SnakeState, SnakeAction> = {
     return true;
   },
   tickMs: TICK_MS,
+
+  bot(s, botId, ctx) {
+    return botTurn(s, botId, ctx);
+  },
 
   spectatorAction(s, viewerId, action, ctx) {
     const a: unknown = action;
