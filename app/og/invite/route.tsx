@@ -10,7 +10,7 @@ export async function GET(req: Request) {
   const meta = game ? CATALOG_BY_ID[game] : undefined;
   const fonts = await ogFonts();
   const body = meta ? (
-    <GameCard game={meta} kicker={name ? `${name} invited you!` : "you're invited!"} footer="tap to join · ruckus" />
+    <GameCard game={meta} kicker={name ? `${name} invited you!` : "you're invited!"} />
   ) : (
     <HomeCard games={CATALOG.length} />
   );

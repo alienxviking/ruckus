@@ -18,7 +18,7 @@ export default async function Image({ params }: { params: Promise<{ game: string
   const fonts = await ogFonts();
   if (!meta) return new ImageResponse(<HomeCard games={Object.keys(CATALOG_BY_ID).length} />, { ...OG_SIZE, fonts });
   return new ImageResponse(
-    <GameCard game={meta} kicker={meta.minPlayers <= 1 ? "play it solo, right now" : "play it vs bots, right now"} footer="free in your browser · ruckus" />,
+    <GameCard game={meta} kicker={meta.minPlayers <= 1 ? "play it solo, right now" : "play it vs bots, right now"} />,
     { ...OG_SIZE, fonts },
   );
 }

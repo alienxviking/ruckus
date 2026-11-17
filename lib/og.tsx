@@ -87,13 +87,12 @@ export function HomeCard({ games }: { games: number }) {
     <div style={{ ...WALL, position: "relative", width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "#edf0f7" }}>
       {/* eslint-disable-next-line @next/next/no-img-element -- next/og renders plain img */}
       <img src={ruxUri("shout", true)} width={330} height={308} style={{ position: "absolute", right: -40, bottom: 40, transform: "rotate(-6deg)" }} alt="" />
-      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center", width: 640 }}>
-        <div style={{ fontFamily: "Marker", fontSize: 42, color: "#c6f432", transform: "rotate(-3deg)" }}>{`${games} games. zero sign-ups.`}</div>
-        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", fontFamily: "Hero", fontSize: 140, lineHeight: 0.9, letterSpacing: -5, marginTop: 18 }}>
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center", width: 680 }}>
+        <div style={{ fontFamily: "Marker", fontSize: 56, color: "#c6f432", transform: "rotate(-3deg)" }}>{`${games} games. zero sign-ups.`}</div>
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", fontFamily: "Hero", fontSize: 150, lineHeight: 0.88, letterSpacing: -6, marginTop: 14 }}>
           <span>Cause a</span>
           <span style={{ color: "#c6f432" }}>ruckus.</span>
         </div>
-        <div style={{ fontSize: 30, color: "#8a91a7", marginTop: 28 }}>Party games in your browser. No login.</div>
       </div>
     </div>
   );
@@ -102,8 +101,7 @@ export function HomeCard({ games }: { games: number }) {
 /** A game as a poster: name huge, glyph cropped off the edge, a stamp and a line on top.
  *  Everything you need to read sits in the middle square: chat apps (WhatsApp, iMessage) crop
  *  link thumbnails to a centred square, while Discord/X show the full width. */
-export function GameCard({ game, kicker, footer }: { game: GameMeta; kicker: string; footer: string }) {
-  const players = game.minPlayers === game.maxPlayers ? `${game.minPlayers}P` : `${game.minPlayers}–${game.maxPlayers}P`;
+export function GameCard({ game, kicker }: { game: GameMeta; kicker: string }) {
   return (
     <div style={{ ...WALL, width: "100%", height: "100%", display: "flex", padding: 36 }}>
       <div
@@ -128,16 +126,9 @@ export function GameCard({ game, kicker, footer }: { game: GameMeta; kicker: str
         <img src={glyphUri(game.id, INK)} width={360} height={360} style={{ position: "absolute", left: -90, bottom: -80, transform: "rotate(14deg)", opacity: 0.85 }} alt="" />
         {/* eslint-disable-next-line @next/next/no-img-element -- next/og renders plain img */}
         <img src={glyphUri(game.id, INK)} width={300} height={300} style={{ position: "absolute", right: -70, top: -60, transform: "rotate(-12deg)", opacity: 0.35 }} alt="" />
-        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", width: 560 }}>
-          <div style={{ fontFamily: "Marker", fontSize: 46, transform: "rotate(-2deg)" }}>{kicker}</div>
-          <div style={{ fontFamily: "Hero", fontSize: game.name.length > 12 ? 100 : 118, lineHeight: 0.9, letterSpacing: -4, marginTop: 14, textAlign: "center" }}>{game.name}</div>
-          <div style={{ fontSize: 28, marginTop: 20, fontWeight: 600, lineHeight: 1.2 }}>{game.tagline}</div>
-          <div style={{ display: "flex", alignItems: "center", gap: 16, marginTop: 26 }}>
-            <div style={{ display: "flex", padding: "4px 16px", border: `4px solid ${INK}`, borderRadius: 14, backgroundColor: PAPER, fontSize: 26, fontWeight: 700, letterSpacing: 2 }}>
-              {players}
-            </div>
-            <div style={{ fontSize: 28, fontWeight: 700 }}>{footer}</div>
-          </div>
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", width: 580 }}>
+          <div style={{ fontFamily: "Marker", fontSize: 60, transform: "rotate(-2deg)" }}>{kicker}</div>
+          <div style={{ fontFamily: "Hero", fontSize: game.name.length > 12 ? 112 : 140, lineHeight: 0.9, letterSpacing: -4, marginTop: 14, textAlign: "center" }}>{game.name}</div>
         </div>
       </div>
       {/* eslint-disable-next-line @next/next/no-img-element -- next/og renders plain img */}
