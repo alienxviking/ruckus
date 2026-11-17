@@ -29,23 +29,24 @@ export function Chat({
 
   return (
     <div className="card flex flex-col p-3">
-      <div className="label mb-2 flex items-center gap-2 px-1">
-        Chat <span aria-hidden className="h-px flex-1 bg-line" />
+      <div className="mb-2 flex items-center gap-2 px-1">
+        <span className="font-hero text-base font-extrabold">Chat</span>
+        <span className="marker text-base text-muted">bolo bolo</span>
       </div>
       <ol
         ref={listRef}
-        className={`space-y-1.5 overflow-x-hidden overflow-y-auto px-1 text-sm ${compact ? "h-56" : "h-72"}`}
+        className={`flex flex-col gap-1.5 overflow-x-hidden overflow-y-auto px-1 text-sm ${compact ? "h-56" : "h-72"}`}
         aria-live="polite"
       >
-        {room.chat.map((m) => {
+        {room.chat.map((m, i) => {
           if (!m.from) {
+            // Room news (joins, starts, wins): a small marker note in the middle.
             return (
-              <li key={m.id} className="animate-chat flex gap-1.5 font-mono text-[11px] text-muted">
-                <span aria-hidden className="text-brand-2/70">›</span>
-                <span className="min-w-0 break-words">
+              <li key={m.id} className="animate-chat flex justify-center py-0.5">
+                <span className="marker max-w-full rounded-full bg-panel-2 px-2.5 py-0.5 text-center text-[15px] leading-snug break-words text-muted">
                   {m.avatar && (
                     <>
-                      <Avatar id={m.avatar} className="text-[13px]" />{" "}
+                      <Avatar id={m.avatar} />{" "}
                     </>
                   )}
                   {m.text}
@@ -54,12 +55,30 @@ export function Chat({
             );
           }
           const p = byId[m.from];
+          const mine = m.from === me;
+          // Consecutive lines from the same person share one name/avatar.
+          const prev = room.chat[i - 1];
+          const first = !prev || prev.from !== m.from;
           return (
-            <li key={m.id} className="animate-chat break-words">
-              <span className="font-semibold" style={{ color: p?.color }}>
-                {p ? <><Avatar id={p.avatar} /> {p.name}</> : "someone"}
+            <li key={m.id} className={`animate-chat flex items-end gap-1.5 ${mine ? "flex-row-reverse" : ""}`}>
+              <span aria-hidden className={`w-6 shrink-0 text-center text-lg leading-none ${first ? "" : "invisible"}`}>
+                {p ? <Avatar id={p.avatar} /> : "🙂"}
               </span>
-              <span className={m.from === me ? "text-text" : "text-text/85"}>: {m.text}</span>
+              <span className={`flex min-w-0 max-w-[80%] flex-col ${mine ? "items-end" : "items-start"}`}>
+                {first && !mine && (
+                  <span className="px-1 text-[11px] font-bold" style={{ color: p?.color }}>
+                    {p?.name ?? "someone"}
+                  </span>
+                )}
+                <span
+                  className={`rounded-2xl border-2 px-3 py-1.5 break-words ${
+                    mine ? "rounded-br-md border-ink bg-brand-2 font-medium text-ink" : "rounded-bl-md border-line bg-panel-2 text-text"
+                  }`}
+                  style={mine ? undefined : { borderColor: p ? `${p.color}66` : undefined }}
+                >
+                  {m.text}
+                </span>
+              </span>
             </li>
           );
         })}
@@ -78,15 +97,15 @@ export function Chat({
         </label>
         <input
           id={compact ? "chat-m" : "chat"}
-          className="input py-1.5 text-sm"
-          placeholder="Say something…"
+          className="input rounded-full py-1.5 text-sm"
+          placeholder="kuch toh bolo…"
           maxLength={200}
           autoComplete="off"
           value={text}
           onChange={(e) => setText(e.target.value)}
         />
-        <button className="btn px-3 py-1.5 text-sm" aria-label="Send">
-          <SendHorizontal aria-hidden className="size-4" strokeWidth={2} />
+        <button className="btn btn-primary rounded-full px-3 py-1.5 text-sm" aria-label="Send">
+          <SendHorizontal aria-hidden className="size-4" strokeWidth={2.4} />
         </button>
       </form>
     </div>

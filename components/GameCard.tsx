@@ -10,6 +10,7 @@ export function GameCard({
   onSelect,
   disabled,
   index = 0,
+  compact,
 }: {
   game: GameMeta;
   selected?: boolean;
@@ -17,6 +18,8 @@ export function GameCard({
   disabled?: boolean;
   /** Position in the grid (alternates the hover tilt). */
   index?: number;
+  /** Smaller card for the room lobby: shorter poster, no tagline. */
+  compact?: boolean;
 }) {
   const players =
     game.minPlayers === game.maxPlayers ? `${game.minPlayers}` : `${game.minPlayers}–${game.maxPlayers}`;
@@ -27,16 +30,16 @@ export function GameCard({
       <span className="gc-cover">
         <CoverArt game={game} />
       </span>
-      <span className="block px-3 pt-2.5 pb-3">
+      <span className={`block ${compact ? "px-2.5 pt-2 pb-2.5" : "px-3 pt-2.5 pb-3"}`}>
         {/* The poster shows the name; keep it for screen readers. */}
         <span className="sr-only">{game.name}: </span>
-        <span className="line-clamp-2 block text-sm leading-snug text-muted">{game.tagline}</span>
-        <span className="mt-2 flex flex-wrap items-center gap-1.5 text-xs">
+        {!compact && <span className="line-clamp-2 block text-sm leading-snug text-muted">{game.tagline}</span>}
+        <span className={`flex flex-wrap items-center gap-1.5 text-xs ${compact ? "" : "mt-2"}`}>
           {game.isNew && <span className="gc-new marker">new!</span>}
           <span className="gc-chip">
             <b>{players}</b> players
           </span>
-          <span className="gc-chip">~{game.minutes} min</span>
+          {!compact && <span className="gc-chip">~{game.minutes} min</span>}
           <span className="gc-chip" style={{ color: game.accent }}>
             {kind}
           </span>
@@ -51,7 +54,7 @@ export function GameCard({
 
   const style = { "--accent": game.accent, "--lift-tilt": index % 2 ? "1deg" : "-1deg" } as React.CSSProperties;
   // A column from the top: buttons centre their content vertically by default.
-  const cls = `game-card lift flex h-full w-full flex-col justify-start overflow-hidden text-left ${selected ? "is-selected" : ""}`;
+  const cls = `game-card lift flex h-full w-full flex-col justify-start overflow-hidden text-left ${compact ? "is-compact" : ""} ${selected ? "is-selected" : ""}`;
   if (!onSelect) {
     return (
       <div className={cls} style={style}>

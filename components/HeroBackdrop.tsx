@@ -40,7 +40,7 @@ function scatter(n: number, seed: number) {
 const DOODLE_SPOTS = scatter(18, 1);
 const SPARKS = scatter(22, 3);
 
-export function HeroBackdrop() {
+export function HeroBackdrop({ variant = "hero", calm }: { variant?: "hero" | "room"; calm?: boolean } = {}) {
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -63,7 +63,7 @@ export function HeroBackdrop() {
   }, []);
 
   return (
-    <div ref={ref} aria-hidden className="hero-field bd-mix">
+    <div ref={ref} aria-hidden className={`hero-field bd-mix ${variant === "room" ? "bd-room" : ""} ${calm ? "bd-calm" : ""}`}>
       {/* 1. Lava-lamp colour wash under a print halftone. */}
       {[0, 1, 2, 3].map((i) => (
         <span key={`b${i}`} className={`bd-blob bd-blob-${i}`} style={{ backgroundColor: C[i] }} />

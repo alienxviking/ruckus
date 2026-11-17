@@ -26,12 +26,15 @@ export function GameBrowser({
   disabled,
   playerCount,
   columns = "sm:grid-cols-2 lg:grid-cols-3",
+  compact,
 }: {
   selectedId?: string;
   onSelect?: (g: GameMeta) => void;
   disabled?: boolean;
   playerCount?: number;
   columns?: string;
+  /** Smaller cards (the room lobby). */
+  compact?: boolean;
 }) {
   const uid = useId();
   const [filter, setFilter] = useState<Filter>("all");
@@ -96,7 +99,7 @@ export function GameBrowser({
       {shown.length === 0 ? (
         <p className="card px-4 py-6 text-center text-sm text-muted">No games fit this group size yet.</p>
       ) : (
-        <div className={`relative grid gap-3 ${columns}`}>
+        <div className={`relative grid ${compact ? "gap-2.5" : "gap-3"} ${columns}`}>
           <AnimatePresence mode="popLayout" initial={false}>
             {shown.map((g, i) => {
               const selected = g.id === activeId;
@@ -116,6 +119,7 @@ export function GameBrowser({
                   >
                     <GameCard
                       index={i}
+                      compact={compact}
                       game={g}
                       selected={selected}
                       disabled={disabled}

@@ -161,16 +161,16 @@ export function Lobby({
       <RecapCard room={room} />
 
       {humans < 2 && (
-        <p className="card animate-rise flex items-center gap-3 px-4 py-3 text-sm text-muted">
-          <span aria-hidden className="relative flex size-2 shrink-0">
-            <span className="absolute inset-0 rounded-full bg-brand-2 motion-safe:animate-ping" />
-            <span className="relative size-2 rounded-full bg-brand-2" />
+        <div className="animate-rise flex items-end gap-2">
+          <span aria-hidden className="bob w-14 shrink-0" style={{ "--tilt": "-8deg" } as React.CSSProperties}>
+            <Rux mood="wow" className="w-full" />
           </span>
-          <span>
-          It&apos;s just you so far. Hit <b className="text-text">Invite</b> at the top to copy the room link and send
-          it to friends{isHost ? <>, or add a <b className="text-text">practice bot</b> in the players panel</> : null}.
-          </span>
-        </p>
+          <p className="mb-2 rounded-2xl rounded-bl-md border-2 border-ink bg-paper px-3.5 py-2 text-sm text-ink shadow-[3px_4px_0_var(--color-pink)]">
+            <span className="marker text-lg">akele akele? 👀 </span>
+            Hit <b>Invite</b> at the top and send the link to friends
+            {isHost ? <>, or add a <b>practice bot</b> in the players panel</> : null}.
+          </p>
+        </div>
       )}
 
       <div>
@@ -187,7 +187,8 @@ export function Lobby({
           selectedId={game.id}
           disabled={!isHost}
           playerCount={online}
-          columns="sm:grid-cols-2 xl:grid-cols-3"
+          columns="grid-cols-2 md:grid-cols-3 xl:grid-cols-4"
+          compact
           onSelect={(g) => isHost && send({ t: "pick", gameId: g.id })}
         />
       </div>

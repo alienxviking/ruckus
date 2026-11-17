@@ -570,6 +570,14 @@ body::after {
   transform: rotate(-6deg);
   box-shadow: 2px 3px 0 #14101f;
 }
+/* Lobby cards: a shorter poster (the name stays big enough to read). */
+.game-card.is-compact .gc-cover .cover-art {
+  aspect-ratio: 16 / 9;
+}
+.game-card.is-compact .gc-chip {
+  padding: 0.05rem 0.4rem;
+  font-size: 0.68rem;
+}
 .game-card .gc-chip {
   display: inline-flex;
   align-items: center;
@@ -1211,6 +1219,18 @@ body::after {
     position: absolute;
     inset: 0;
     background: radial-gradient(circle, rgb(5 6 10 / 0.9) 1.6px, transparent 2.2px) 0 0 / 7px 7px;
+  }
+  /* In a room: behind the whole page, a bit quieter than the landing hero, and barely there
+     while a game is on. */
+  .hero-field.bd-room {
+    position: fixed;
+    z-index: -1;
+    mask-image: radial-gradient(120% 90% at 50% 20%, #000 35%, transparent 90%);
+    opacity: 0.7;
+    transition: opacity 0.8s ease;
+  }
+  .hero-field.bd-room.bd-calm {
+    opacity: 0.22;
   }
   /* Phones: the same party, quieter, so the text stays easy to read. */
   @media (max-width: 640px) {
