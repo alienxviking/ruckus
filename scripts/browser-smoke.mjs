@@ -41,7 +41,7 @@ try {
   const host = await player("host", { width: 1280, height: 860 });
   await host.goto(BASE);
   await shot(host, "00-home");
-  await host.getByRole("button", { name: "Create a room" }).click();
+  await host.getByRole("button", { name: "Start a room" }).click();
   await host.waitForURL(/\/r\//);
   const roomUrl = host.url();
   await host.getByLabel("Name").fill("Host");

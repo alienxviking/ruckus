@@ -45,7 +45,7 @@ try {
   await shot(phoneHome, "landing-phone-games");
   await phoneHome.context().close();
 
-  await host.getByRole("button", { name: "Create a room" }).click();
+  await host.getByRole("button", { name: "Start a room" }).click();
   await host.waitForURL(/\/r\//);
   const roomUrl = host.url();
   await host.getByLabel("Name").fill("Host");
