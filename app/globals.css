@@ -619,6 +619,8 @@ body::after {
 .hero-field {
   position: absolute;
   inset: 0;
+  /* Behind the hero's content (its parent is an isolated stacking context). */
+  z-index: -1;
   overflow: hidden;
   pointer-events: none;
   mask-image: linear-gradient(180deg, #000 55%, transparent);
@@ -1070,5 +1072,153 @@ body::after {
   }
   .game-card:where(:hover, :focus-visible):not(:disabled) .cover-art .cv-glyph {
     transform: rotate(calc(var(--tilt) * -1)) scale(1.06);
+  }
+}
+
+/* ---------- hero backdrop candidates (see components/HeroBackdrop.tsx) ---------- */
+@layer components {
+  /* Doodles: marker scribbles that "boil" like stop-motion and drift a little. */
+  .hero-field .bd-doodle {
+    position: absolute;
+    opacity: 0.55;
+    rotate: var(--rot);
+    animation:
+      bd-boil 0.42s steps(1) infinite,
+      bd-float 9s ease-in-out infinite alternate;
+  }
+  .hero-field .bd-doodle svg {
+    display: block;
+    width: 100%;
+    filter: drop-shadow(2px 2px 0 rgb(0 0 0 / 0.6));
+  }
+  /* Stickers: game icons on colour tiles, rising slowly from the bottom and spinning. */
+  .hero-field .bd-sticker {
+    position: absolute;
+    bottom: -90px;
+    display: grid;
+    place-items: center;
+    aspect-ratio: 1;
+    border: 3px solid var(--color-paper);
+    border-radius: 0.9rem;
+    color: #14101f;
+    opacity: 0.4;
+    box-shadow: 3px 4px 0 rgb(0 0 0 / 0.5);
+    animation: bd-rise 30s linear infinite;
+  }
+  /* Lights: stage beams sweeping from the top, plus twinkles. */
+  .hero-field .bd-beam {
+    position: absolute;
+    top: -10%;
+    width: 18rem;
+    height: 130%;
+    margin-left: -9rem;
+    transform-origin: 50% 0;
+    background: linear-gradient(180deg, color-mix(in oklab, var(--c) 40%, transparent), transparent 85%);
+    clip-path: polygon(46% 0, 54% 0, 100% 100%, 0 100%);
+    mix-blend-mode: screen;
+    opacity: 0.55;
+    animation: bd-sweep 7s ease-in-out infinite alternate;
+  }
+  .hero-field .bd-spark {
+    position: absolute;
+    width: 5px;
+    height: 5px;
+    border-radius: 999px;
+    animation: bd-twinkle 3s ease-in-out infinite;
+  }
+  /* Blobs: lava-lamp colour shapes behind a print halftone. */
+  .hero-field .bd-blob {
+    position: absolute;
+    width: 26rem;
+    height: 22rem;
+    opacity: 0.32;
+    filter: blur(40px);
+    border-radius: 42% 58% 63% 37% / 41% 44% 56% 59%;
+    animation: bd-morph 14s ease-in-out infinite alternate;
+  }
+  .hero-field .bd-blob-0 {
+    left: -6rem;
+    top: -6rem;
+  }
+  .hero-field .bd-blob-1 {
+    right: -4rem;
+    top: 2rem;
+    animation-duration: 17s;
+    animation-delay: -5s;
+  }
+  .hero-field .bd-blob-2 {
+    left: 30%;
+    top: 14rem;
+    animation-duration: 20s;
+    animation-delay: -9s;
+  }
+  .hero-field .bd-blob-3 {
+    right: 20%;
+    bottom: -8rem;
+    animation-duration: 15s;
+    animation-delay: -3s;
+  }
+  .hero-field .bd-halftone {
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(circle, rgb(5 6 10 / 0.9) 1.6px, transparent 2.2px) 0 0 / 7px 7px;
+  }
+}
+@keyframes bd-boil {
+  0% {
+    transform: translate(0, 0) rotate(0deg);
+  }
+  33% {
+    transform: translate(1px, -1px) rotate(1.5deg);
+  }
+  66% {
+    transform: translate(-1px, 1px) rotate(-1.5deg);
+  }
+}
+@keyframes bd-float {
+  to {
+    translate: 0 -14px;
+  }
+}
+@keyframes bd-rise {
+  from {
+    transform: translateY(0) rotate(var(--rot));
+  }
+  to {
+    transform: translateY(-130vh) rotate(calc(var(--rot) + 220deg));
+  }
+}
+@keyframes bd-sweep {
+  from {
+    transform: rotate(-24deg);
+  }
+  to {
+    transform: rotate(24deg);
+  }
+}
+@keyframes bd-twinkle {
+  0%,
+  100% {
+    opacity: 0;
+    transform: scale(0.4);
+  }
+  50% {
+    opacity: 0.9;
+    transform: scale(1.3);
+  }
+}
+@keyframes bd-morph {
+  0% {
+    border-radius: 42% 58% 63% 37% / 41% 44% 56% 59%;
+    transform: translate(0, 0) rotate(0deg);
+  }
+  100% {
+    border-radius: 63% 37% 38% 62% / 55% 61% 39% 45%;
+    transform: translate(5rem, 3rem) rotate(40deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .hero-field [class^="bd-"] {
+    animation: none !important;
   }
 }

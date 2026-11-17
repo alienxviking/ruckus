@@ -1,14 +1,160 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
+import { GameGlyph } from "./game-icons";
 
 /**
- * The landing hero's moving backdrop: drifting aurora glows, a perspective floor grid
- * running toward the viewer and a slow scan band. CSS keyframes on transforms only,
- * paused whenever the hero is off-screen or the tab is hidden; static for reduced motion.
+ * The landing hero's moving backdrop. Four candidates while we pick one, switchable with
+ * ?bg=doodles|stickers|lights|blobs|grid. CSS keyframes on transforms/opacity only, paused
+ * when off-screen or the tab is hidden, static for reduced motion.
  */
+type Variant = "doodles" | "stickers" | "lights" | "blobs" | "grid";
+const VARIANTS: Variant[] = ["doodles", "stickers", "lights", "blobs", "grid"];
+
+const C = ["#c6f432", "#ff4fa3", "#4f7bff", "#ffd23f", "#4ce0ff"];
+
+// Marker doodles (24x24 boxes, round strokes).
+const DOODLES = [
+  "M12 2 L14.6 8.6 L21.5 9 L16.2 13.4 L18 20.2 L12 16.4 L6 20.2 L7.8 13.4 L2.5 9 L9.4 8.6 Z", // star
+  "M2 12 C5 6 8 18 11 12 S17 6 20 12 S23 16 23 16", // squiggle
+  "M2 16 L6 8 L10 16 L14 8 L18 16 L22 8", // zigzag
+  "M12 4 C18 3 21 9 19 14 C17 20 8 21 5 15 C3 10 7 5 13 6", // scribble circle
+  "M3 19 L19 5 M11 5 L19 5 L19 13", // arrow
+  "M12 12 m0 0 c1 0 2 1 2 2 s-1 3 -3 3 s-4 -2 -4 -4 s2 -6 6 -6 s7 3 7 7", // spiral
+  "M12 2 V22 M2 12 H22 M5 5 L19 19 M19 5 L5 19", // sparkle
+  "M12 20 C4 14 2 9 5 6 C8 3 11 5 12 8 C13 5 16 3 19 6 C22 9 20 14 12 20 Z", // heart
+  "M13 2 L5 14 H11 L9 22 L19 9 H13 Z", // lightning
+  "M4 8 Q12 2 20 8 M6 14 Q12 9 18 14 M8 20 Q12 16 16 20", // waves
+  "M7 4 L9 4 M15 4 L17 4 M5 14 Q12 22 19 14", // smiley
+  "M12 3 V15 M12 20 V21", // !
+];
+
+function hashCount(n: number, seed: number) {
+  return Array.from({ length: n }, (_, i) => {
+    const r = (k: number) => {
+      const x = Math.sin((i + 1) * 9301 + seed * 49297 + k * 233) * 10000;
+      return x - Math.floor(x);
+    };
+    return r;
+  });
+}
+
+function Doodles() {
+  const items = hashCount(22, 1);
+  return (
+    <>
+      {items.map((r, i) => (
+        <span
+          key={i}
+          className="bd-doodle"
+          style={
+            {
+              left: `${r(1) * 96}%`,
+              top: `${r(2) * 92}%`,
+              width: `${34 + r(3) * 44}px`,
+              color: C[i % C.length],
+              "--rot": `${(r(4) - 0.5) * 70}deg`,
+              animationDelay: `${-r(5) * 2}s, ${-r(6) * 9}s`,
+            } as React.CSSProperties
+          }
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+            <path d={DOODLES[i % DOODLES.length]} />
+          </svg>
+        </span>
+      ))}
+    </>
+  );
+}
+
+const STICKER_IDS = ["sumo", "trivia", "tug", "flags", "puck", "sketch", "blitz", "hotseat", "salvo", "snakes", "pixels", "smuggle", "lava", "potato"];
+
+function Stickers() {
+  const items = hashCount(STICKER_IDS.length, 2);
+  return (
+    <>
+      {items.map((r, i) => (
+        <span
+          key={i}
+          className="bd-sticker"
+          style={
+            {
+              left: `${(i / STICKER_IDS.length) * 100 + r(1) * 5}%`,
+              width: `${46 + r(2) * 34}px`,
+              background: C[i % C.length],
+              "--rot": `${(r(3) - 0.5) * 50}deg`,
+              animationDuration: `${26 + r(4) * 22}s`,
+              animationDelay: `${-r(5) * 40}s`,
+            } as React.CSSProperties
+          }
+        >
+          <GameGlyph id={STICKER_IDS[i]} className="size-[62%]" />
+        </span>
+      ))}
+    </>
+  );
+}
+
+function Lights() {
+  const sparks = hashCount(28, 3);
+  return (
+    <>
+      {[0, 1, 2, 3].map((i) => (
+        <span
+          key={i}
+          className="bd-beam"
+          style={
+            {
+              left: `${12 + i * 25}%`,
+              "--c": C[i],
+              animationDuration: `${6 + i * 1.7}s`,
+              animationDelay: `${-i * 1.3}s`,
+            } as React.CSSProperties
+          }
+        />
+      ))}
+      {sparks.map((r, i) => (
+        <span
+          key={`s${i}`}
+          className="bd-spark"
+          style={{ left: `${r(1) * 100}%`, top: `${r(2) * 90}%`, background: C[i % C.length], animationDelay: `${-r(3) * 3}s` } as React.CSSProperties}
+        />
+      ))}
+    </>
+  );
+}
+
+function Blobs() {
+  return (
+    <>
+      {[0, 1, 2, 3].map((i) => (
+        <span key={i} className={`bd-blob bd-blob-${i}`} style={{ background: C[i] } as React.CSSProperties} />
+      ))}
+      <span className="bd-halftone" />
+    </>
+  );
+}
+
+function Grid() {
+  return (
+    <>
+      <div className="aurora aurora-a" />
+      <div className="aurora aurora-b" />
+      <div className="aurora aurora-c" />
+      <div className="floor" />
+      <div className="scan" />
+    </>
+  );
+}
+
 export function HeroBackdrop() {
   const ref = useRef<HTMLDivElement>(null);
+  const [variant, setVariant] = useState<Variant>("doodles");
+
+  useEffect(() => {
+    const v = new URLSearchParams(window.location.search).get("bg") as Variant | null;
+    if (v && VARIANTS.includes(v)) queueMicrotask(() => setVariant(v));
+  }, []);
 
   useEffect(() => {
     const el = ref.current;
@@ -30,12 +176,12 @@ export function HeroBackdrop() {
   }, []);
 
   return (
-    <div ref={ref} aria-hidden className="hero-field">
-      <div className="aurora aurora-a" />
-      <div className="aurora aurora-b" />
-      <div className="aurora aurora-c" />
-      <div className="floor" />
-      <div className="scan" />
+    <div ref={ref} aria-hidden className={`hero-field bd-${variant}`}>
+      {variant === "doodles" && <Doodles />}
+      {variant === "stickers" && <Stickers />}
+      {variant === "lights" && <Lights />}
+      {variant === "blobs" && <Blobs />}
+      {variant === "grid" && <Grid />}
     </div>
   );
 }
