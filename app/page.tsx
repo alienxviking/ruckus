@@ -3,6 +3,7 @@ import { CATALOG, CATALOG_BY_ID } from "@/games/catalog";
 import { CoverArt } from "@/components/CoverArt";
 import { HeroBackdrop } from "@/components/HeroBackdrop";
 import { HomeActions } from "@/components/HomeActions";
+import { MeLink } from "@/components/home/MeLink";
 import { Logo } from "@/components/Logo";
 import { Rux } from "@/components/Rux";
 import { DailySticker } from "@/components/home/DailySticker";
@@ -38,6 +39,7 @@ export default function Home() {
             <Link href="/daily" className="btn hidden border-2 px-3 py-1.5 sm:inline-flex">
               Daily
             </Link>
+            <MeLink />
           </nav>
         </header>
 
