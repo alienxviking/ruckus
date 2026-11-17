@@ -15,7 +15,7 @@ import {
 } from "../shared/types";
 import { CATALOG, CATALOG_BY_ID } from "../games/catalog";
 import { GAME_DEFS } from "../games/server-registry";
-import { clientIp, isPublicRoomId, Limiter, LIMITS_ROOM, type LimitKind } from "./limits";
+import { clientIp, isPublicRoomId, Limiter, LIMITS_ROOM, Stats, type LimitKind, type RoomReport } from "./limits";
 
 const HOST_HANDOFF_MS = 8_000; // host must be gone this long before someone else takes over
 const REMOVE_AFTER_MS = 60_000; // disconnected lobby players disappear after this
@@ -36,11 +36,16 @@ const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json", ...CORS } });
 
 /** Ask the internal limiter room. Local dev has no client IP and is never limited. */
-async function allowed(env: Env, kind: LimitKind, ip: string | null): Promise<{ ok: true } | { ok: false; reason: string }> {
-  if (!ip) return { ok: true };
+async function allowed(
+  env: Env,
+  kind: LimitKind,
+  ip: string | null,
+  room: string,
+): Promise<{ ok: true } | { ok: false; reason: string }> {
   try {
+    // Local dev (no IP) is never limited, but still counted in the stats.
     const stub = await getServerByName(env.Main, LIMITS_ROOM);
-    const res = await stub.fetch(new Request("https://limits.internal/", { method: "POST", body: JSON.stringify({ kind, ip }) }));
+    const res = await stub.fetch(new Request("https://limits.internal/", { method: "POST", body: JSON.stringify({ kind, ip, room }) }));
     return (await res.json()) as { ok: true } | { ok: false; reason: string };
   } catch {
     return { ok: true }; // never lock everyone out because the limiter hiccuped
@@ -78,6 +83,11 @@ export class RuckusRoom extends Server<Env> {
   created = false;
   /** Only used by the internal "__limits" room. */
   limiter = new Limiter();
+  stats = new Stats();
+  statsLoaded = false;
+  statsSaveTimer: ReturnType<typeof setTimeout> | null = null;
+  /** This room's usage since it last woke up, reported to the limiter when it goes idle. */
+  usage = { since: 0, http: 0, messages: 0, games: {} as Record<string, number> };
   /** Messages dropped by the rate limiter, per connection id. */
   dropped = new Map<string, number>();
 
@@ -134,17 +144,13 @@ export class RuckusRoom extends Server<Env> {
    */
   async onRequest(req: Request) {
     if (req.method === "OPTIONS") return new Response(null, { headers: CORS });
-    if (this.name === LIMITS_ROOM) {
-      if (req.method !== "POST") return new Response("Not found", { status: 404 });
-      const { kind, ip } = (await req.json()) as { kind: LimitKind; ip: string };
-      if ((kind !== "create" && kind !== "connect") || typeof ip !== "string") return json({ ok: true });
-      return json(this.limiter.check(kind, ip, Date.now()));
-    }
+    if (this.name === LIMITS_ROOM) return this.limitsRequest(req);
+    this.usage.http++;
     const exists = this.created || this.players.size > 0;
     if (req.method === "GET") return json({ exists });
     if (req.method === "POST") {
       if (exists) return json({ ok: true, existed: true });
-      const verdict = await allowed(this.env, "create", clientIp(req));
+      const verdict = await allowed(this.env, "create", clientIp(req), this.name);
       if (!verdict.ok) return json({ ok: false, error: verdict.reason }, 429);
       this.created = true;
       this.emptySince = Date.now(); // nobody has joined yet: the usual empty-room rules apply
@@ -190,6 +196,7 @@ export class RuckusRoom extends Server<Env> {
   }
 
   onMessage(sender: Conn, raw: string | ArrayBuffer | ArrayBufferView) {
+    this.usage.messages++;
     if (typeof raw !== "string" || raw.length > 20_000) return;
     if (!this.allowMessage(sender.id)) {
       const n = (this.dropped.get(sender.id) ?? 0) + 1;
@@ -353,6 +360,7 @@ export class RuckusRoom extends Server<Env> {
       return false;
     }
     this.recent = [...this.recent.filter((id) => id !== this.gameId), this.gameId].slice(-6);
+    this.usage.games[this.gameId] = (this.usage.games[this.gameId] ?? 0) + 1;
     this.phase = "playing";
     this.gameSeq += 1;
     this.lastView.clear();
@@ -554,6 +562,7 @@ export class RuckusRoom extends Server<Env> {
 
   ensureHousekeeping() {
     if (this.housekeeping) return;
+    this.usage.since = Date.now();
     this.housekeeping = setInterval(() => this.tidy(), 2_000);
   }
 
@@ -587,7 +596,57 @@ export class RuckusRoom extends Server<Env> {
       this.result = null;
       if (this.housekeeping) clearInterval(this.housekeeping);
       this.housekeeping = null;
+      this.reportUsage();
     }
+  }
+
+  /** Tell the limiter room what this room used since it woke (one request per session). */
+  reportUsage() {
+    const u = this.usage;
+    if (!u.since) return;
+    const report: RoomReport = { room: this.name, http: u.http, messages: u.messages, activeMs: Date.now() - u.since, games: u.games };
+    this.usage = { since: 0, http: 0, messages: 0, games: {} };
+    void getServerByName(this.env.Main, LIMITS_ROOM)
+      .then((stub) => stub.fetch(new Request("https://limits.internal/", { method: "POST", body: JSON.stringify({ report }) })))
+      .catch(() => {});
+  }
+
+  // ---------- the internal limiter room ----------
+
+  async limitsRequest(req: Request): Promise<Response> {
+    const now = Date.now();
+    if (!this.statsLoaded) {
+      this.statsLoaded = true;
+      const saved = await this.ctx.storage.get<Stats["days"]>("days").catch(() => undefined);
+      if (Array.isArray(saved)) this.stats.days = saved;
+    }
+    const day = this.stats.today(now);
+    day.limiterRequests++;
+    if (req.method === "GET") return json(this.stats.snapshot(now));
+    if (req.method !== "POST") return new Response("Not found", { status: 404 });
+    const body = (await req.json().catch(() => null)) as
+      | { kind?: LimitKind; ip?: string | null; room?: string; report?: RoomReport }
+      | null;
+    let verdict: { ok: true } | { ok: false; reason: string } = { ok: true };
+    if (body?.report && typeof body.report.room === "string") {
+      this.stats.report(body.report, now);
+    } else if (body && (body.kind === "create" || body.kind === "connect")) {
+      if (typeof body.ip === "string") verdict = this.limiter.check(body.kind, body.ip, now);
+      if (!verdict.ok) day.blocked++;
+      else {
+        if (body.kind === "create") day.roomsCreated++;
+        else day.connects++;
+        if (typeof body.room === "string" && !this.stats.open.has(body.room)) this.stats.open.set(body.room, now);
+      }
+    }
+    // Persist the daily numbers now and then (cheap: one row, at most every 10 s).
+    if (!this.statsSaveTimer) {
+      this.statsSaveTimer = setTimeout(() => {
+        this.statsSaveTimer = null;
+        void this.ctx.storage.put("days", this.stats.days).catch(() => {});
+      }, 10_000);
+    }
+    return json(verdict);
   }
 
   /** Remove players who've been gone long enough and aren't in a running game. */
@@ -670,11 +729,13 @@ function cleanText(input: unknown, max: number): string {
  */
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
+    const url = new URL(request.url);
+    if (url.pathname === "/stats") return statsRequest(request, env);
     const res = await routePartykitRequest(request, env, {
       cors: true,
       onBeforeConnect: async (req, lobby) => {
         if (!isPublicRoomId(lobby.name)) return new Response("Not found", { status: 404 });
-        const verdict = await allowed(env, "connect", clientIp(req));
+        const verdict = await allowed(env, "connect", clientIp(req), lobby.name);
         if (!verdict.ok) return new Response(verdict.reason, { status: 429 });
       },
       onBeforeRequest: (_req, lobby) => {
@@ -684,3 +745,26 @@ export default {
     return res ?? new Response("Not found", { status: 404 });
   },
 } satisfies ExportedHandler<Env>;
+
+/**
+ * The private usage dashboard's data: GET /stats with "Authorization: Bearer <STATS_TOKEN>".
+ * Without the STATS_TOKEN secret set (wrangler secret put STATS_TOKEN) it doesn't exist.
+ */
+async function statsRequest(request: Request, env: Env): Promise<Response> {
+  const cors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "Authorization", "Access-Control-Allow-Methods": "GET, OPTIONS" };
+  if (request.method === "OPTIONS") return new Response(null, { headers: cors });
+  const token = (env as Env & { STATS_TOKEN?: string }).STATS_TOKEN;
+  const given = request.headers.get("Authorization")?.replace(/^Bearer\s+/i, "") ?? "";
+  if (!token || request.method !== "GET") return new Response("Not found", { status: 404, headers: cors });
+  if (!timingSafeEqual(given, token)) return new Response("Unauthorized", { status: 401, headers: cors });
+  const stub = await getServerByName(env.Main, LIMITS_ROOM);
+  const res = await stub.fetch(new Request("https://limits.internal/", { method: "GET" }));
+  return new Response(await res.text(), { headers: { ...cors, "Content-Type": "application/json", "Cache-Control": "no-store" } });
+}
+
+function timingSafeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return diff === 0;
+}

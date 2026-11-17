@@ -78,3 +78,99 @@ export function clientIp(req: { headers: { get(name: string): string | null } })
 export function isPublicRoomId(id: string): boolean {
   return /^[a-z0-9][a-z0-9-]{2,39}$/.test(id);
 }
+
+// ---------- usage stats (for the private /stats dashboard) ----------
+
+/** Cloudflare Durable Objects free plan, per UTC day. */
+export const FREE_TIER = { requests: 100_000, gbSeconds: 13_000 } as const;
+/** Each Durable Object instance is billed at 128 MB while active. */
+const GB_PER_ACTIVE_SECOND = 128 / 1024;
+/** Incoming WebSocket messages are billed 20:1 as requests. */
+const WS_MESSAGES_PER_REQUEST = 20;
+
+export interface DayStats {
+  day: string;
+  roomsCreated: number;
+  connects: number;
+  /** Creates and connects refused by the limits above. */
+  blocked: number;
+  /** Requests handled by the limiter itself (it is a Durable Object too). */
+  limiterRequests: number;
+  /** HTTP requests rooms answered (create, "does it exist?"). */
+  roomHttp: number;
+  wsMessages: number;
+  activeSeconds: number;
+  /** Games started, by game id. */
+  games: Record<string, number>;
+}
+
+/** What a room sends when it goes idle: its usage since it woke up. */
+export interface RoomReport {
+  room: string;
+  http: number;
+  messages: number;
+  activeMs: number;
+  games: Record<string, number>;
+}
+
+const emptyDay = (day: string): DayStats => ({
+  day,
+  roomsCreated: 0,
+  connects: 0,
+  blocked: 0,
+  limiterRequests: 0,
+  roomHttp: 0,
+  wsMessages: 0,
+  activeSeconds: 0,
+  games: {},
+});
+
+/** Estimated billable usage for a day, against the free plan. */
+export function usageOf(d: DayStats) {
+  const requests = d.limiterRequests + d.connects + d.roomHttp + Math.ceil(d.wsMessages / WS_MESSAGES_PER_REQUEST);
+  const gbSeconds = Math.round(d.activeSeconds * GB_PER_ACTIVE_SECOND);
+  return { requests, gbSeconds, requestsPct: requests / FREE_TIER.requests, gbSecondsPct: gbSeconds / FREE_TIER.gbSeconds };
+}
+
+export class Stats {
+  days: DayStats[] = [];
+  /** Rooms currently awake (opened, no idle report yet), with when they opened. */
+  open = new Map<string, number>();
+
+  today(now: number): DayStats {
+    const day = new Date(now).toISOString().slice(0, 10);
+    let d = this.days[this.days.length - 1];
+    if (!d || d.day !== day) {
+      d = emptyDay(day);
+      this.days.push(d);
+      if (this.days.length > 14) this.days.splice(0, this.days.length - 14);
+    }
+    return d;
+  }
+
+  report(r: RoomReport, now: number) {
+    const d = this.today(now);
+    d.roomHttp += r.http;
+    d.wsMessages += r.messages;
+    d.activeSeconds += Math.round(r.activeMs / 1000);
+    for (const [g, n] of Object.entries(r.games)) d.games[g] = (d.games[g] ?? 0) + n;
+    this.open.delete(r.room);
+  }
+
+  snapshot(now: number) {
+    // Rooms that never reported (evicted mid-session) stop counting as open after 6 h.
+    for (const [room, at] of this.open) if (now - at > 6 * 3600_000) this.open.delete(room);
+    const today = this.today(now);
+    // Awake rooms haven't reported yet: count their time so far.
+    let live = 0;
+    for (const at of this.open.values()) live += (now - at) / 1000;
+    const todayLive = { ...today, activeSeconds: today.activeSeconds + Math.round(live) };
+    return {
+      now,
+      freeTier: FREE_TIER,
+      openRooms: this.open.size,
+      today: { ...todayLive, ...usageOf(todayLive) },
+      days: this.days.map((d) => ({ ...d, ...usageOf(d) })),
+    };
+  }
+}
