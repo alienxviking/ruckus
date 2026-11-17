@@ -40,7 +40,10 @@ function scatter(n: number, seed: number) {
 const DOODLE_SPOTS = scatter(18, 1);
 const SPARKS = scatter(22, 3);
 
-export function HeroBackdrop({ variant = "hero", calm }: { variant?: "hero" | "room"; calm?: boolean } = {}) {
+export function HeroBackdrop({
+  variant = "hero",
+  calm,
+}: { variant?: "hero" | "room"; calm?: boolean } = {}) {
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -63,60 +66,80 @@ export function HeroBackdrop({ variant = "hero", calm }: { variant?: "hero" | "r
   }, []);
 
   return (
-    <div ref={ref} aria-hidden className={`hero-field bd-mix ${variant === "room" ? "bd-room" : ""} ${calm ? "bd-calm" : ""}`}>
+    <div
+      ref={ref}
+      aria-hidden
+      className={`hero-field bd-mix ${variant === "room" ? "bd-room" : ""} ${calm ? "bd-calm" : ""}`}
+    >
       {/* 1. Lava-lamp colour wash under a print halftone. */}
       {[0, 1, 2, 3].map((i) => (
-        <span key={`b${i}`} className={`bd-blob bd-blob-${i}`} style={{ backgroundColor: C[i] }} />
+        <span
+          key={`b${i}`}
+          className={`bd-blob bd-blob-${i}`}
+          style={{ backgroundColor: C[i] }}
+        />
       ))}
       <span className="bd-halftone" />
-      {/* 2. Stage lights sweeping through, and a few twinkles. */}
-      {[0, 1, 2, 3].map((i) => (
-        <span
-          key={`l${i}`}
-          className="bd-beam"
-          style={
-            {
-              left: `${12 + i * 25}%`,
-              "--c": C[i],
-              animationDuration: `${6 + i * 1.7}s`,
-              animationDelay: `${-i * 1.3}s`,
-            } as React.CSSProperties
-          }
-        />
-      ))}
-      {SPARKS.map((r, i) => (
-        <span
-          key={`s${i}`}
-          className="bd-spark"
-          style={{
-            left: `${(r(1) * 100).toFixed(1)}%`,
-            top: `${(r(2) * 90).toFixed(1)}%`,
-            backgroundColor: C[i % C.length],
-            animationDelay: `${(-r(3) * 3).toFixed(2)}s`,
-          }}
-        />
-      ))}
-      {/* 3. Marker doodles on top, boiling like stop-motion. */}
-      {DOODLE_SPOTS.map((r, i) => (
-        <span
-          key={`d${i}`}
-          className={`bd-doodle ${i >= 9 ? "bd-more" : ""}`}
-          style={
-            {
-              left: `${(r(1) * 96).toFixed(1)}%`,
-              top: `${(r(2) * 92).toFixed(1)}%`,
-              width: `${Math.round(30 + r(3) * 40)}px`,
-              color: C[i % C.length],
-              "--rot": `${Math.round((r(4) - 0.5) * 70)}deg`,
-              animationDelay: `${(-r(5) * 2).toFixed(2)}s, ${(-r(6) * 9).toFixed(2)}s`,
-            } as React.CSSProperties
-          }
-        >
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
-            <path d={DOODLES[i % DOODLES.length]} />
-          </svg>
-        </span>
-      ))}
+      {/* 2. Stage lights sweeping through, and a few twinkles (landing page only). */}
+      {variant === "hero" && (
+        <>
+          {[0, 1, 2, 3].map((i) => (
+            <span
+              key={`l${i}`}
+              className="bd-beam"
+              style={
+                {
+                  left: `${12 + i * 25}%`,
+                  "--c": C[i],
+                  animationDuration: `${6 + i * 1.7}s`,
+                  animationDelay: `${-i * 1.3}s`,
+                } as React.CSSProperties
+              }
+            />
+          ))}
+          {SPARKS.map((r, i) => (
+            <span
+              key={`s${i}`}
+              className="bd-spark"
+              style={{
+                left: `${(r(1) * 100).toFixed(1)}%`,
+                top: `${(r(2) * 90).toFixed(1)}%`,
+                backgroundColor: C[i % C.length],
+                animationDelay: `${(-r(3) * 3).toFixed(2)}s`,
+              }}
+            />
+          ))}
+        </>
+      )}
+      {/* 3. Marker doodles on top, boiling like stop-motion (landing page only). */}
+      {variant === "hero" &&
+        DOODLE_SPOTS.map((r, i) => (
+          <span
+            key={`d${i}`}
+            className={`bd-doodle ${i >= 9 ? "bd-more" : ""}`}
+            style={
+              {
+                left: `${(r(1) * 96).toFixed(1)}%`,
+                top: `${(r(2) * 92).toFixed(1)}%`,
+                width: `${Math.round(30 + r(3) * 40)}px`,
+                color: C[i % C.length],
+                "--rot": `${Math.round((r(4) - 0.5) * 70)}deg`,
+                animationDelay: `${(-r(5) * 2).toFixed(2)}s, ${(-r(6) * 9).toFixed(2)}s`,
+              } as React.CSSProperties
+            }
+          >
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.4"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d={DOODLES[i % DOODLES.length]} />
+            </svg>
+          </span>
+        ))}
     </div>
   );
 }
