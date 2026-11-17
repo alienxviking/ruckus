@@ -15,6 +15,7 @@ interface Day {
   wsMessages: number;
   activeSeconds: number;
   games: Record<string, number>;
+  ratings?: Record<string, { up: number; down: number }>;
   requests: number;
   gbSeconds: number;
   requestsPct: number;
@@ -228,6 +229,7 @@ export function StatsDashboard() {
           </ul>
         </div>
       </section>
+      <Ratings days={data.days} />
       <section className="card mt-6 p-4">
         <h2 className="label mb-3 flex items-center gap-2">
           <Bug aria-hidden className="size-3.5" strokeWidth={2} /> Crashes in players&apos; browsers
@@ -339,5 +341,47 @@ function Stat({
         {fmt.format(value)}
       </div>
     </div>
+  );
+}
+
+/** 👍/👎 per game over the stored days: most-rated first, with the share of thumbs up. */
+function Ratings({ days }: { days: Day[] }) {
+  const sum: Record<string, { up: number; down: number }> = {};
+  for (const d of days)
+    for (const [g, r] of Object.entries(d.ratings ?? {})) {
+      const t = (sum[g] ??= { up: 0, down: 0 });
+      t.up += r.up;
+      t.down += r.down;
+    }
+  const rows = Object.entries(sum)
+    .map(([id, r]) => ({ id, ...r, n: r.up + r.down, pct: r.up / Math.max(1, r.up + r.down) }))
+    .sort((a, b) => b.n - a.n);
+  return (
+    <section className="card mt-6 p-4">
+      <h2 className="label mb-3">Ratings · last {days.length} days (👍 share, most rated first)</h2>
+      {rows.length ? (
+        <ul className="grid gap-x-6 gap-y-2 md:grid-cols-2">
+          {rows.map((r) => {
+            const g = CATALOG_BY_ID[r.id];
+            return (
+              <li key={r.id} className="flex items-center gap-3">
+                {g && <GameBadge id={g.id} accent={g.accent} size="sm" />}
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-sm font-semibold">{g?.name ?? r.id}</span>
+                  <span className="mt-1 block h-2 overflow-hidden rounded-full bg-panel-2">
+                    <span className="block h-full rounded-full" style={{ width: `${r.pct * 100}%`, background: level(1 - r.pct) }} />
+                  </span>
+                </span>
+                <span className="w-24 text-right font-mono text-xs">
+                  👍 {r.up} · 👎 {r.down}
+                </span>
+              </li>
+            );
+          })}
+        </ul>
+      ) : (
+        <p className="text-sm text-muted">No ratings yet. They appear after people finish games.</p>
+      )}
+    </section>
   );
 }

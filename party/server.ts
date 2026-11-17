@@ -21,7 +21,7 @@ import { CATALOG, CATALOG_BY_ID } from "../games/catalog";
 import { GAME_DEFS } from "../games/server-registry";
 import { GAME_CONFIG } from "../games/config";
 import { validSetting, type Settings } from "../shared/settings";
-import { cleanErrorReport, clientIp, isPublicRoomId, Limiter, LIMITS_ROOM, Stats, type ErrorEntry, type LimitKind, type RoomReport } from "./limits";
+import { addRating, cleanErrorReport, clientIp, isPublicRoomId, Limiter, LIMITS_ROOM, Stats, type ErrorEntry, type LimitKind, type RoomReport } from "./limits";
 
 const HOST_HANDOFF_MS = 8_000; // host must be gone this long before someone else takes over
 const REMOVE_AFTER_MS = 60_000; // disconnected lobby players disappear after this
@@ -912,11 +912,17 @@ export class RuckusRoom extends Server<Env> {
     if (req.method === "GET") return json(this.stats.snapshot(now));
     if (req.method !== "POST") return new Response("Not found", { status: 404 });
     const body = (await req.json().catch(() => null)) as
-      | { kind?: LimitKind; ip?: string | null; room?: string; report?: RoomReport; error?: unknown }
+      | { kind?: LimitKind; ip?: string | null; room?: string; report?: RoomReport; error?: unknown; rating?: { game?: unknown; v?: unknown } }
       | null;
     let verdict: { ok: true } | { ok: false; reason: string } = { ok: true };
     if (body?.report && typeof body.report.room === "string") {
       this.stats.report(body.report, now);
+    } else if (body?.rating) {
+      const g = body.rating.game;
+      const v = body.rating.v;
+      const known = typeof g === "string" && !!CATALOG_BY_ID[g];
+      const ok = known && (v === 1 || v === -1) && (typeof body.ip !== "string" || this.limiter.check("rate", body.ip, now).ok);
+      if (ok) addRating(day, g as string, v as number);
     } else if (body?.error) {
       const e = cleanErrorReport(body.error);
       const ok = !e ? false : typeof body.ip === "string" ? this.limiter.check("error", body.ip, now).ok : true;
@@ -1025,6 +1031,7 @@ export default {
     const url = new URL(request.url);
     if (url.pathname === "/stats") return statsRequest(request, env);
     if (url.pathname === "/errors") return errorsRequest(request, env);
+    if (url.pathname === "/rate") return rateRequest(request, env);
     const res = await routePartykitRequest(request, env, {
       cors: true,
       onBeforeConnect: async (req, lobby) => {
@@ -1054,6 +1061,31 @@ async function statsRequest(request: Request, env: Env): Promise<Response> {
   const stub = await getServerByName(env.Main, LIMITS_ROOM);
   const res = await stub.fetch(new Request("https://limits.internal/", { method: "GET" }));
   return new Response(await res.text(), { headers: { ...cors, "Content-Type": "application/json", "Cache-Control": "no-store" } });
+}
+
+/** A 👍/👎 after a game: POST /rate {game, v: 1 | -1}. Rate limited per IP; anonymous. */
+async function rateRequest(request: Request, env: Env): Promise<Response> {
+  const cors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "Content-Type", "Access-Control-Allow-Methods": "POST, OPTIONS" };
+  if (request.method === "OPTIONS") return new Response(null, { headers: cors });
+  if (request.method !== "POST") return new Response("Not found", { status: 404, headers: cors });
+  const text = await request.text().catch(() => "");
+  if (text.length > 200) return new Response(null, { status: 413, headers: cors });
+  let rating: { game?: unknown; v?: unknown } | null = null;
+  try {
+    rating = JSON.parse(text);
+  } catch {
+    return new Response(null, { status: 400, headers: cors });
+  }
+  if (!rating || typeof rating.game !== "string" || !CATALOG_BY_ID[rating.game] || (rating.v !== 1 && rating.v !== -1)) {
+    return new Response(null, { status: 400, headers: cors });
+  }
+  try {
+    const stub = await getServerByName(env.Main, LIMITS_ROOM);
+    await stub.fetch(new Request("https://limits.internal/", { method: "POST", body: JSON.stringify({ rating, ip: clientIp(request) }) }));
+  } catch {
+    /* best effort */
+  }
+  return new Response(null, { status: 204, headers: cors });
 }
 
 /** Crash reports from browsers: POST /errors (small JSON). Rate limited per IP; never fails loudly. */

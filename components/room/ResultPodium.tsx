@@ -3,6 +3,7 @@
 import type { Player, RoomView } from "@/shared/types";
 import { Avatar } from "../Avatar";
 import { Confetti } from "../Confetti";
+import { RateGame } from "../RateGame";
 import { Rux } from "../Rux";
 
 /** A cheeky one-liner from Rux, picked by how it went for you (stable per game). */
@@ -119,6 +120,11 @@ export function ResultPodium({
             </div>
           )}
           <div className="mt-4 flex flex-wrap items-center justify-center gap-2 md:justify-start">{children}</div>
+          {played && (
+            <div className="mt-3 flex justify-center md:justify-start">
+              <RateGame gameId={room.gameId} gameKey={`${room.code}-${room.gameSeq}`} />
+            </div>
+          )}
         </div>
       </div>
     </div>

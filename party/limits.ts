@@ -6,7 +6,7 @@
 
 export const LIMITS_ROOM = "__limits";
 
-export type LimitKind = "create" | "connect" | "error";
+export type LimitKind = "create" | "connect" | "error" | "rate";
 
 interface Rule {
   windowMs: number;
@@ -24,6 +24,11 @@ export const RULES: Record<LimitKind, Rule[]> = {
   connect: [
     { windowMs: 60_000, max: 40 },
     { windowMs: 10 * 60_000, max: 200 },
+  ],
+  // Game ratings (one tap after each game): plenty for a long game night.
+  rate: [
+    { windowMs: 10 * 60_000, max: 30 },
+    { windowMs: 24 * 60 * 60_000, max: 200 },
   ],
   // Crash reports from browsers: a broken page reports a few, a script gets nowhere.
   error: [
@@ -109,6 +114,8 @@ export interface DayStats {
   activeSeconds: number;
   /** Games started, by game id. */
   games: Record<string, number>;
+  /** 👍/👎 after games, by game id. */
+  ratings?: Record<string, { up: number; down: number }>;
 }
 
 /** What a room sends when it goes idle: its usage since it woke up. */
@@ -171,6 +178,13 @@ export function cleanErrorReport(raw: unknown): ErrorReport | null {
     game: /^[a-z]{1,20}$/.test(String(r.game)) ? String(r.game) : "",
     browser: str(r.browser, 40),
   };
+}
+
+/** Records one 👍 (+1) or 👎 (-1) for a game in today's stats. */
+export function addRating(d: DayStats, game: string, v: number) {
+  const r = ((d.ratings ??= {})[game] ??= { up: 0, down: 0 });
+  if (v > 0) r.up++;
+  else r.down++;
 }
 
 export class Stats {

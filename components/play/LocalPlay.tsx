@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import { Bot, Minus, Plus, Trophy, User, Users } from "lucide-react";
+import { Bot, Minus, Plus, User, Users } from "lucide-react";
 import { CATALOG_BY_ID } from "@/games/catalog";
 import { GAME_CONFIG } from "@/games/config";
 import { readSettings, type SettingDef, type Settings } from "@/shared/settings";
@@ -14,6 +14,8 @@ import { useCreateRoom } from "@/lib/useCreateRoom";
 import { Avatar } from "../Avatar";
 import { Confetti } from "../Confetti";
 import { CoverArt } from "../CoverArt";
+import { RateGame } from "../RateGame";
+import { Rux } from "../Rux";
 import { Magnetic } from "../Magnetic";
 import { PlayerChip } from "../game-ui";
 import { HowToPlay } from "../room/HowToPlay";
@@ -308,32 +310,25 @@ function LocalResult({
   return (
     <div
       role="status"
-      className="card result-banner relative flex flex-col gap-4 p-4 sm:p-5"
+      className="stk result-banner relative flex flex-col gap-4 overflow-hidden p-4 sm:p-5"
       style={{
-        borderColor: a + "aa",
-        background: `radial-gradient(90% 140% at 0% 0%, ${a}2a, transparent 60%), var(--color-panel)`,
-        boxShadow: `0 0 0 1px ${a}33, 0 20px 50px -24px ${a}`,
+        background: `radial-gradient(90% 140% at 50% 0%, ${a}33, transparent 65%), var(--color-panel)`,
+        boxShadow: `6px 7px 0 color-mix(in oklab, ${a} 55%, #000)`,
       }}
     >
-      <span aria-hidden className="banner-sweep" />
       {(iWon || (solo && scores?.[ME])) && <Confetti pieces={36} />}
       <div className="flex flex-col items-center gap-3 text-center sm:flex-row sm:text-left">
-        <span
-          aria-hidden
-          className="game-badge animate-trophy size-14 shrink-0 rounded-xl"
-          style={{ "--accent": "var(--color-brand-2)" } as React.CSSProperties}
-          data-sheen="true"
-        >
-          <Trophy className="glyph" strokeWidth={1.75} />
+        <span className="slap w-20 shrink-0 sm:w-24" style={{ "--tilt": "-6deg" } as React.CSSProperties}>
+          <Rux mood={solo || iWon ? "shout" : "wow"} megaphone className="w-full" />
         </span>
         <div className="min-w-0 flex-1">
-          <div className={`label mb-1 ${iWon ? "text-brand-2" : ""}`}>
-            {solo ? "Finished" : iWon ? "You won!" : "Game over"}
+          <div className="marker text-2xl leading-none" style={{ color: a }}>
+            {solo ? "shabaash! done ✅" : iWon ? "tu toh chha gaya! 🔥" : "agli baar pakka 🤞"}
           </div>
-          <div className="font-display text-xl font-bold tracking-tight sm:text-2xl">{result.headline}</div>
+          <div className="mt-1 font-hero text-xl leading-tight font-extrabold tracking-[-0.02em] sm:text-2xl">{result.headline}</div>
           {solo && scores?.[ME] !== undefined && (
-            <div className="mt-1 font-mono text-sm text-muted">
-              Your score <span className="text-brand-2">{scores[ME].toLocaleString("en-US")}</span>
+            <div className="mt-1 text-sm font-semibold text-muted">
+              Your score <span className="font-hero text-lg text-brand-2">{scores[ME].toLocaleString("en-US")}</span>
             </div>
           )}
         </div>
@@ -357,11 +352,9 @@ function LocalResult({
         </div>
       )}
       <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-start">
-        <Magnetic className="col-span-2 sm:col-span-1">
-          <button className="btn btn-primary w-full" onClick={onAgain}>
-            Play again
-          </button>
-        </Magnetic>
+        <button className="stk-btn col-span-2 px-5 py-2.5 text-lg sm:col-span-1" onClick={onAgain}>
+          Play again
+        </button>
         <button className="btn" onClick={onSetup}>
           Change setup
         </button>
@@ -371,6 +364,9 @@ function LocalResult({
         <div className="col-span-2 sm:col-span-1">
           <FriendsButton gameId={gameId} className="w-full" />
         </div>
+      </div>
+      <div className="flex justify-center sm:justify-start">
+        <RateGame gameId={gameId} gameKey={`local-${engine.id}`} />
       </div>
     </div>
   );
