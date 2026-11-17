@@ -5,7 +5,8 @@ import { GAME_CLIENTS } from "@/games/client-registry";
 import type { Player, RoomView } from "@/shared/types";
 import type { useRoom } from "@/lib/useRoom";
 import { Trophy } from "lucide-react";
-import { PlayerChip } from "../game-ui";
+import { PlayerChip, useSecondsLeft } from "../game-ui";
+import { QuickPlaySwitch } from "./Lobby";
 import { GameBadge } from "../GameBadge";
 import { Magnetic } from "../Magnetic";
 import { Confetti } from "../Confetti";
@@ -82,6 +83,8 @@ export function GameStage({
       </div>
 
       {room.result && <ResultBanner room={room} byId={byId} me={me} isHost={isHost} r={r} accent={meta?.accent} />}
+      {room.result && (room.next || (isHost && room.autoNext)) && <UpNext room={room} isHost={isHost} r={r} />}
+      {!isPlayer && !room.result && <SpectatorNote full={!!meta && room.participants.length >= meta.maxPlayers} max={meta?.maxPlayers} />}
 
       <div className="min-h-[60vh]">
         {GameClient ? (
@@ -160,7 +163,7 @@ function ResultBanner({
         </div>
       </div>
       {isHost ? (
-        <div className="flex gap-2">
+        <div className="flex flex-wrap items-center justify-center gap-2">
           <Magnetic>
             <button className="btn btn-primary" onClick={() => r.send({ t: "start" })}>
               Play again
@@ -169,10 +172,74 @@ function ResultBanner({
           <button className="btn" onClick={() => r.send({ t: "lobby" })}>
             Pick another
           </button>
+          {!room.autoNext && (
+            <div className="w-36">
+              <QuickPlaySwitch compact on={room.autoNext} onChange={(on) => r.send({ t: "auto", on })} />
+            </div>
+          )}
         </div>
       ) : (
         <span className="font-mono text-xs text-muted">Waiting for the host…</span>
       )}
+    </div>
+  );
+}
+
+/** Quick play's countdown to the next game, with host controls. */
+function UpNext({ room, isHost, r }: { room: RoomView; isHost: boolean; r: ReturnType<typeof useRoom> }) {
+  const next = room.next ? CATALOG_BY_ID[room.next.gameId] : undefined;
+  const secs = useSecondsLeft(room.next?.at, r.serverNow);
+  return (
+    <div className="card animate-rise flex flex-wrap items-center gap-3 px-4 py-3">
+      {next ? (
+        <>
+          <GameBadge key={next.id} id={next.id} accent={next.accent} size="sm" className="animate-pop" />
+          <div className="min-w-0 flex-1">
+            <div className="label">Up next</div>
+            <div className="truncate font-display font-bold">
+              {next.name}{" "}
+              <span className="font-mono text-sm font-medium text-muted">
+                in <span className="text-brand-2">{secs}s</span>
+              </span>
+            </div>
+          </div>
+          {isHost && (
+            <div className="flex gap-2">
+              <button className="btn btn-primary px-3 py-1.5 text-sm" onClick={() => r.send({ t: "start", gameId: next.id })}>
+                Start now
+              </button>
+              <button className="btn px-3 py-1.5 text-sm" onClick={() => r.send({ t: "auto", on: false })}>
+                Stop
+              </button>
+            </div>
+          )}
+        </>
+      ) : (
+        <div className="flex-1 text-sm text-muted">No game fits this group size for quick play.</div>
+      )}
+    </div>
+  );
+}
+
+/** For people watching: why they're not playing, and that they're in next time. */
+function SpectatorNote({ full, max }: { full: boolean; max?: number }) {
+  return (
+    <div className="card animate-rise flex items-center gap-3 border-brand-2/30 px-4 py-2.5 text-sm">
+      <span aria-hidden className="relative flex size-2 shrink-0">
+        <span className="absolute inset-0 rounded-full bg-brand-2 motion-safe:animate-ping" />
+        <span className="relative size-2 rounded-full bg-brand-2" />
+      </span>
+      <span className="text-muted">
+        {full ? (
+          <>
+            This game is full ({max} max). <b className="text-text">You get a seat in the next one.</b>
+          </>
+        ) : (
+          <>
+            You joined mid-game. <b className="text-text">You&apos;re in from the next round.</b> Enjoy the show!
+          </>
+        )}
+      </span>
     </div>
   );
 }

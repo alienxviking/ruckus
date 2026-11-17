@@ -99,7 +99,7 @@ try {
   const code = "dsg" + Math.random().toString(36).slice(2, 6);
   await fetch(`http://${PARTY}/parties/main/${code}`, { method: "POST" });
   const bot = (id, name) => {
-    const ws = new WebSocket(`ws://${PARTY}/parties/main/${code}?_pk=${id}`);
+    const ws = new WebSocket(`ws://${PARTY}/parties/main/${code}?_pk=${id}.${Math.random().toString(36).slice(2, 8)}`);
     const c = { id, ws, room: null, view: null };
     ws.addEventListener("message", (e) => {
       const m = JSON.parse(e.data);

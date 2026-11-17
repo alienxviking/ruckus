@@ -16,7 +16,7 @@ if (!created.ok) throw new Error("couldn't create the room: " + JSON.stringify(c
 }
 
 function client(id, name) {
-  const ws = new WebSocket(`ws://${HOST}/parties/main/${room}?_pk=${id}`);
+  const ws = new WebSocket(`ws://${HOST}/parties/main/${room}?_pk=${id}.${Math.random().toString(36).slice(2, 8)}`);
   const c = { id, ws, room: null, view: null, events: [], waiters: [] };
   c.received = [];
   c.closed = new Promise((r) => ws.addEventListener("close", (e) => r(e.code)));
@@ -78,6 +78,9 @@ console.log("✓ game started");
   if (JSON.stringify(a.view.board) !== boardBefore) throw new Error("impostor's move was applied");
   if (a.room.chat.some((m) => m.text === "I am Bob")) throw new Error("impostor's chat was accepted");
   if (a.room.players.find((p) => p.id === "bob1")?.connected !== true) throw new Error("real Bob affected");
+  // Bob's own socket must still get updates (sockets never share an id on the server).
+  a.send({ t: "chat", text: "still there, Bob?" });
+  await b.until(() => b.room.chat.some((m) => m.text === "still there, Bob?"));
   console.log("✓ impostor with a stolen id was rejected and saw nothing:", imp.rejected);
 }
 
@@ -100,6 +103,30 @@ while (!a.room.result && moves < 200) {
   moves++;
 }
 console.log("✓ match finished:", a.room.result?.headline, "| wins:", JSON.stringify(a.room.wins));
+
+// Quick play: turning it on after a result queues a fitting game, which starts by itself.
+{
+  const seq = a.room.gameSeq;
+  b.send({ t: "auto", on: true }); // not host: ignored
+  a.send({ t: "auto", on: true });
+  await b.until(() => b.room.autoNext && b.room.next).catch((e) => { console.log("room:", JSON.stringify({ auto: b.room.autoNext, next: b.room.next, result: !!b.room.result, chat: b.room.chat.slice(-3) })); throw e; });
+  const next = b.room.next;
+  if (next.gameId === "tictactoe") throw new Error("quick play repeated the game just played");
+  console.log("✓ quick play queued", next.gameId, "in", Math.round((next.at - Date.now()) / 1000), "s");
+  await b.until(() => b.room.gameSeq === seq + 1 && b.room.phase === "playing" && b.room.gameId === next.gameId, 16000);
+  console.log("✓ quick play started", b.room.gameId, "by itself");
+  // Someone joining mid-game is told they play from the next round.
+  const c = client("cara1", "Cara");
+  await c.open;
+  c.hello();
+  await a.until(() => a.room.chat.some((m) => m.text === "Cara joined · playing from the next round"));
+  if (a.room.participants.includes("cara1")) throw new Error("late joiner was seated mid-game");
+  console.log("✓ late joiner watches, told they're in next round");
+  c.ws.close();
+  await c.closed;
+  a.send({ t: "auto", on: false });
+  await b.until(() => !b.room.autoNext);
+}
 
 // Reconnect keeps identity
 b.ws.close();

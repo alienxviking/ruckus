@@ -13,13 +13,14 @@ import {
   type RoomWire,
   type ServerMsg,
 } from "../shared/types";
-import { CATALOG_BY_ID } from "../games/catalog";
+import { CATALOG, CATALOG_BY_ID } from "../games/catalog";
 import { GAME_DEFS } from "../games/server-registry";
 import { clientIp, isPublicRoomId, Limiter, LIMITS_ROOM, type LimitKind } from "./limits";
 
 const HOST_HANDOFF_MS = 8_000; // host must be gone this long before someone else takes over
 const REMOVE_AFTER_MS = 60_000; // disconnected lobby players disappear after this
 const EMPTY_ROOM_GRACE_MS = 30_000; // a running game survives everyone refreshing at once
+const AUTO_NEXT_MS = 12_000; // quick play: pause between a result and the next game
 const CHAT_LIMIT = 80;
 const CHAT_BURST = 6; // chat messages allowed per window, per player
 const CHAT_WINDOW_MS = 5_000;
@@ -61,6 +62,15 @@ interface ActiveGame {
 type ConnState = { verified: true };
 type Conn = Connection<ConnState>;
 
+/**
+ * The player behind a socket. Each browser tab connects as "<playerId>.<random>", so sockets
+ * never share an id: PartyServer keeps one connection per id, and a shared (public) player id
+ * would let a second socket knock the first out of the room. Old clients send the bare id.
+ */
+function pid(conn: { id: string }): string {
+  return conn.id.split(".")[0];
+}
+
 export class RuckusRoom extends Server<Env> {
   static options = { hibernate: false };
 
@@ -96,6 +106,14 @@ export class RuckusRoom extends Server<Env> {
   chatTimes = new Map<string, number[]>();
   /** Last game view JSON sent to each player id: unchanged views aren't re-sent. */
   lastView = new Map<string, string>();
+  /** Quick play: start a fitting game automatically after each result. */
+  autoNext = false;
+  next: { gameId: string; at: number } | null = null;
+  nextTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Recently played game ids, newest last (quick play avoids repeats). */
+  recent: string[] = [];
+  /** Who played the last game (a full game seats those who sat out first). */
+  lastPlayed: string[] = [];
 
 
   // ---------- connection lifecycle ----------
@@ -148,15 +166,15 @@ export class RuckusRoom extends Server<Env> {
       if (this.sockets.size === 0 && this.emptySince === null) this.emptySince = Date.now();
       return;
     }
-    const left = (this.sockets.get(conn.id) ?? 1) - 1;
+    const left = (this.sockets.get(pid(conn)) ?? 1) - 1;
     if (left > 0) {
-      this.sockets.set(conn.id, left);
+      this.sockets.set(pid(conn), left);
       return;
     }
-    this.sockets.delete(conn.id);
+    this.sockets.delete(pid(conn));
     this.buckets.delete(conn.id);
     if (this.sockets.size === 0) this.emptySince = Date.now();
-    const p = this.players.get(conn.id);
+    const p = this.players.get(pid(conn));
     if (!p) return;
     p.connected = false;
     this.disconnectedAt.set(p.id, Date.now());
@@ -195,7 +213,7 @@ export class RuckusRoom extends Server<Env> {
       return;
     }
 
-    const player = this.players.get(sender.id);
+    const player = this.players.get(pid(sender));
     if (!player) return;
 
     switch (msg.t) {
@@ -204,9 +222,11 @@ export class RuckusRoom extends Server<Env> {
       case "pick":
         return this.handlePick(player, msg.gameId);
       case "start":
-        return this.handleStart(player, sender);
+        return this.handleStart(player, sender, msg.gameId);
       case "lobby":
         return this.handleLobby(player);
+      case "auto":
+        return this.handleAuto(player, msg.on);
       case "act":
         return this.handleAct(player, msg.a);
     }
@@ -217,7 +237,7 @@ export class RuckusRoom extends Server<Env> {
   handleHello(conn: Conn, msg: Extract<ClientMsg, { t: "hello" }>) {
     const key = typeof msg.key === "string" && msg.key.length >= 16 && msg.key.length <= 64 ? msg.key : null;
     if (!key) return this.reject(conn, "Please refresh the page to join.");
-    const known = this.keys.get(conn.id);
+    const known = this.keys.get(pid(conn));
     if (known !== undefined && known !== key) {
       return this.reject(conn, "That player is already in this room on another device.");
     }
@@ -232,7 +252,7 @@ export class RuckusRoom extends Server<Env> {
     if (!this.created && this.players.size === 0) {
       return this.reject(conn, `There's no room with the code ${this.name.toUpperCase()}. Check the code, or create a new room.`);
     }
-    const existing = this.players.get(conn.id);
+    const existing = this.players.get(pid(conn));
     if (!existing && this.players.size >= MAX_PLAYERS) {
       return this.reject(conn, `This room is full (${MAX_PLAYERS} players).`);
     }
@@ -240,35 +260,35 @@ export class RuckusRoom extends Server<Env> {
     // Verify this socket (first hello on it).
     if (!conn.state?.verified) {
       conn.setState({ verified: true });
-      this.sockets.set(conn.id, (this.sockets.get(conn.id) ?? 0) + 1);
+      this.sockets.set(pid(conn), (this.sockets.get(pid(conn)) ?? 0) + 1);
       this.emptySince = null;
     }
-    this.keys.set(conn.id, key);
+    this.keys.set(pid(conn), key);
 
     if (existing) {
       const wasAway = !existing.connected;
       Object.assign(existing, { name, color, avatar, connected: true });
-      this.disconnectedAt.delete(conn.id);
-      if (wasAway && this.game && this.participants.includes(conn.id)) {
+      this.disconnectedAt.delete(pid(conn));
+      if (wasAway && this.game && this.participants.includes(pid(conn))) {
         try {
-          this.game.def.playerReturned?.(this.game.state, conn.id, this.game.ctx);
+          this.game.def.playerReturned?.(this.game.state, pid(conn), this.game.ctx);
         } catch (err) {
           console.error(`[${this.game.def.id}] playerReturned failed`, err);
         }
         this.broadcastGame();
       }
     } else {
-      this.players.set(conn.id, { id: conn.id, name, color, avatar, connected: true });
-      this.system(`${name} joined`, avatar);
+      this.players.set(pid(conn), { id: pid(conn), name, color, avatar, connected: true });
+      this.system(this.game ? `${name} joined · playing from the next round` : `${name} joined`, avatar);
     }
 
-    if (!this.hostId || !this.players.get(this.hostId)) this.hostId = conn.id;
+    if (!this.hostId || !this.players.get(this.hostId)) this.hostId = pid(conn);
     this.broadcastRoom();
     // The (re)joining socket gets a full sync: the chat history and the current game view.
     this.sendTo(conn, { t: "room", room: this.roomView(true), now: Date.now() });
     if (this.game) {
-      const view = JSON.stringify(this.viewFor(this.game, conn.id) ?? null);
-      this.lastView.set(conn.id, view);
+      const view = JSON.stringify(this.viewFor(this.game, pid(conn)) ?? null);
+      this.lastView.set(pid(conn), view);
       conn.send(gamePayload(view, Date.now()));
     }
   }
@@ -292,24 +312,32 @@ export class RuckusRoom extends Server<Env> {
     this.broadcastRoom();
   }
 
-  handleStart(player: Player, conn: Conn) {
+  handleStart(player: Player, conn: Conn, gameId?: unknown) {
     if (player.id !== this.hostId) return;
+    if (typeof gameId === "string" && CATALOG_BY_ID[gameId] && GAME_DEFS[gameId]) this.gameId = gameId;
+    this.startGame(conn);
+  }
+
+  /** Starts the picked game. `conn` (the host) hears about problems; quick play passes none. */
+  startGame(conn?: Conn): boolean {
     const meta = CATALOG_BY_ID[this.gameId];
     const def = GAME_DEFS[this.gameId];
-    if (!meta || !def) return;
+    if (!meta || !def) return false;
 
     const ready = [...this.players.values()].filter((p) => p.connected);
     if (ready.length < meta.minPlayers) {
-      this.sendTo(conn, {
-        t: "err",
-        msg: `${meta.name} needs at least ${meta.minPlayers} players.`,
-        now: Date.now(),
-      });
-      return;
+      if (conn) this.sendTo(conn, { t: "err", msg: `${meta.name} needs at least ${meta.minPlayers} players.`, now: Date.now() });
+      return false;
     }
+    // Too many for this game? Whoever sat out the last one gets a seat first.
+    const last = new Set(this.lastPlayed);
+    const satOut = new Set(last.size ? ready.filter((p) => !last.has(p.id)).map((p) => p.id) : []);
+    ready.sort((a, b) => Number(satOut.has(b.id)) - Number(satOut.has(a.id)));
     this.stopGame();
+    this.clearNext();
 
     this.participants = ready.slice(0, meta.maxPlayers).map((p) => p.id);
+    this.lastPlayed = this.participants;
     this.result = null;
 
     const ctx = this.makeCtx();
@@ -320,10 +348,11 @@ export class RuckusRoom extends Server<Env> {
       console.error(`[${def.id}] setup failed`, err);
       this.participants = [];
       this.phase = "lobby";
-      this.sendTo(conn, { t: "err", msg: `${meta.name} failed to start. Try another game.`, now: Date.now() });
+      if (conn) this.sendTo(conn, { t: "err", msg: `${meta.name} failed to start. Try another game.`, now: Date.now() });
       this.broadcastRoom();
-      return;
+      return false;
     }
+    this.recent = [...this.recent.filter((id) => id !== this.gameId), this.gameId].slice(-6);
     this.phase = "playing";
     this.gameSeq += 1;
     this.lastView.clear();
@@ -348,16 +377,57 @@ export class RuckusRoom extends Server<Env> {
     );
     this.broadcastRoom();
     this.broadcastGame();
+    return true;
   }
 
   handleLobby(player: Player) {
     if (player.id !== this.hostId) return;
+    this.clearNext();
     this.stopGame();
     this.phase = "lobby";
     this.result = null;
     this.participants = [];
     this.pruneDeparted();
     this.broadcastRoom();
+  }
+
+  handleAuto(player: Player, on: unknown) {
+    if (player.id !== this.hostId || typeof on !== "boolean" || on === this.autoNext) return;
+    this.autoNext = on;
+    this.system(on ? "⏭️ Quick play on: the next game starts by itself" : "⏸️ Quick play off");
+    if (!on) this.clearNext();
+    else if (this.result) this.scheduleNext();
+    this.broadcastRoom();
+  }
+
+  /** Quick play: pick a game that fits who's here (avoiding recent ones) and start it soon. */
+  scheduleNext() {
+    this.clearNext();
+    const online = [...this.players.values()].filter((p) => p.connected).length;
+    const fits = CATALOG.filter((g) => GAME_DEFS[g.id] && online >= g.minPlayers && online <= g.maxPlayers);
+    const fresh = fits.filter((g) => !this.recent.includes(g.id));
+    const others = fits.filter((g) => g.id !== this.gameId);
+    const pool = fresh.length ? fresh : others.length ? others : fits;
+    if (!pool.length) return;
+    const pick = pool[Math.floor(Math.random() * pool.length)];
+    this.next = { gameId: pick.id, at: Date.now() + AUTO_NEXT_MS };
+    const seq = this.gameSeq;
+    this.nextTimer = setTimeout(() => {
+      this.nextTimer = null;
+      // Only if nothing changed meanwhile (no "Play again", no lobby, quick play still on).
+      if (!this.autoNext || this.gameSeq !== seq || !this.result || this.next?.gameId !== pick.id) return;
+      this.gameId = pick.id;
+      if (!this.startGame()) {
+        this.next = null;
+        this.broadcastRoom();
+      }
+    }, AUTO_NEXT_MS);
+  }
+
+  clearNext() {
+    if (this.nextTimer) clearTimeout(this.nextTimer);
+    this.nextTimer = null;
+    this.next = null;
   }
 
   handleAct(player: Player, action: unknown) {
@@ -389,8 +459,8 @@ export class RuckusRoom extends Server<Env> {
         const msg = JSON.stringify({ t: "ev", e: event, now: Date.now() } satisfies ServerMsg);
         for (const c of this.verifiedConnections()) {
           // A player may have several tabs open, so `to` matches every socket of that id.
-          if (opts?.to && c.id !== opts.to) continue;
-          if (opts?.except && c.id === opts.except) continue;
+          if (opts?.to && pid(c) !== opts.to) continue;
+          if (opts?.except && pid(c) === opts.except) continue;
           c.send(msg);
         }
       },
@@ -399,6 +469,7 @@ export class RuckusRoom extends Server<Env> {
         this.result = result;
         for (const id of result.winners) this.wins[id] = (this.wins[id] ?? 0) + 1;
         this.system(`🏆 ${result.headline}`);
+        if (this.autoNext) this.scheduleNext();
         // Keep ticking briefly so final animations settle, then stop.
         const g = this.game;
         setTimeout(() => {
@@ -436,15 +507,15 @@ export class RuckusRoom extends Server<Env> {
     // players whose view didn't change since the last send.
     const payloads = new Map<string, string | null>();
     for (const conn of this.verifiedConnections()) {
-      let payload = payloads.get(conn.id);
+      let payload = payloads.get(pid(conn));
       if (payload === undefined) {
-        const view = JSON.stringify(this.viewFor(game, conn.id) ?? null);
-        if (this.lastView.get(conn.id) === view) payload = null;
+        const view = JSON.stringify(this.viewFor(game, pid(conn)) ?? null);
+        if (this.lastView.get(pid(conn)) === view) payload = null;
         else {
-          this.lastView.set(conn.id, view);
+          this.lastView.set(pid(conn), view);
           payload = gamePayload(view, now);
         }
-        payloads.set(conn.id, payload);
+        payloads.set(pid(conn), payload);
       }
       if (payload !== null) conn.send(payload);
     }
@@ -474,6 +545,8 @@ export class RuckusRoom extends Server<Env> {
       wins: this.wins,
       result: this.result,
       gameSeq: this.gameSeq,
+      autoNext: this.autoNext,
+      next: this.next,
     };
   }
 
@@ -507,6 +580,7 @@ export class RuckusRoom extends Server<Env> {
     // (a room that only ever saw unverified sockets counts as empty too).
     if (this.sockets.size === 0 && this.emptySince === null) this.emptySince = now;
     if (this.sockets.size === 0 && this.emptySince !== null && now - this.emptySince > EMPTY_ROOM_GRACE_MS) {
+      this.clearNext();
       this.stopGame();
       this.phase = "lobby";
       this.participants = [];

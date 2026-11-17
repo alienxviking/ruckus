@@ -46,7 +46,7 @@ const JUNK = [
 ];
 
 function client(room, id, name) {
-  const ws = new WebSocket(`ws://${HOST}/parties/main/${room}?_pk=${id}`);
+  const ws = new WebSocket(`ws://${HOST}/parties/main/${room}?_pk=${id}.${Math.random().toString(36).slice(2, 8)}`);
   const c = { id, ws, room: null, view: null, stats: { game: 0, bytes: 0, maxMsg: 0, ev: 0 }, waiters: [] };
   ws.addEventListener("message", (e) => {
     const data = String(e.data);

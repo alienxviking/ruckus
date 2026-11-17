@@ -89,6 +89,8 @@ export function useRoom(code: string, identity: Identity) {
   const [rejected, setRejected] = useState<string | null>(null);
   const [clock] = useState(createClock);
   const [ping] = useState(createPingStore);
+  // This tab's own socket id ("<playerId>.<random>"): sockets must never share an id on the server.
+  const [socketId] = useState(() => `${identity.id}.${Math.random().toString(36).slice(2, 10)}`);
   const listeners = useRef(new Set<(e: unknown) => void>());
   const identityRef = useRef(identity);
   const pingTimers = useRef<number[]>([]);
@@ -101,7 +103,7 @@ export function useRoom(code: string, identity: Identity) {
   const socket = usePartySocket({
     host: partyHost(),
     room: code.toLowerCase(),
-    id: identity.id,
+    id: socketId,
     minReconnectionDelay: RECONNECT_MIN_MS,
     maxReconnectionDelay: 4_000,
     reconnectionDelayGrowFactor: 1.5,

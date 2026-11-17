@@ -45,6 +45,10 @@ export interface RoomView {
   result: GameResult | null;
   /** Increments every time a game starts; the client keys the game UI on it. */
   gameSeq: number;
+  /** Quick play: after each result the next game (one that fits the group) starts by itself. */
+  autoNext: boolean;
+  /** The game quick play will start next, and when (server time). */
+  next: { gameId: string; at: number } | null;
 }
 
 export type ClientMsg =
@@ -52,8 +56,11 @@ export type ClientMsg =
   | { t: "hello"; name: string; color: string; avatar: string; key: string }
   | { t: "chat"; text: string }
   | { t: "pick"; gameId: string }
-  | { t: "start" }
+  /** Start the picked game, or `gameId` (the host skipping quick play's countdown). */
+  | { t: "start"; gameId?: string }
   | { t: "lobby" }
+  /** Host turns quick play (auto-next) on or off. */
+  | { t: "auto"; on: boolean }
   | { t: "act"; a: unknown }
   /** Clock sync / latency probe; the server answers with "pong" right away. */
   | { t: "ping"; c: number };

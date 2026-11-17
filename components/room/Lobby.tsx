@@ -89,11 +89,17 @@ export function Lobby({
                     ? `First ${game.maxPlayers} play, the rest watch`
                     : `${online} ready · ${game.minPlayers}–${game.maxPlayers} players`}
               </p>
+              <QuickPlaySwitch on={room.autoNext} onChange={(on) => send({ t: "auto", on })} />
             </>
           ) : (
-            <p className="rounded-lg border border-line bg-ink/60 px-4 py-3 text-center text-sm text-muted">
-              Waiting for {host?.name ?? "the host"} to start…
-            </p>
+            <>
+              <p className="rounded-lg border border-line bg-ink/60 px-4 py-3 text-center text-sm text-muted">
+                Waiting for {host?.name ?? "the host"} to start…
+              </p>
+              {room.autoNext && (
+                <p className="text-center font-mono text-[11px] text-brand-2">Quick play is on: games roll on by themselves</p>
+              )}
+            </>
           )}
         </div>
       </div>
@@ -152,5 +158,35 @@ export function Lobby({
         </div>
       )}
     </div>
+  );
+}
+
+/** Host's toggle for quick play: after each result the next fitting game starts by itself. */
+export function QuickPlaySwitch({ on, onChange, compact }: { on: boolean; onChange: (on: boolean) => void; compact?: boolean }) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={on}
+      onClick={() => onChange(!on)}
+      className={`flex w-full items-center justify-between gap-3 rounded-lg border text-left transition-colors duration-200 ${
+        on ? "border-brand-2/50 bg-brand-2/10" : "border-line bg-ink/40 hover:border-text/25"
+      } ${compact ? "px-2.5 py-1.5" : "mt-1 px-3 py-2"}`}
+    >
+      <span className="min-w-0">
+        <span className="block text-sm font-semibold">Quick play</span>
+        {!compact && <span className="block font-mono text-[10px] text-muted">Next game starts by itself</span>}
+      </span>
+      <span
+        aria-hidden
+        className={`relative h-5 w-9 shrink-0 rounded-full transition-colors duration-200 ${on ? "bg-brand-2" : "bg-panel-2 ring-1 ring-line"}`}
+      >
+        <span
+          className={`absolute top-0.5 left-0.5 size-4 rounded-full shadow transition-transform duration-300 ease-[cubic-bezier(0.34,1.4,0.5,1)] ${
+            on ? "translate-x-4 bg-ink" : "bg-text/80"
+          }`}
+        />
+      </span>
+    </button>
   );
 }
