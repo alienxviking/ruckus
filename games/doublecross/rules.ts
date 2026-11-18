@@ -1,6 +1,12 @@
 import type { GameRules } from "../rules-types";
 
 export const rules: GameRules = {
+  quick: [
+    { icon: "talk", anim: "wiggle", text: "Chat, promise and bluff with your partner" },
+    { icon: "hand", anim: "tap", text: "Secretly pick Split or Steal" },
+    { icon: "coins", anim: "pulse", text: "Both split: share. One steals: takes all" },
+  ],
+  win: "Most points after the final heist",
   goal: "Finish the 6 rounds (the host can pick 4 or 8) with the most points by knowing when to trust and when to steal.",
   flow: [
     "Each round you're seated at a private table with one partner (or two, if there's an odd number of players). The game avoids repeat partners where it can.",

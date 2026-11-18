@@ -1,6 +1,12 @@
 import type { GameRules } from "../rules-types";
 
 export const rules: GameRules = {
+  quick: [
+    { icon: "hidden", anim: "float", text: "The clue-giver sees a secret spot" },
+    { icon: "chat", anim: "tap", text: "They give a clue for that spot" },
+    { icon: "gauge", anim: "slide", text: "Everyone drags their needle to guess" },
+  ],
+  win: "Most points after every clue",
   goal: "Score the most points by landing your needle close to hidden targets, and by giving clues that lead everyone to yours.",
   flow: [
     "Players take turns as the clue-giver. With 4 or more players everyone gives one clue; with 2 or 3, everyone gives two (the host can change this).",

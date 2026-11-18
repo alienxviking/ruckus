@@ -1,6 +1,12 @@
 import type { GameRules } from "../rules-types";
 
 export const rules: GameRules = {
+  quick: [
+    { icon: "crosshair", anim: "float", text: "Secretly set your angle and power" },
+    { icon: "bomb", anim: "bounce", text: "All tanks fire at the same time" },
+    { icon: "shield", anim: "pulse", text: "Lose all armour and you're out" },
+  ],
+  win: "Last tank still rolling",
   goal: "Be the last tank still rolling, or have the most armour left when the last turn ends (15 turns; the host can change this).",
   flow: [
     "Every tank starts with 100 armour on a hilly map, spread out from left to right.",

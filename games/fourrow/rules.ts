@@ -1,6 +1,12 @@
 import type { GameRules } from "../rules-types";
 
 export const rules: GameRules = {
+  quick: [
+    { icon: "users", anim: "float", text: "Two players share one board" },
+    { icon: "tap", anim: "tap", text: "Take turns dropping a disc" },
+    { icon: "link", anim: "pulse", text: "Line up four in a row" },
+  ],
+  win: "Win the most games in the match",
   goal: "Win the match by being first to line up four of your discs in a row.",
   flow: [
     "Two players share a board 7 columns wide and 6 rows tall. A random player starts the first game.",

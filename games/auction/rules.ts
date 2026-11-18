@@ -1,6 +1,12 @@
 import type { GameRules } from "../rules-types";
 
 export const rules: GameRules = {
+  quick: [
+    { icon: "eye", anim: "float", text: "Secretly peek inside a few crates" },
+    { icon: "gavel", anim: "tap", text: "Bid on each crate as it comes" },
+    { icon: "coins", anim: "bounce", text: "Some crates are treasure, some cursed" },
+  ],
+  win: "Most money and treasure at the end",
   goal: "Finish with the most money: your leftover cash plus the value of every crate you bought.",
   flow: [
     "Everyone starts with $100. There are 8 mystery crates (the host can pick 6 or 10 instead): mostly treasure, a little junk, a curse or two, and one 🎁 gift crate. With 8 that's 3 or 4 treasures, 2 junk and 1 or 2 cursed.",

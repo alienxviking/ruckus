@@ -1,6 +1,12 @@
 import type { GameRules } from "../rules-types";
 
 export const rules: GameRules = {
+  quick: [
+    { icon: "biohazard", anim: "pulse", text: "One player starts as a zombie" },
+    { icon: "footprints", anim: "slide", text: "Their touch turns you into one too" },
+    { icon: "syringe", anim: "pulse", text: "Survive, bite or cure to score" },
+  ],
+  win: "Most points after all rounds",
   goal: "Score the most points over 3 rounds (the host can change this) by surviving as a human, biting as a zombie, and curing your friends.",
   flow: [
     "Each round one player starts as patient zero, the first zombie (two zombies when there are 8 or more players). Everyone else is a survivor.",

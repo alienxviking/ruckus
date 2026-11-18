@@ -1,6 +1,12 @@
 import type { GameRules } from "../rules-types";
 
 export const rules: GameRules = {
+  quick: [
+    { icon: "users", anim: "slide", text: "Teams take turns describing on a call" },
+    { icon: "talk", anim: "wiggle", text: "Get teammates to guess, avoiding banned words" },
+    { icon: "ban", anim: "pulse", text: "Say a banned word and rivals buzz" },
+  ],
+  win: "Team with more points wins",
   goal: "Smuggle more words past the other team than they smuggle past yours.",
   flow: [
     "Players are split at random into Red and Blue. Play on a voice or video call: describing and guessing happen out loud.",

@@ -1,6 +1,12 @@
 import type { GameRules } from "../rules-types";
 
 export const rules: GameRules = {
+  quick: [
+    { icon: "move", anim: "slide", text: "Steer your snake around the board" },
+    { icon: "sprout", anim: "bounce", text: "Eat pellets to grow longer" },
+    { icon: "skull", anim: "pulse", text: "Crash into anything and you're out" },
+  ],
+  win: "Last snake alive wins the round",
   goal: "Be the first to win 2 rounds (the host can change this) by being the last snake alive, or the longest when time runs out.",
   flow: [
     "Every snake starts 4 long near the edge of the board. After a 3-second countdown, all snakes start moving at once.",

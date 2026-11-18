@@ -1,6 +1,12 @@
 import type { GameRules } from "../rules-types";
 
 export const rules: GameRules = {
+  quick: [
+    { icon: "zap", anim: "bounce", text: "Play a run of tiny games" },
+    { icon: "timer", anim: "pulse", text: "Each lasts just a few seconds" },
+    { icon: "tap", anim: "tap", text: "Answer right and fast to score" },
+  ],
+  win: "Most points after the last game",
   goal: "Score the most points across a run of lightning-fast microgames.",
   flow: [
     "A match is 12 microgames (the host can pick 6 or 18), drawn from 28 kinds: brainy ones like Quick maths, Spell check, Rhyme time, What's next? and Number flash, and reflex ones like Green light, Whack-a-mole, Spin stop, Simon says and Spot the difference.",

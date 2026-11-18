@@ -1,6 +1,12 @@
 import type { GameRules } from "../rules-types";
 
 export const rules: GameRules = {
+  quick: [
+    { icon: "tap", anim: "tap", text: "Pick a pit on your side" },
+    { icon: "sprout", anim: "slide", text: "Sow its seeds one per pit" },
+    { icon: "repeat", anim: "spin", text: "End in your store to go again" },
+  ],
+  win: "Most seeds in your store",
   goal: "Finish with more seeds in your store than your rival.",
   flow: [
     "Two players face each other across a board of 12 pits, 6 on each side, with a store at each end. Your pits are the bottom row and your store is on your right. Every pit starts with 4 seeds (the host can choose 3, 4, 5 or 6). A random player goes first.",

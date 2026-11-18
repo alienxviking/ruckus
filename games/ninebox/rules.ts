@@ -1,6 +1,12 @@
 import type { GameRules } from "../rules-types";
 
 export const rules: GameRules = {
+  quick: [
+    { icon: "grid", anim: "float", text: "Everyone solves the same number grid" },
+    { icon: "hash", anim: "tap", text: "Each number once per row, column, box" },
+    { icon: "ban", anim: "pulse", text: "Wrong numbers count as mistakes" },
+  ],
+  win: "Solve fastest with fewest mistakes",
   goal: "Fill every empty cell so each row, column and box holds each number exactly once: solve it fastest with the fewest mistakes.",
   flow: [
     "Everyone gets the same grid. It has exactly one solution and can always be solved by logic, no guessing needed.",

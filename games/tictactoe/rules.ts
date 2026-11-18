@@ -1,6 +1,12 @@
 import type { GameRules } from "../rules-types";
 
 export const rules: GameRules = {
+  quick: [
+    { icon: "grid", anim: "float", text: "One player is X, one is O" },
+    { icon: "tap", anim: "tap", text: "Take turns marking an empty square" },
+    { icon: "link", anim: "pulse", text: "Get three in a row" },
+  ],
+  win: "First to win three rounds",
   goal: "Be the first player to win 3 rounds (the host can change this) by getting three of your marks in a row.",
   flow: [
     "One player is X and the other is O. A coin flip decides who goes first.",

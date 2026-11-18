@@ -1,6 +1,12 @@
 import type { GameRules } from "../rules-types";
 
 export const rules: GameRules = {
+  quick: [
+    { icon: "ship", anim: "slide", text: "Hide your fleet on a secret grid" },
+    { icon: "crosshair", anim: "tap", text: "Take turns firing three shots" },
+    { icon: "target", anim: "pulse", text: "Hit all of a ship to sink it" },
+  ],
+  win: "Sink their whole fleet first",
   goal: "Sink every ship in your rival's hidden fleet before they sink yours.",
   flow: [
     "Two players each get a 10×10 sea (the host can pick 8×8) and the same fleet: Dreadnought (5), Cruiser (4), Corvette (3), Submarine (3) and Skiff (2). The 8×8 sea drops the Dreadnought.",

@@ -1,6 +1,12 @@
 import type { GameRules } from "../rules-types";
 
 export const rules: GameRules = {
+  quick: [
+    { icon: "rotate", anim: "spin", text: "Seven letters sit on a wheel" },
+    { icon: "type", anim: "tap", text: "Make words using the centre letter" },
+    { icon: "star", anim: "pulse", text: "Longer words score more points" },
+  ],
+  win: "Most points when time's up",
   goal: "Find as many words as you can on the wheel before the clock runs out. Most points wins.",
   flow: [
     "Everyone gets the same wheel: six letters on the ring and one in the centre.",

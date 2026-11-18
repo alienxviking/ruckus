@@ -1,6 +1,12 @@
 import type { GameRules } from "../rules-types";
 
 export const rules: GameRules = {
+  quick: [
+    { icon: "smile", anim: "wiggle", text: "Describe a secret phrase using only emoji" },
+    { icon: "type", anim: "tap", text: "Everyone else races to guess it" },
+    { icon: "timer", anim: "pulse", text: "Faster guesses score more; clue-giver too" },
+  ],
+  win: "Most points after everyone's turn",
   goal: "Score the most points by guessing other players' emoji clues quickly and giving clues people can crack.",
   flow: [
     "Everyone takes a turn as the clue-giver (two each with 4 or fewer players; the host can change this). On your turn you get 15 seconds to pick one of 3 secret phrases, each from a different category (like Movie plot, Food & drink or Place), or from the host's own list if they added one. If you don't pick, you get the first one.",

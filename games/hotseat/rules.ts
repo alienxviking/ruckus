@@ -1,6 +1,12 @@
 import type { GameRules } from "../rules-types";
 
 export const rules: GameRules = {
+  quick: [
+    { icon: "question", anim: "float", text: "One player secretly answers a personal question" },
+    { icon: "users", anim: "tap", text: "Everyone else predicts their answer" },
+    { icon: "check", anim: "pulse", text: "Right guesses score, and so does the hot seat" },
+  ],
+  win: "Most points after everyone's turn",
   goal: "Score the most points by predicting what your friends really pick, and by being easy to read.",
   flow: [
     "Play on a voice or video call. Each round one player sits in the hot seat; everyone takes a turn (with Auto: 3 times each with 3 players, twice with 4–6, once with 7+; the host can choose).",

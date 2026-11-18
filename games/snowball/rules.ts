@@ -1,6 +1,12 @@
 import type { GameRules } from "../rules-types";
 
 export const rules: GameRules = {
+  quick: [
+    { icon: "snowflake", anim: "slide", text: "Run around throwing snowballs at rivals" },
+    { icon: "shield", anim: "float", text: "Hide behind snow walls and trees" },
+    { icon: "heart", anim: "pulse", text: "Lose all your hearts and you're out" },
+  ],
+  win: "Last standing wins; first to 3 rounds",
   goal: "Be the first to win 3 rounds (the host can change this) by being the last player left standing in the snowball fight.",
   flow: [
     "Everyone spawns around the edge of a snowy field. After a 3-second countdown, the fight is on.",

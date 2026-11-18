@@ -1,6 +1,12 @@
 import type { GameRules } from "../rules-types";
 
 export const rules: GameRules = {
+  quick: [
+    { icon: "move", anim: "slide", text: "Move your paddle in your own half" },
+    { icon: "goal", anim: "bounce", text: "Smash the puck into their goal" },
+    { icon: "shield", anim: "pulse", text: "Guard your own goal from shots" },
+  ],
+  win: "First side to 7 goals",
   goal: "Knock the puck into the other side's goal. The first side to 7 goals wins (the host can pick 5, 7 or 10).",
   flow: [
     "Players split into two sides: 1v1 with two players, 2v1 with three (the solo player gets a bigger paddle), 2v2 with four.",

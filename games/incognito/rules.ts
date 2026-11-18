@@ -1,6 +1,12 @@
 import type { GameRules } from "../rules-types";
 
 export const rules: GameRules = {
+  quick: [
+    { icon: "bot", anim: "float", text: "Hide in a crowd of look-alike bots" },
+    { icon: "flag", anim: "pulse", text: "Stand on landmarks to light them" },
+    { icon: "target", anim: "tap", text: "Dart the walkers you think are human" },
+  ],
+  win: "Most points after the last round",
   goal: "Hide among 36 identical bots, light landmarks and dart the other humans to score the most points over 3 rounds (the host can change the number of rounds).",
   flow: [
     "Each round you are one walker in a park full of look-alike bots. Only you can see which walker is yours.",

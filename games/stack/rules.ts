@@ -1,6 +1,12 @@
 import type { GameRules } from "../rules-types";
 
 export const rules: GameRules = {
+  quick: [
+    { icon: "blocks", anim: "slide", text: "A block slides above your tower" },
+    { icon: "tap", anim: "tap", text: "Drop it when it lines up" },
+    { icon: "scissors", anim: "wiggle", text: "Overhang gets cut; miss and it topples" },
+  ],
+  win: "Most points from your best tower",
   goal: "Build the tallest, tidiest tower: your best tower's points count.",
   flow: [
     "After a 3-second countdown, a block starts sliding back and forth above your tower. Everyone gets the same sequence of slides.",

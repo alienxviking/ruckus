@@ -1,6 +1,12 @@
 import type { GameRules } from "../rules-types";
 
 export const rules: GameRules = {
+  quick: [
+    { icon: "brush", anim: "wiggle", text: "One player draws a secret word" },
+    { icon: "type", anim: "tap", text: "Everyone else types guesses" },
+    { icon: "timer", anim: "pulse", text: "Faster guesses score more" },
+  ],
+  win: "Most points after everyone draws",
   goal: "Score the most points by guessing other players' drawings fast and drawing so others can guess yours.",
   flow: [
     "Players take turns as the artist in a random order. With 3 or fewer players, everyone draws twice (the host can change how many turns each player gets).",

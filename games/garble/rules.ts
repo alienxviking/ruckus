@@ -1,6 +1,12 @@
 import type { GameRules } from "../rules-types";
 
 export const rules: GameRules = {
+  quick: [
+    { icon: "pencil", anim: "wiggle", text: "Write a short prompt to start" },
+    { icon: "brush", anim: "wiggle", text: "Draw the words or describe the drawing" },
+    { icon: "laugh", anim: "bounce", text: "Watch the books and react" },
+  ],
+  win: "Get the most reactions",
   goal: "Collect the most emoji reactions from the other players on the pages you write and draw.",
   flow: [
     "Everyone starts their own book by writing a short prompt (40 seconds; the host can make all timers quicker or more relaxed). Stuck? Tap Inspire me for a random one.",

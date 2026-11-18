@@ -1,6 +1,12 @@
 import type { GameRules } from "../rules-types";
 
 export const rules: GameRules = {
+  quick: [
+    { icon: "hand", anim: "float", text: "Keep still and wait for the signal" },
+    { icon: "ban", anim: "wiggle", text: "Don't fall for fake words" },
+    { icon: "zap", anim: "tap", text: "Tap first when it says DRAW!" },
+  ],
+  win: "First to win five rounds",
   goal: "Be the first to win 5 rounds (the host can change this) by tapping fastest when the panel says DRAW!",
   flow: [
     "Each round starts with 2 seconds to get ready. Keep your hands still.",

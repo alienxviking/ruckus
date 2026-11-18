@@ -1,6 +1,12 @@
 import type { GameRules } from "../rules-types";
 
 export const rules: GameRules = {
+  quick: [
+    { icon: "type", anim: "tap", text: "Everyone secretly types a word" },
+    { icon: "link", anim: "float", text: "Then find a word linking them all" },
+    { icon: "handshake", anim: "bounce", text: "Keep going until everyone matches" },
+  ],
+  win: "Everyone types the same word together",
   goal: "Work together so that everyone types the exact same word in the same round, within 8 rounds (the host can change this).",
   flow: [
     "Round 1: everyone secretly types any word they like. You have 40 seconds.",

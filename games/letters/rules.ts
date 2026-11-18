@@ -1,6 +1,12 @@
 import type { GameRules } from "../rules-types";
 
 export const rules: GameRules = {
+  quick: [
+    { icon: "type", anim: "tap", text: "Get a letter and six categories" },
+    { icon: "pencil", anim: "wiggle", text: "Write an answer for each one" },
+    { icon: "star", anim: "pulse", text: "Answers nobody else gave score double" },
+  ],
+  win: "Most points after the last round",
   goal: "Score the most points over 3 rounds (the host can change this) by writing answers that start with the round's letter, ideally ones nobody else thought of.",
   flow: [
     "Each round shows one letter and six categories, like an animal or a city.",

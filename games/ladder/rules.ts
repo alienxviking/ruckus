@@ -1,6 +1,12 @@
 import type { GameRules } from "../rules-types";
 
 export const rules: GameRules = {
+  quick: [
+    { icon: "type", anim: "tap", text: "Change one letter at a time" },
+    { icon: "check", anim: "pulse", text: "Every step must be a real word" },
+    { icon: "goal", anim: "bounce", text: "Reach the goal word in fewest steps" },
+  ],
+  win: "Fewest steps over all ladders",
   goal: "Climb from each start word to its goal word in as few steps as you can. Fewest steps over all the ladders wins.",
   flow: [
     "Everyone gets the same ladders: 5 by default (the host can pick 3, 5 or 8, and Easy, Normal or Hard).",

@@ -1,6 +1,12 @@
 import type { GameRules } from "../rules-types";
 
 export const rules: GameRules = {
+  quick: [
+    { icon: "swords", anim: "float", text: "Five castles, each worth points" },
+    { icon: "users", anim: "slide", text: "Split your 100 troops in secret" },
+    { icon: "crown", anim: "bounce", text: "Biggest army takes the castle" },
+  ],
+  win: "Most points after the last round",
   goal: "Score the most points over 5 rounds (the host can change this) by sending bigger armies than everyone else to the right castles.",
   flow: [
     "Each round shows five castles, each worth 2 to 9 points. One of them secretly hides a dragon with 10 to 40 strength.",

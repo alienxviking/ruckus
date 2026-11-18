@@ -1,6 +1,12 @@
 import type { GameRules } from "../rules-types";
 
 export const rules: GameRules = {
+  quick: [
+    { icon: "shuffle", anim: "spin", text: "Cards are shuffled face down" },
+    { icon: "tap", anim: "tap", text: "Flip two cards on your turn" },
+    { icon: "check", anim: "bounce", text: "Match them to keep them and go again" },
+  ],
+  win: "Find the most pairs",
   goal: "Find matching pairs of cards: solo for the best score, with friends for the most pairs.",
   flow: [
     "The cards are shuffled face down: 24 by default (the host can pick 16, 24 or 36).",

@@ -1,6 +1,12 @@
 import type { GameRules } from "../rules-types";
 
 export const rules: GameRules = {
+  quick: [
+    { icon: "tap", anim: "tap", text: "Place a disc to trap rival discs" },
+    { icon: "rotate", anim: "spin", text: "Trapped discs flip to your colour" },
+    { icon: "hourglass", anim: "float", text: "Play until nobody can move" },
+  ],
+  win: "Most discs of your colour",
   goal: "Have more discs of your colour on the board than your rival when the game ends.",
   flow: [
     "Two players share an 8×8 board (the host can pick a quick 6×6). It starts with four discs in the centre, two each. A random player moves first.",

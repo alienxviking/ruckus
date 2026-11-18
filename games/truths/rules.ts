@@ -1,6 +1,12 @@
 import type { GameRules } from "../rules-types";
 
 export const rules: GameRules = {
+  quick: [
+    { icon: "pencil", anim: "wiggle", text: "Write two truths and one lie" },
+    { icon: "talk", anim: "wiggle", text: "Read yours out and defend them" },
+    { icon: "vote", anim: "tap", text: "Spot lies and fool friends to score" },
+  ],
+  win: "Most points after everyone reads",
   goal: "Score the most by spotting your friends' lies and fooling them with yours.",
   flow: [
     "Play on a voice or video call. Everyone secretly writes three short statements about themselves (up to 100 characters each): two true, one lie, and marks which one is the lie. Tap an idea chip if you're stuck.",

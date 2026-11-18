@@ -1,6 +1,12 @@
 import type { GameRules } from "../rules-types";
 
 export const rules: GameRules = {
+  quick: [
+    { icon: "crosshair", anim: "slide", text: "Drag back to aim your shot" },
+    { icon: "gamepad", anim: "bounce", text: "Everyone's ball rolls at once" },
+    { icon: "flag", anim: "pulse", text: "Every shot counts as a stroke" },
+  ],
+  win: "Fewest strokes after the last hole",
   goal: "Finish the course (six holes unless the host picks 3 or 9) in the fewest total strokes.",
   flow: [
     "Everyone tees off together. You get 15 seconds to aim your first shot on each hole, then 12 seconds for every shot after that (the host can make the aim timer shorter or longer).",

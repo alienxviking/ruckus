@@ -1,6 +1,12 @@
 import type { GameRules } from "../rules-types";
 
 export const rules: GameRules = {
+  quick: [
+    { icon: "search", anim: "tap", text: "Everyone digs the same minefield" },
+    { icon: "hash", anim: "float", text: "Numbers show how many mines touch" },
+    { icon: "bomb", anim: "pulse", text: "Hit a mine and lose points" },
+  ],
+  win: "Most points when the field clears",
   goal: "Score the most points by digging up safe cells and treasure on one shared minefield, without blowing yourself up.",
   flow: [
     "Everyone shares the same field: 24×16 cells for up to 3 players, 30×20 for 4 or more (the host can pick a smaller or bigger field, and fewer or more mines). A patch in the middle starts already open.",

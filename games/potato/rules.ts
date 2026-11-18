@@ -1,6 +1,12 @@
 import type { GameRules } from "../rules-types";
 
 export const rules: GameRules = {
+  quick: [
+    { icon: "bomb", anim: "pulse", text: "A ticking potato lands in your hands" },
+    { icon: "puzzle", anim: "tap", text: "Solve a tiny puzzle to throw it" },
+    { icon: "heart", anim: "pulse", text: "Hold it at BOOM and lose a life" },
+  ],
+  win: "Last player with lives left",
   goal: "Be the last player still holding on to a life when everyone else has been blown up.",
   flow: [
     "Each round the potato starts in a random player's hands with a secret fuse somewhere between 12 and 30 seconds (the host can make it shorter or longer).",

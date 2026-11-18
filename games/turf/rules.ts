@@ -1,6 +1,12 @@
 import type { GameRules } from "../rules-types";
 
 export const rules: GameRules = {
+  quick: [
+    { icon: "move", anim: "slide", text: "Your painter never stops moving" },
+    { icon: "palette", anim: "wiggle", text: "Every tile you cross turns your colour" },
+    { icon: "shapes", anim: "pulse", text: "Close a loop to grab everything inside" },
+  ],
+  win: "Own the most tiles at the end",
   goal: "Own the most tiles on the map when the clock runs out (60 seconds; the host can change this).",
   flow: [
     "Everyone starts on a small 3x3 patch of their own colour. During the 3-second countdown you can already pick a direction.",

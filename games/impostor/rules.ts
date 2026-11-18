@@ -1,6 +1,12 @@
 import type { GameRules } from "../rules-types";
 
 export const rules: GameRules = {
+  quick: [
+    { icon: "hidden", anim: "float", text: "One player secretly has a different word" },
+    { icon: "chat", anim: "tap", text: "Everyone gives one-word clues" },
+    { icon: "vote", anim: "tap", text: "Vote out who seems off" },
+  ],
+  win: "Most points after the last round",
   goal: "Score the most points by spotting the player with the different word, or by blending in when that player is you.",
   flow: [
     "Everyone gets the same secret word, except one player, the odd one out, who gets a related word. Nobody is told which word they have, so even the odd one doesn't know. The host can also type in their own word pairs.",

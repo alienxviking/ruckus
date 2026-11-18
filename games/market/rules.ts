@@ -1,6 +1,12 @@
 import type { GameRules } from "../rules-types";
 
 export const rules: GameRules = {
+  quick: [
+    { icon: "hidden", anim: "float", text: "Everyone gets one secret card" },
+    { icon: "scale", anim: "tap", text: "Trade on the total of all cards" },
+    { icon: "coins", anim: "bounce", text: "Cards flip and trades pay out" },
+  ],
+  win: "Most profit after the last round",
   goal: "Make the most profit over 3 rounds (the host can change this) by buying when the final total looks higher than the price and selling when it looks lower.",
   flow: [
     "Each round, every player gets one secret card (A = 1 up to K = 13) and 3 street cards are dealt face down.",

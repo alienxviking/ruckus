@@ -1,6 +1,12 @@
 import type { GameRules } from "../rules-types";
 
 export const rules: GameRules = {
+  quick: [
+    { icon: "question", anim: "float", text: "Everyone gets the same question" },
+    { icon: "tap", anim: "tap", text: "Pick one of four answers" },
+    { icon: "zap", anim: "pulse", text: "Fast, right answers score most" },
+  ],
+  win: "Most points after the last question",
   goal: "Score the most points by answering trivia questions correctly and quickly.",
   flow: [
     "After a 3-second countdown, everyone sees the same question with four answers.",

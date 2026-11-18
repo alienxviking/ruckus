@@ -1,6 +1,12 @@
 import type { GameRules } from "../rules-types";
 
 export const rules: GameRules = {
+  quick: [
+    { icon: "bomb", anim: "pulse", text: "Only the defuser can see the bomb" },
+    { icon: "talk", anim: "wiggle", text: "Experts guide them using the manual" },
+    { icon: "timer", anim: "pulse", text: "Three mistakes or time runs out: boom" },
+  ],
+  win: "Defuse 2 of 3 bombs together",
   goal: "Work together to defuse at least 2 of the 3 bombs. The whole team wins or loses together.",
   flow: [
     "Each bomb has one defuser, and the job rotates so different players get a turn. Only the defuser can see and touch the bomb.",

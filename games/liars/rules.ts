@@ -1,6 +1,12 @@
 import type { GameRules } from "../rules-types";
 
 export const rules: GameRules = {
+  quick: [
+    { icon: "dice", anim: "spin", text: "Roll your dice in secret" },
+    { icon: "megaphone", anim: "tap", text: "Bid on dice across the whole table" },
+    { icon: "gavel", anim: "wiggle", text: "Call Liar! and someone loses a die" },
+  ],
+  win: "Be the last with dice left",
   goal: "Be the last player with any dice left.",
   flow: [
     "Everyone starts with the same number of dice: 5 each with up to 4 players, 4 each with 5–6 players, 3 each with 7–8 players. The host can set a different number.",

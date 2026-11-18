@@ -1,6 +1,12 @@
 import type { GameRules } from "../rules-types";
 
 export const rules: GameRules = {
+  quick: [
+    { icon: "hidden", anim: "float", text: "You get a secret pixel emblem" },
+    { icon: "brush", anim: "wiggle", text: "Paint it on one shared canvas" },
+    { icon: "eraser", anim: "wiggle", text: "Wreck rivals' emblems; best copies score" },
+  ],
+  win: "Most points after all rounds",
   goal: "Score the most points over 3 rounds (the host can change this) by painting the best copy of your own secret emblem.",
   flow: [
     "Each round you get a secret 5×5 pixel emblem (like a heart or a skull). Only you can see it.",

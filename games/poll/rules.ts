@@ -1,6 +1,12 @@
 import type { GameRules } from "../rules-types";
 
 export const rules: GameRules = {
+  quick: [
+    { icon: "vote", anim: "tap", text: "Secretly vote on a silly question" },
+    { icon: "users", anim: "float", text: "Guess how everyone else voted" },
+    { icon: "target", anim: "pulse", text: "Closer guesses score more points" },
+  ],
+  win: "Most points after the last poll",
   goal: "Score the most points over 8 polls (the host can pick 5 or 12) by guessing how the room really voted.",
   flow: [
     "Each round shows a silly question with up to 4 answers. You have 15 seconds to vote in secret (the host can speed up or slow down the timers).",

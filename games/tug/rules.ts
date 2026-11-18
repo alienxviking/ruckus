@@ -1,6 +1,12 @@
 import type { GameRules } from "../rules-types";
 
 export const rules: GameRules = {
+  quick: [
+    { icon: "users", anim: "slide", text: "Split into two teams pulling one flag" },
+    { icon: "zap", anim: "tap", text: "Win quick challenges to pull it your way" },
+    { icon: "flag", anim: "slide", text: "Drag the flag over your line" },
+  ],
+  win: "First team to win 3 rounds",
   goal: "Drag the flag over your team's line more often than the other team: first to 3 round wins takes the match (best of 5; the host can pick best of 3 or 7).",
   flow: [
     "Everyone is split into two teams, Red (pulls left) and Blue (pulls right), as evenly as possible.",

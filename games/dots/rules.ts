@@ -1,6 +1,12 @@
 import type { GameRules } from "../rules-types";
 
 export const rules: GameRules = {
+  quick: [
+    { icon: "pencil", anim: "tap", text: "Draw one line between two dots" },
+    { icon: "box", anim: "bounce", text: "Close a box to claim it" },
+    { icon: "repeat", anim: "spin", text: "Claim one and you go again" },
+  ],
+  win: "Most boxes when the grid fills",
   goal: "Claim the most boxes by drawing the last side around them.",
   flow: [
     "The board is a grid of dots: 5x5 boxes for 2 players, 5x6 for 3, and 6x6 for 4 (the host can pick a smaller or larger board). A random player goes first.",

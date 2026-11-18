@@ -1,6 +1,12 @@
 import type { GameRules } from "../rules-types";
 
 export const rules: GameRules = {
+  quick: [
+    { icon: "users", anim: "slide", text: "Two teams each guard a flag" },
+    { icon: "flag", anim: "bounce", text: "Grab their flag and run it home" },
+    { icon: "hand", anim: "tap", text: "Tagged on their side? Back to base" },
+  ],
+  win: "First team to 3 captures",
   goal: "Steal the other team's flag and carry it back to your own base. First team to 3 captures wins (the host can pick 2, 3 or 5).",
   flow: [
     "Players are split into Red and Blue. Each team owns one half of the field, with its flag in a base at the far end.",

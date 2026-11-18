@@ -1,6 +1,12 @@
 import type { GameRules } from "../rules-types";
 
 export const rules: GameRules = {
+  quick: [
+    { icon: "flame", anim: "pulse", text: "Everyone stands on tiles over lava" },
+    { icon: "footprints", anim: "bounce", text: "Tiles crumble behind you, so keep moving" },
+    { icon: "out", anim: "pulse", text: "Shove rivals; fall in and you're out" },
+  ],
+  win: "Last standing wins; first to 3 rounds",
   goal: "Be the first to win 3 rounds (the host can change this) by being the last player still standing on the floor.",
   flow: [
     "Everyone starts on a floor of hex tiles over a sea of lava. After a 3-second countdown, start moving.",

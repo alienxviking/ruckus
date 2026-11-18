@@ -1,6 +1,12 @@
 import type { GameRules } from "../rules-types";
 
 export const rules: GameRules = {
+  quick: [
+    { icon: "keyboard", anim: "tap", text: "Guess a secret five-letter word" },
+    { icon: "tiles", anim: "spin", text: "Tile colours show which letters fit" },
+    { icon: "star", anim: "pulse", text: "Fewer guesses score more points" },
+  ],
+  win: "Most points over all words",
   goal: "Crack each secret five-letter word in as few guesses as you can. Most points over all the words wins.",
   flow: [
     "Everyone gets the same secret words: 3 by default (the host can pick 1, 3 or 5).",

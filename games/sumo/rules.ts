@@ -1,6 +1,12 @@
 import type { GameRules } from "../rules-types";
 
 export const rules: GameRules = {
+  quick: [
+    { icon: "move", anim: "slide", text: "Steer your disc on slippery ice" },
+    { icon: "rocket", anim: "bounce", text: "Dash into rivals to knock them off" },
+    { icon: "waves", anim: "pulse", text: "The rink shrinks as it melts" },
+  ],
+  win: "Last disc on the ice",
   goal: "Be the last disc left on the ice in a round, and win 3 rounds (the host can change this) to become champion.",
   flow: [
     "Everyone starts spread around a round ice rink. A 3-second countdown starts each round.",

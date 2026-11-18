@@ -1,6 +1,12 @@
 import type { GameRules } from "../rules-types";
 
 export const rules: GameRules = {
+  quick: [
+    { icon: "tiles", anim: "float", text: "Sixteen words hide four groups of four" },
+    { icon: "tap", anim: "tap", text: "Pick four words that belong together" },
+    { icon: "heart", anim: "pulse", text: "Wrong guesses use up your mistakes" },
+  ],
+  win: "Most groups found, fewest mistakes",
   goal: "Sort sixteen words into the four hidden groups of four, with as few mistakes as you can.",
   flow: [
     "Everyone gets the same puzzle: 1 by default (the host can pick 1, 2 or 3). A room doesn't repeat puzzles it has played recently.",

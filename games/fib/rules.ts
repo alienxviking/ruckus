@@ -1,6 +1,12 @@
 import type { GameRules } from "../rules-types";
 
 export const rules: GameRules = {
+  quick: [
+    { icon: "question", anim: "float", text: "Fill the blank in a strange fact" },
+    { icon: "pencil", anim: "wiggle", text: "Write a fake answer to fool friends" },
+    { icon: "search", anim: "tap", text: "Pick the real one from the fakes" },
+  ],
+  win: "Most points after the last fact",
   goal: "Score the most points over 6 rounds (the host can change this) by finding the real answers and fooling your friends with your fake ones.",
   flow: [
     "Each round shows a strange-but-true fact with one word or phrase blanked out.",

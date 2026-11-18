@@ -1,6 +1,12 @@
 import type { GameRules } from "../rules-types";
 
 export const rules: GameRules = {
+  quick: [
+    { icon: "brush", anim: "wiggle", text: "Everyone draws one part of a monster" },
+    { icon: "hidden", anim: "float", text: "You never see the whole monster" },
+    { icon: "vote", anim: "tap", text: "Name them, then vote for favourites" },
+  ],
+  win: "Most points from stars and name votes",
   goal: "Score the most points over 2 rounds (the host can pick 1 to 3) by drawing monsters people love and giving them names people vote for.",
   flow: [
     "Each round makes one monster per player, built from three parts: a head, a body and legs. Everyone draws at the same time, a different monster's part each time, with 60 seconds per part (the host can change this).",
