@@ -37,8 +37,8 @@ function scatter(n: number, seed: number) {
   });
 }
 
-const DOODLE_SPOTS = scatter(18, 1);
-const SPARKS = scatter(22, 3);
+const DOODLE_SPOTS = scatter(8, 1);
+const SPARKS = scatter(10, 3);
 
 export function HeroBackdrop({
   variant = "hero",
@@ -75,13 +75,13 @@ export function HeroBackdrop({
       {/* 2. Stage lights sweeping through, and a few twinkles (landing page only). */}
       {variant === "hero" && (
         <>
-          {[0, 1, 2, 3].map((i) => (
+          {[0, 1].map((i) => (
             <span
               key={`l${i}`}
               className="bd-beam"
               style={
                 {
-                  left: `${12 + i * 25}%`,
+                  left: `${18 + i * 52}%`,
                   "--c": C[i],
                   animationDuration: `${6 + i * 1.7}s`,
                   animationDelay: `${-i * 1.3}s`,
@@ -108,7 +108,7 @@ export function HeroBackdrop({
         DOODLE_SPOTS.map((r, i) => (
           <span
             key={`d${i}`}
-            className={`bd-doodle ${i >= 9 ? "bd-more" : ""}`}
+            className={`bd-doodle ${i >= 4 ? "bd-more" : ""}`}
             style={
               {
                 left: `${(r(1) * 96).toFixed(1)}%`,

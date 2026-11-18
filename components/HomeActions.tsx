@@ -42,7 +42,7 @@ export function HomeActions() {
   return (
     <div className="flex flex-col gap-3 sm:flex-row sm:items-stretch">
       <button
-        className="stk-btn px-7 py-4 text-xl sm:text-2xl"
+        className="stk-btn px-6 py-3 text-lg sm:px-7 sm:py-4 sm:text-2xl"
         onClick={() => {
           setJoinError(null);
           void room.create();
@@ -64,7 +64,7 @@ export function HomeActions() {
         </label>
         <input
           id="room-code"
-          className="input min-w-0 flex-1 border-2 py-3 text-center font-hero text-xl font-extrabold tracking-[0.25em] uppercase"
+          className="input min-w-0 flex-1 border-2 py-2.5 text-center font-hero text-lg sm:py-3 sm:text-xl font-extrabold tracking-[0.25em] uppercase"
           placeholder="CODE"
           autoComplete="off"
           value={code}

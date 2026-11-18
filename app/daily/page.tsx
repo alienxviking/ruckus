@@ -11,7 +11,7 @@ export const metadata: Metadata = {
 export default function DailyPage() {
   return (
     <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col px-3 pb-16 sm:px-5">
-      <header className="flex items-center justify-between gap-3 py-3">
+      <header className="page-top flex items-center justify-between gap-3 py-3">
         <Logo small />
         <BackLink href="/">Home</BackLink>
       </header>

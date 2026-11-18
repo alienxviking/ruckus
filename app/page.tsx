@@ -46,12 +46,12 @@ export default function Home() {
         {/* ---------- hero ---------- */}
         <section className="after-intro relative grid items-center gap-8 pt-6 pb-14 md:grid-cols-[1.1fr_1fr] md:pt-10 md:pb-20">
           <div>
-            <p className="marker slap mb-2 inline-block text-2xl text-brand-2" style={{ "--tilt": "-3deg" } as React.CSSProperties}>
+            <p className="marker slap mb-2 inline-block text-xl text-brand-2 sm:text-2xl" style={{ "--tilt": "-3deg" } as React.CSSProperties}>
               {CATALOG.length} games. zero sign-ups. full bawaal.
             </p>
             {/* The biggest text on first paint: no fade-in, so it paints immediately. */}
             {/* Phones: Rux peeks in beside the headline (the big stage is for wider screens). */}
-            <span aria-hidden className="bob pointer-events-none absolute top-20 right-3 w-24 md:hidden" style={{ "--tilt": "8deg" } as React.CSSProperties}>
+            <span aria-hidden className="bob pointer-events-none absolute top-16 right-3 w-[5.5rem] md:hidden" style={{ "--tilt": "8deg" } as React.CSSProperties}>
               <Rux mood="wink" className="w-full" />
             </span>
             <h1 className="font-hero text-[3.4rem] leading-[0.88] font-extrabold tracking-[-0.045em] sm:text-7xl lg:text-[5.6rem]">
@@ -63,11 +63,11 @@ export default function Home() {
                 </svg>
               </span>
             </h1>
-            <p className="mt-6 max-w-md text-lg text-muted">
+            <p className="mt-5 max-w-md text-base text-muted sm:mt-6 sm:text-lg">
               Party games right in the browser. Start a room, drop the link in the group chat, and let it get loud. No app, no
               login, no nonsense.
             </p>
-            <div className="mt-7">
+            <div className="mt-6 sm:mt-7">
               <HomeActions />
             </div>
             <div className="mt-6 flex flex-wrap gap-3">
