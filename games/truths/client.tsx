@@ -30,7 +30,11 @@ const STYLES = `
 .tb-boom { animation: tb-boom .7s cubic-bezier(.2,.9,.25,1) both; }
 .tb-fuse { animation: tb-fuse .5s ease-in-out infinite; display: inline-block; }
 .tb-shake { animation: tb-shake .18s linear infinite; }
-@media (prefers-reduced-motion: reduce) { .tb-in, .tb-boom, .tb-fuse, .tb-shake { animation: none; } }
+@keyframes tb-nudge { 0%, 100% { box-shadow: 0 0 0 0 #ff5d7300; } 50% { box-shadow: 0 0 0 5px #ff5d7340; } }
+.tb-nudge { animation: tb-nudge 1.6s ease-in-out infinite; }
+@keyframes tb-stamp { from { opacity: 0; transform: scale(1.8) rotate(-10deg); } }
+.tb-stamp { animation: tb-stamp .3s cubic-bezier(.2,.9,.25,1.3) both; }
+@media (prefers-reduced-motion: reduce) { .tb-in, .tb-boom, .tb-fuse, .tb-shake, .tb-nudge, .tb-stamp { animation: none; } }
 `;
 
 /** Starters for the writing screen: tap one to drop it into a statement. */
@@ -257,9 +261,21 @@ function Writer({ view, act, accent }: { view: TruthView; act: Props["act"]; acc
         return (
           <div
             key={i}
-            className="card flex flex-col gap-2 p-3"
-            style={{ borderColor: isLie ? "#ff5d73" : STATEMENT_COLORS[i] + "55", background: isLie ? "linear-gradient(180deg, #ff5d7318, transparent), var(--color-panel)" : undefined }}
+            className="card relative flex flex-col gap-2 p-3"
+            style={{
+              borderColor: isLie ? "#ff5d73" : STATEMENT_COLORS[i] + "55",
+              borderWidth: isLie ? 3 : undefined,
+              background: isLie ? "linear-gradient(180deg, #ff5d7330, #ff5d7308), var(--color-panel)" : undefined,
+            }}
           >
+            {isLie && (
+              <span
+                aria-hidden
+                className="tb-stamp absolute -top-3 right-3 rotate-6 rounded-lg border-2 border-ink bg-[#ff5d73] px-2 py-0.5 font-hero text-xs font-extrabold tracking-widest text-ink shadow-[2px_3px_0_rgb(0_0_0/0.5)]"
+              >
+                LIE
+              </span>
+            )}
             <div className="flex items-start gap-2.5">
               <Num i={i} />
               <textarea
@@ -285,7 +301,11 @@ function Writer({ view, act, accent }: { view: TruthView; act: Props["act"]; acc
             </div>
             <div className="flex items-center justify-between gap-2 pl-[46px]">
               <button
-                className={`rounded-full border px-3 py-1 text-sm font-bold transition ${isLie ? "border-[#ff5d73] bg-[#ff5d73] text-ink" : "border-line text-muted hover:text-text"}`}
+                className={`inline-flex min-h-11 items-center gap-1.5 rounded-xl border-2 px-3.5 py-1.5 text-sm font-extrabold transition active:scale-95 ${
+                  isLie
+                    ? "-rotate-2 border-ink bg-[#ff5d73] text-ink shadow-[3px_4px_0_rgb(0_0_0/0.55)]"
+                    : `border-dashed border-[#ff5d73]/80 text-[#ff8a9a] hover:bg-[#ff5d73]/15 ${lie < 0 && !done ? "tb-nudge" : ""}`
+                }`}
                 disabled={done}
                 aria-pressed={isLie}
                 onClick={() => {
@@ -293,7 +313,8 @@ function Writer({ view, act, accent }: { view: TruthView; act: Props["act"]; acc
                   setLie(i);
                 }}
               >
-                {isLie ? "💣 This is my lie" : "Mark as the lie"}
+                <span aria-hidden className="text-base">💣</span>
+                {isLie ? "This is my lie" : "Mark as the lie"}
               </button>
               <span className="font-mono text-xs text-muted tabular-nums">
                 {[...line].length}/{MAX_LEN}
