@@ -7,7 +7,7 @@ export function BlobBackdrop() {
   return (
     <div aria-hidden className="hero-field bd-global">
       {C.map((c, i) => (
-        <span key={i} className={`bd-blob bd-blob-${i}`} style={{ backgroundColor: c }} />
+        <span key={i} className={`bd-blob bd-blob-${i}`} style={{ "--c": c } as React.CSSProperties} />
       ))}
       <span className="bd-halftone" />
     </div>

@@ -1189,6 +1189,7 @@ body::after {
     width: 26rem;
     height: 22rem;
     opacity: 0.26;
+    background-color: var(--c);
     filter: blur(40px);
     border-radius: 42% 58% 63% 37% / 41% 44% 56% 59%;
     animation: bd-morph 14s ease-in-out infinite alternate;
@@ -1226,6 +1227,9 @@ body::after {
   .hero-field.bd-global {
     position: fixed;
     z-index: -1;
+    /* Its own layer, painted once: scrolling the page never has to repaint the backdrop. */
+    contain: strict;
+    transform: translateZ(0);
     mask-image: none;
     opacity: 0.75;
     transition: opacity 0.8s ease;
@@ -1239,6 +1243,18 @@ body::after {
       width: 16rem;
       height: 14rem;
       opacity: 0.18;
+    }
+  }
+  /* Phones and tablets: a live blur on a shape that changes every frame is heavy enough to make
+     Android Chrome show the backdrop where the page hasn't been painted yet while scrolling.
+     Soft gradients instead, moved by transform only (the GPU does that without repainting). */
+  @media (hover: none), (max-width: 640px) {
+    .hero-field .bd-blob {
+      filter: none;
+      border-radius: 50%;
+      background: radial-gradient(closest-side, var(--c) 0%, color-mix(in srgb, var(--c) 45%, transparent) 55%, transparent 100%);
+      animation-name: bd-drift;
+      opacity: 0.3;
     }
     .hero-field .bd-beam {
       opacity: 0.28;
@@ -1284,6 +1300,11 @@ body::after {
   50% {
     opacity: 0.9;
     transform: scale(1.3);
+  }
+}
+@keyframes bd-drift {
+  to {
+    transform: translate(3rem, 2rem) scale(1.1);
   }
 }
 @keyframes bd-morph {
