@@ -8,6 +8,8 @@ export interface Player {
   connected: boolean;
   /** A practice bot the host added (plays games that support bots). */
   bot?: boolean;
+  /** Removed by the host: kept only until the running game ends (its scores still name them). */
+  removed?: boolean;
 }
 
 export interface ChatMsg {

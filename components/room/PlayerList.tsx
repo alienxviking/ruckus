@@ -19,7 +19,7 @@ export function PlayerList({
   isHost: boolean;
   send: (m: ClientMsg) => void;
 }) {
-  const players = room.players.slice().sort((a, b) => (room.wins[b.id] ?? 0) - (room.wins[a.id] ?? 0));
+  const players = room.players.filter((p) => !p.removed).sort((a, b) => (room.wins[b.id] ?? 0) - (room.wins[a.id] ?? 0));
   const online = room.players.filter((p) => p.connected).length;
   const bots = room.players.filter((p) => p.bot && p.connected).length;
   const [menu, setMenu] = useState<string | null>(null);

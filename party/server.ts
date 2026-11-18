@@ -716,6 +716,7 @@ export class RuckusRoom extends Server<Env> {
     if (!target) return;
     if (target.bot) return this.removeBot(target);
     this.banned.add(id);
+    target.removed = true;
     this.keys.delete(id);
     this.pauseHolders.delete(id);
     this.system(`🚫 ${target.name} was removed by the host`, target.avatar);
