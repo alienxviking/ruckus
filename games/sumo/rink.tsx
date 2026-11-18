@@ -2115,7 +2115,7 @@ export function Rink({
             aria-label="Dash"
             aria-keyshortcuts="Space Shift"
             disabled={!controls.enabled}
-            className="sumo-dash btn h-16 w-40 shrink-0 touch-none rounded-2xl text-lg font-black tracking-wide shadow-lg shadow-black/30 select-none @md:w-48"
+            className="sumo-dash btn h-16 w-40 shrink-0 touch-none pointer-coarse:h-20 pointer-coarse:flex-1 rounded-2xl text-lg font-black tracking-wide shadow-lg shadow-black/30 select-none @md:w-48"
             style={{
               ["--sumo-accent" as string]: data.accent,
               borderColor: controls.enabled ? data.accent + "aa" : undefined,
