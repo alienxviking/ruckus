@@ -2,14 +2,14 @@
 
 import Link from "next/link";
 import { useSyncExternalStore } from "react";
-import { currentStreak, dailyGames, dailyNumber, readDaily, subscribeDaily, utcDay, type DailyData } from "@/lib/daily";
+import { currentStreak, dailyGames, dailyNumber, readDaily, subscribeDaily, dailyDay, type DailyData } from "@/lib/daily";
 
 const SERVER_DATA: DailyData = { days: {}, best: {}, streak: { day: "", count: 0, best: 0 } };
 const noSub = () => () => {};
 
 /** The daily challenge as a pink sticker: today's number, progress and streak (filled in after load). */
 export function DailySticker() {
-  const day = useSyncExternalStore(noSub, () => utcDay(), () => "");
+  const day = useSyncExternalStore(noSub, () => dailyDay(), () => "");
   const data = useSyncExternalStore(subscribeDaily, readDaily, () => SERVER_DATA);
   const games = day ? dailyGames(day) : [];
   const today = (day && data.days[day]) || {};

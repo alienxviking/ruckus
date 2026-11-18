@@ -5,7 +5,7 @@ import { DailyChallenge } from "@/components/daily/DailyChallenge";
 
 export const metadata: Metadata = {
   title: "Daily challenge · Ruckus",
-  description: "Three quick games, the same puzzles for everyone, new every day at midnight UTC.",
+  description: "Three quick games, the same puzzles for everyone, new every day at midnight India time.",
 };
 
 export default function DailyPage() {

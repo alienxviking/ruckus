@@ -18,7 +18,7 @@ import {
   recordDaily,
   shareText,
   subscribeDaily,
-  utcDay,
+  dailyDay,
   type DailyData,
 } from "@/lib/daily";
 import { LocalEngine, ME, useLocalGame } from "@/lib/local-engine";
@@ -31,7 +31,7 @@ import { LocalStage, loadLocalGame, localMe, type LoadedGame } from "../play/Loc
 
 const SERVER_DATA: DailyData = { days: {}, best: {}, streak: { day: "", count: 0, best: 0 } };
 
-// A once-a-second clock for the countdown (and to roll over at midnight UTC).
+// A once-a-second clock for the countdown (and to roll over at midnight India time).
 const subscribeSecond = (fn: () => void) => {
   const t = setInterval(fn, 1000);
   return () => clearInterval(t);
@@ -62,7 +62,7 @@ export function DailyChallenge() {
   const [error, setError] = useState(false);
 
   if (!sec) return <Skeleton />;
-  const day = utcDay(sec * 1000);
+  const day = dailyDay(sec * 1000);
   const games = dailyGames(day);
 
   const play = async (gameId: string) => {

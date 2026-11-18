@@ -1,4 +1,4 @@
-// The daily challenge: the same 3 solo games for everyone each UTC day, each with the same
+// The daily challenge: the same 3 solo games for everyone each day (Indian time), each with the same
 // seeded puzzle. Results, personal bests and the day streak live in this browser only.
 
 import { CATALOG_BY_ID } from "@/games/catalog";
@@ -10,22 +10,25 @@ import { CATALOG_BY_ID } from "@/games/catalog";
 export const DAILY_GAMES = ["trivia", "blitz", "minerush", "ladder", "stack", "pairs", "codeword", "wordwheel", "ninebox", "groupup"];
 export const DAILY_COUNT = 3;
 
-/** Day #1 of the daily challenge (UTC). */
-const FIRST_DAY = Date.UTC(2026, 10, 17);
 const DAY_MS = 86_400_000;
+/** Days roll over at midnight India time (IST, UTC+5:30 all year: no daylight saving). */
+const IST_MS = 5.5 * 3_600_000;
+/** Day #1 of the daily challenge (midnight IST). */
+const FIRST_DAY = Date.UTC(2026, 10, 17) - IST_MS;
 const KEY = "ruckus:daily";
 
-/** "2026-11-17" for the given time, in UTC. */
-export function utcDay(t: number = Date.now()): string {
-  return new Date(t).toISOString().slice(0, 10);
+/** "2026-11-17" for the given time, as the date in India. */
+export function dailyDay(t: number = Date.now()): string {
+  return new Date(t + IST_MS).toISOString().slice(0, 10);
 }
 
+/** When that day starts: midnight in India. */
 function dayStart(day: string): number {
-  return Date.parse(`${day}T00:00:00Z`);
+  return Date.parse(`${day}T00:00:00Z`) - IST_MS;
 }
 
 export function prevDay(day: string): string {
-  return utcDay(dayStart(day) - DAY_MS);
+  return dailyDay(dayStart(day) - DAY_MS);
 }
 
 /** Puzzle number shown in the share text. */
@@ -33,9 +36,9 @@ export function dailyNumber(day: string): number {
   return Math.floor((dayStart(day) - FIRST_DAY) / DAY_MS) + 1;
 }
 
-/** Milliseconds until the next UTC midnight. */
+/** Milliseconds until the next midnight in India. */
 export function msToNextDay(t: number = Date.now()): number {
-  return DAY_MS - (t % DAY_MS);
+  return DAY_MS - ((t + IST_MS) % DAY_MS);
 }
 
 function hash(s: string): number {
