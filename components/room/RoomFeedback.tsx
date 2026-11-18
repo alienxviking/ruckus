@@ -54,6 +54,13 @@ export function useRoomFeedback(room: RoomView | null, me: string, serverNow: ()
     return () => timers.forEach((t) => window.clearTimeout(t));
   }, [at, serverNow]);
 
+  // The unlock toast closes itself after a while (it sits over the game area otherwise).
+  useEffect(() => {
+    if (!unlocked.length) return;
+    const t = window.setTimeout(() => setUnlocked([]), 8000);
+    return () => window.clearTimeout(t);
+  }, [unlocked]);
+
   return { unlocked, dismissUnlocked: () => setUnlocked([]) };
 }
 

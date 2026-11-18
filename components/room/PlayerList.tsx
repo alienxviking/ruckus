@@ -119,7 +119,7 @@ export function PlayerList({
                   // Host: the name opens this player's menu (keeps the wins column lined up).
                   <button
                     type="button"
-                    className="-mx-1 flex max-w-full items-center gap-1 rounded px-1 text-left font-hero font-extrabold transition-colors hover:bg-panel-2"
+                    className="-mx-1 flex min-h-9 max-w-full items-center gap-1 rounded px-1 py-1 text-left font-hero font-extrabold transition-colors hover:bg-panel-2"
                     style={{ color: p.color }}
                     aria-haspopup="menu"
                     aria-expanded={menu === p.id}

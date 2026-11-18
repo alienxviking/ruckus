@@ -140,7 +140,7 @@ export function Room({
       )}
 
       {room && !r.rejected && r.status !== "open" && <ReconnectBanner playing={playing} />}
-      {unlocked.length > 0 && (
+      {unlocked.length > 0 && !playing && (
         <UnlockToast
           avatar={identity.avatar}
           items={unlocked}
@@ -192,7 +192,7 @@ export function Room({
                   headerExtra={
                     // On phones the chat toggle lives here during a game, so nothing floats over game controls.
                     <button
-                      className="btn relative px-3 py-1.5 text-sm lg:hidden"
+                      className="btn relative min-h-10 min-w-10 px-3 py-1.5 text-sm lg:hidden"
                       onClick={toggleChat}
                       aria-expanded={chatOpen}
                       aria-label={chatOpen ? "Close chat" : unread ? "Chat (new messages)" : "Chat"}
@@ -238,11 +238,11 @@ export function Room({
                 <Chat room={room} byId={byId} me={r.me} send={r.send} compact />
                 {playing && (
                   <button
-                    className="btn absolute top-2 right-2 px-2.5 py-1 text-xs"
+                    className="btn absolute top-1.5 right-1.5 size-10 p-0"
                     onClick={toggleChat}
                     aria-label="Close chat"
                   >
-                    <X aria-hidden className="size-3.5" strokeWidth={2.25} />
+                    <X aria-hidden className="size-4" strokeWidth={2.25} />
                   </button>
                 )}
               </div>

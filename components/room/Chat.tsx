@@ -81,7 +81,7 @@ export function Chat({
                   </span>
                 )}
                 <span
-                  className={`rounded-2xl border-2 px-3 py-1.5 break-words ${
+                  className={`rounded-2xl border-2 px-3 py-1.5 [overflow-wrap:anywhere] ${
                     mine ? "rounded-br-md border-ink bg-brand-2 font-medium text-ink" : "rounded-bl-md border-line bg-panel-2 text-text"
                   }`}
                   style={mine ? undefined : { borderColor: p ? `${p.color}66` : undefined }}

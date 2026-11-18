@@ -89,7 +89,7 @@ export function ProfileForm({
           </legend>
           <button
             type="button"
-            className="flex items-center gap-1.5 rounded-md px-2 py-1 font-mono text-[11px] text-muted transition-colors hover:bg-panel-2 hover:text-text"
+            className="flex min-h-9 items-center gap-1.5 rounded-lg border-2 border-line px-2.5 py-1 text-xs font-bold text-text transition-colors hover:bg-panel-2"
             onClick={() => {
               const next = randomLook();
               setBase(next.avatar);

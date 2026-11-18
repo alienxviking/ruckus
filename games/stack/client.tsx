@@ -411,10 +411,10 @@ export default function TowerStack({ view, me, byId, isPlayer, act, serverNow, o
               <div className="flex flex-1 flex-col items-center justify-center">
                 {view.phase === "ready" && <Countdown at={view.startsAt} serverNow={serverNow} />}
                 {view.phase === "play" && L && !L.alive && (
-                  <div className="animate-rise">
+                  <div className="animate-rise rounded-2xl bg-[#05060a]/75 px-5 py-3">
                     <div className="ts-big">Toppled!</div>
                     <div className="mt-1 text-sm text-[#dfe3f0]">
-                      {L.lv - 1} blocks · {L.score} pts
+                      {L.lv - 1} {L.lv - 1 === 1 ? "block" : "blocks"} · {L.score} pts
                     </div>
                     {L.restartAt !== null ? (
                       <div className="mt-2 text-sm font-semibold text-[#dfe3f0]">
