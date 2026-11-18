@@ -2107,6 +2107,8 @@ export function Rink({
       </div>
       {controls && (
         <div className="flex items-center gap-3">
+          {/* Phones: a visible thumb stick (holding the left half of the rink works too). */}
+          <ThumbStick enabled={controls.enabled && data.steerable} accent={data.accent} onStick={onStick} />
           <button
             ref={meterRef}
             type="button"
@@ -2133,9 +2135,74 @@ export function Rink({
             </span>
             DASH
           </button>
-          <p className="min-w-0 flex-1 text-xs text-muted">{controls.hint}</p>
+          <p className="min-w-0 flex-1 text-xs text-muted pointer-coarse:hidden">{controls.hint}</p>
         </div>
       )}
     </>
+  );
+}
+
+/** On-screen thumb stick for touch screens: drag from the centre, release to let go. */
+function ThumbStick({ enabled, accent, onStick }: { enabled: boolean; accent: string; onStick: (x: number, y: number) => void }) {
+  const padRef = useRef<HTMLDivElement>(null);
+  const knobRef = useRef<HTMLSpanElement>(null);
+  const active = useRef<number | null>(null);
+  const move = (e: PointerEvent<HTMLDivElement>) => {
+    const el = padRef.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    const R = r.width / 2;
+    let x = (e.clientX - (r.left + R)) / R;
+    let y = (e.clientY - (r.top + R)) / R;
+    const m = Math.hypot(x, y);
+    if (m > 1) {
+      x /= m;
+      y /= m;
+    }
+    // A small dead zone so a resting thumb doesn't drift the disc.
+    const live = m > 0.15;
+    onStick(live ? x : 0, live ? y : 0);
+    if (knobRef.current) knobRef.current.style.transform = `translate(${x * R * 0.55}px, ${y * R * 0.55}px)`;
+  };
+  const release = (e: PointerEvent<HTMLDivElement>) => {
+    if (active.current !== e.pointerId) return;
+    active.current = null;
+    onStick(0, 0);
+    if (knobRef.current) knobRef.current.style.transform = "";
+  };
+  return (
+    <div
+      ref={padRef}
+      role="presentation"
+      aria-hidden
+      className={`relative hidden size-28 shrink-0 touch-none place-items-center rounded-full border-2 bg-white/5 select-none pointer-coarse:grid ${
+        enabled ? "" : "opacity-40"
+      }`}
+      style={{ borderColor: enabled ? accent + "aa" : "var(--color-line)" }}
+      onPointerDown={(e) => {
+        if (!enabled) return;
+        e.preventDefault();
+        active.current = e.pointerId;
+        try {
+          e.currentTarget.setPointerCapture(e.pointerId);
+        } catch {
+          /* synthetic pointers can't be captured */
+        }
+        move(e);
+      }}
+      onPointerMove={(e) => {
+        if (active.current === e.pointerId) move(e);
+      }}
+      onPointerUp={release}
+      onPointerCancel={release}
+      onLostPointerCapture={release}
+    >
+      <span className="pointer-events-none absolute inset-3 rounded-full border border-dashed border-white/20" />
+      <span
+        ref={knobRef}
+        className="pointer-events-none size-12 rounded-full border-2 border-white/90 shadow-[0_4px_12px_rgb(0_0_0/0.45)] transition-transform duration-75"
+        style={{ background: accent }}
+      />
+    </div>
   );
 }
