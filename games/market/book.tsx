@@ -177,9 +177,15 @@ function Row({
             type="button"
             onClick={onCancel}
             aria-label={`Cancel your ${kind} of ${qty} at ${price}`}
-            className="relative -mx-2 grid w-10 shrink-0 self-stretch place-items-center rounded-md text-xs text-muted hover:bg-white/10 hover:text-text"
+            className="group relative -mx-2 grid w-10 shrink-0 self-stretch place-items-center rounded-md"
           >
-            ✕
+            <span
+              aria-hidden
+              className="grid size-7 place-items-center rounded-full border-2 text-xs font-bold transition group-hover:brightness-125 group-active:scale-90"
+              style={{ borderColor: color, color, background: `${color}26` }}
+            >
+              ✕
+            </span>
           </button>
         )}
         {body}

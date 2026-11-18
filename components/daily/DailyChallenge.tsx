@@ -360,7 +360,7 @@ function DailyRun({
         label={run.official ? `Daily #${dailyNumber(run.day)}` : "Replay"}
         actions={
           !result && (
-            <button className={`btn px-3 py-1.5 text-sm ${quitting ? "border-brand/70 text-brand" : ""}`} onClick={quit}>
+            <button className={`btn min-h-10 px-3 py-1.5 text-sm ${quitting ? "border-brand/70 text-brand" : ""}`} onClick={quit}>
               {quitting ? "Quit: score 0?" : "Quit"}
             </button>
           )

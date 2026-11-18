@@ -98,6 +98,8 @@ function Match({ view, byId, isPlayer, act, serverNow, accent }: Props & { view:
   let sub: ReactNode;
   let said: string;
   let statusKey: string;
+  // Countdowns (forfeit / auto-move) and pass notices get the loud amber sub-line.
+  let alert = false;
   const gone = SEATS.find((seat) => seat !== you && away(seat) && !(playing && seat === view.turn));
   const goneNote =
     gone === undefined ? null : (
@@ -118,6 +120,7 @@ function Match({ view, byId, isPlayer, act, serverNow, accent }: Props & { view:
         </>
       );
       said = "Both players are away. The game is paused.";
+      alert = true;
     } else if (myTurn) {
       headline = (
         <span className="inline-flex items-center gap-2">
@@ -137,6 +140,7 @@ function Match({ view, byId, isPlayer, act, serverNow, accent }: Props & { view:
           "Trap a line of their discs between yours"
         ));
       said = pass !== null && pass !== you ? "Your opponent has no move. Go again." : "Your move.";
+      alert = goneNote !== null || (pass !== null && pass !== you);
     } else if (away(view.turn)) {
       headline = <>{mover} is away</>;
       sub = (
@@ -146,6 +150,7 @@ function Match({ view, byId, isPlayer, act, serverNow, accent }: Props & { view:
         </>
       );
       said = `${mover} is away.`;
+      alert = true;
     } else {
       headline = (
         <span className="inline-flex max-w-full items-center gap-2">
@@ -155,6 +160,7 @@ function Match({ view, byId, isPlayer, act, serverNow, accent }: Props & { view:
       );
       sub = goneNote ?? (you !== null && pass === you ? "You have no legal move — passing" : you === null ? "Watching live" : "Wait for your turn");
       said = `${mover} to move.`;
+      alert = goneNote !== null || (you !== null && pass === you);
     }
   } else if (view.phase === "between") {
     statusKey = `between-${view.game}`;
@@ -202,7 +208,7 @@ function Match({ view, byId, isPlayer, act, serverNow, accent }: Props & { view:
       <StatusBanner accent={myTurn ? colors[view.turn] : accent}>
         <div key={statusKey} className="fl-status">
           <div className="truncate">{headline}</div>
-          <div className="mt-0.5 truncate font-sans text-xs font-normal text-muted sm:text-sm">{sub}</div>
+          <div className={`mt-0.5 truncate font-sans ${alert ? "text-sm font-bold text-[#fbbf24]" : "text-xs font-normal text-muted sm:text-sm"}`}>{sub}</div>
         </div>
       </StatusBanner>
 

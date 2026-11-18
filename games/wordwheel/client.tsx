@@ -501,9 +501,14 @@ function Found({
         </div>
         {(live || finished) && (
           <button
-            className="btn min-h-10 px-3 py-1.5 text-sm disabled:opacity-60"
+            className={`inline-flex min-h-11 items-center rounded-xl border-2 px-3.5 text-sm font-bold transition active:scale-95 disabled:opacity-60 ${
+              finished
+                ? "border-line text-muted"
+                : arm
+                  ? "border-ink bg-[#ff5d73] text-ink"
+                  : "border-dashed border-[#ff5d73]/80 text-[#ff8a9a] hover:bg-[#ff5d73]/15"
+            }`}
             disabled={finished}
-            style={arm ? { color: BAD } : undefined}
             onClick={() => (arm ? onFinish() : setArm(true))}
             onBlur={() => setArm(false)}
           >

@@ -352,7 +352,8 @@ function CastleCard({ i, name, value, troops, left, locked, accent, onSet, onBum
         tabIndex={-1}
         disabled={locked || left <= 0}
         onClick={onAllIn}
-        className="h-10 rounded-xl border border-dashed border-line text-xs font-semibold text-muted transition-colors hover:border-muted hover:text-text disabled:opacity-35"
+        className="h-10 rounded-xl border-2 border-dashed text-sm font-bold text-text transition-colors hover:bg-white/5 disabled:opacity-35"
+        style={{ borderColor: accent }}
         aria-label={`All in: remaining troops to ${name}`}
       >
         All in {left > 0 ? `(+${left})` : ""}

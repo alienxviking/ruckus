@@ -527,23 +527,27 @@ function Keyboard({
           )}
         </div>
       ))}
-      <div className="mt-1 flex items-center justify-between gap-2 text-xs text-muted">
-        <span className="flex items-center gap-2.5">
-          <Legend s="2" text="right spot" />
-          <Legend s="1" text="elsewhere" />
-          <Legend s="0" text="not in it" />
-        </span>
-        {canGiveUp && (
+      <div className="mt-1 flex items-center justify-center gap-2.5 text-xs text-muted">
+        <Legend s="2" text="right spot" />
+        <Legend s="1" text="elsewhere" />
+        <Legend s="0" text="not in it" />
+      </div>
+      {canGiveUp && (
+        <div className="flex justify-end">
           <button
-            className="rounded-md px-2 py-1 font-semibold hover:text-text"
-            style={arm ? { color: BAD } : undefined}
+            className={`inline-flex min-h-10 items-center gap-1.5 rounded-xl border-2 px-3.5 text-sm font-bold transition active:scale-95 ${
+              arm
+                ? "border-ink bg-[#ff5d73] text-ink"
+                : "border-dashed border-[#ff5d73]/80 text-[#ff8a9a] hover:bg-[#ff5d73]/15"
+            }`}
             onClick={() => (arm ? onGiveUp() : setArm(true))}
             onBlur={() => setArm(false)}
           >
+            <span aria-hidden>⚑</span>
             {arm ? "Sure? 0 points" : "Give up"}
           </button>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 }

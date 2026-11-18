@@ -59,8 +59,8 @@ export function PlayerList({
         {isHost && (
           <button
             type="button"
-            className={`flex items-center gap-1 rounded-full border-2 px-2.5 py-0.5 text-xs font-bold transition-colors ${
-              room.locked ? "border-ink bg-brand-2 text-ink" : "border-line text-muted hover:text-text"
+            className={`flex min-h-9 items-center gap-1 rounded-full border-2 px-3 py-0.5 text-sm font-bold transition-colors ${
+              room.locked ? "border-ink bg-brand-2 text-ink" : "border-text/35 text-text hover:border-text/60"
             }`}
             aria-pressed={room.locked}
             title={room.locked ? "Locked: nobody new can join. Click to open." : "Lock the room so nobody new can join"}
@@ -203,7 +203,7 @@ export function PlayerList({
           </span>
           <button
             type="button"
-            className="btn p-1.5"
+            className="btn size-10 shrink-0 p-0"
             aria-label="Remove a practice bot"
             disabled={!bots}
             onClick={() => send({ t: "bot", add: false })}
@@ -213,7 +213,7 @@ export function PlayerList({
           <span className="w-4 text-center font-hero text-base font-extrabold">{bots}</span>
           <button
             type="button"
-            className="btn p-1.5"
+            className="btn size-10 shrink-0 p-0"
             aria-label="Add a practice bot"
             disabled={room.players.length >= MAX_PLAYERS}
             onClick={() => send({ t: "bot", add: true })}

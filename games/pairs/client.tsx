@@ -96,6 +96,7 @@ export default function MemoryPairs({ view, isPlayer, byId, act, serverNow, acce
 
   let status: string;
   let sub = "";
+  let alert = false; // away / skip notice: loud amber sub-line
   if (view.phase === "over") status = "Board cleared!";
   else if (view.solo) {
     status = view.phase === "show" ? "No match. Remember them!" : view.up.length === 1 ? "Now find its partner" : lastFresh?.match ? "Match! Keep going" : "Flip a card";
@@ -106,7 +107,10 @@ export default function MemoryPairs({ view, isPlayer, byId, act, serverNow, acce
     sub = "Remember where they are…";
   } else {
     status = `${mover?.name ?? "Someone"}'s turn`;
-    if (mover && !mover.connected) sub = "They're away: skipping soon";
+    if (mover && !mover.connected) {
+      sub = "They're away: skipping soon";
+      alert = true;
+    }
     else if (lastFresh?.match && lastFresh.seat === view.turn) sub = "Found a pair, going again";
   }
 
@@ -120,7 +124,9 @@ export default function MemoryPairs({ view, isPlayer, byId, act, serverNow, acce
           <div aria-live="polite">
             <StatusBanner key={`${view.turn}:${view.last?.n ?? 0}:${view.phase}:${view.up.length}`} accent={view.solo ? accent : mover?.color}>
               <div className="truncate">{status}</div>
-              {sub && <div className="mt-0.5 truncate font-sans text-xs font-medium text-muted sm:text-sm">{sub}</div>}
+              {sub && (
+                <div className={`mt-0.5 truncate font-sans ${alert ? "text-sm font-bold text-[#fbbf24]" : "text-xs font-medium text-muted sm:text-sm"}`}>{sub}</div>
+              )}
             </StatusBanner>
           </div>
         )}

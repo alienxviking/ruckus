@@ -195,6 +195,8 @@ function Match({ view, me, byId, isPlayer, act, serverNow, onEvent, accent }: Pr
         <Countdown at={view.forfeitAt[gone]!} serverNow={serverNow} prefix="forfeits in " />
       </>
     );
+  // Pause notices and forfeit / auto-fire countdowns get the loud amber sub-line.
+  const alert = phase === "turn" && (frozen || (!myTurn && away(turn)) || goneNote !== null);
   if (phase === "turn") {
     if (frozen) {
       headline = "Both players are away";
@@ -284,7 +286,7 @@ function Match({ view, me, byId, isPlayer, act, serverNow, onEvent, accent }: Pr
         <StatusBanner accent={bannerColor}>
           <div key={`${phase}-${seq}`} className="sv-pop">
             <div className="truncate">{headline}</div>
-            <div className="mt-0.5 truncate font-sans text-xs font-normal text-muted sm:text-sm">{sub}</div>
+            <div className={`mt-0.5 truncate font-sans ${alert ? "text-sm font-bold text-[#fbbf24]" : "text-xs font-normal text-muted sm:text-sm"}`}>{sub}</div>
           </div>
         </StatusBanner>
       </div>
@@ -349,9 +351,10 @@ function Match({ view, me, byId, isPlayer, act, serverNow, onEvent, accent }: Pr
               key={sea}
               role="tab"
               aria-selected={shownSea === sea}
-              className={`flex-1 truncate rounded-lg px-2 py-1.5 text-sm font-semibold transition-colors ${
-                shownSea === sea ? "bg-panel-2 text-text" : "text-muted"
+              className={`min-h-10 flex-1 truncate rounded-lg border-2 px-2 py-1.5 text-sm font-semibold transition-colors ${
+                shownSea === sea ? "bg-panel-2 font-bold text-text" : "border-transparent text-muted hover:text-text"
               }`}
+              style={shownSea === sea ? { borderColor: accent } : undefined}
               onClick={() => setManual({ key: autoKey, sea })}
             >
               {label}
@@ -432,7 +435,7 @@ function Match({ view, me, byId, isPlayer, act, serverNow, onEvent, accent }: Pr
                     {aim.length ? aim.map((c) => cellName(c, n)).join(" · ") : "Tap open water to aim"}
                   </span>
                   {aim.length > 0 && (
-                    <button className="btn px-3 py-2 text-sm" onClick={() => setAim([])} disabled={waiting}>
+                    <button className="btn min-h-10 px-3 py-2 text-sm" onClick={() => setAim([])} disabled={waiting}>
                       Clear
                     </button>
                   )}
@@ -889,18 +892,18 @@ function PlacePhase({
                   )}
                 </div>
                 <div className="mt-3 flex flex-wrap items-center gap-2 md:mt-auto md:grid md:grid-cols-2 md:pt-3">
-                  <button className="btn px-3 py-2 text-sm" onClick={randomize}>
+                  <button className="btn min-h-10 px-3 py-2 text-sm" onClick={randomize}>
                     🎲 Random
                   </button>
                   <button
-                    className="btn px-3 py-2 text-sm"
+                    className="btn min-h-10 px-3 py-2 text-sm"
                     onClick={() => rotateKey.current()}
                     title="Turn the last ship you touched (R)"
                   >
                     ⟳ Turn
                     {(focus === null || !fleet[focus]) && !complete ? (dockDir ? " ↓" : " →") : ""}
                   </button>
-                  <button className="btn px-3 py-2 text-sm" onClick={clear} disabled={!fleet.some(Boolean)}>
+                  <button className="btn min-h-10 px-3 py-2 text-sm" onClick={clear} disabled={!fleet.some(Boolean)}>
                     Clear
                   </button>
                   <button
@@ -918,7 +921,7 @@ function PlacePhase({
                 <span className="text-xs text-muted">
                   Your fleet is locked in. You can still change it until both are ready.
                 </span>
-                <button className="btn px-3 py-2 text-sm" onClick={() => act({ type: "unready" })}>
+                <button className="btn min-h-10 px-3 py-2 text-sm" onClick={() => act({ type: "unready" })}>
                   Edit fleet
                 </button>
               </div>

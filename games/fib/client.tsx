@@ -326,6 +326,21 @@ function WritePanel({
             >
               {view.myLie ? "Update" : "Submit"}
             </button>
+            {view.myLie && (
+              <button
+                type="button"
+                className="btn min-h-11 shrink-0 px-3 text-sm"
+                title={`Keep “${view.myLie}”`}
+                aria-label={`Keep “${view.myLie}”`}
+                onClick={() => {
+                  setDraft(view.myLie ?? "");
+                  setError(null);
+                  setEditing(false);
+                }}
+              >
+                Keep old
+              </button>
+            )}
           </div>
           <p className="flex min-h-5 items-start justify-between gap-2 text-xs">
             <span
@@ -346,19 +361,6 @@ function WritePanel({
               {length}/{MAX_LIE}
             </span>
           </p>
-          {view.myLie && (
-            <button
-              type="button"
-              className="self-start text-xs text-muted underline-offset-2 hover:text-text hover:underline"
-              onClick={() => {
-                setDraft(view.myLie ?? "");
-                setError(null);
-                setEditing(false);
-              }}
-            >
-              Keep “{view.myLie}”
-            </button>
-          )}
         </form>
       ) : (
         <button

@@ -242,7 +242,9 @@ export function WordCard({
           <span className="label" style={{ color: accent }}>
             Your word
           </span>
-          <span className="rounded-full bg-ink/60 px-2 py-0.5 text-xs text-muted">{toggleText}</span>
+          <span className="shrink-0 rounded-full border-2 bg-ink/60 px-2.5 py-0.5 text-sm font-semibold text-text" style={{ borderColor: accent }}>
+            {toggleText}
+          </span>
         </span>
         <span key={wordKey} className="oo-pop block font-display text-2xl font-extrabold capitalize [overflow-wrap:anywhere]">
           {shown}
@@ -257,7 +259,7 @@ export function WordCard({
         <span className="label" style={{ color: accent }}>
           Your word
         </span>
-        <span className="rounded-full bg-ink/60 px-2 py-0.5 text-xs text-muted transition-colors group-hover:text-text">
+        <span className="shrink-0 rounded-full border-2 bg-ink/60 px-2.5 py-0.5 text-sm font-semibold text-text" style={{ borderColor: accent }}>
           {toggleText}
         </span>
       </span>

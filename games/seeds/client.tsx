@@ -227,6 +227,8 @@ function Match({ view, byId, isPlayer, act, serverNow, accent }: Props & { view:
   let headline: ReactNode;
   let sub: ReactNode;
   let statusKey: string;
+  // Pause notices and forfeit / auto-sow countdowns get the loud amber sub-line.
+  const alert = view.phase === "turn" && !rep.busy && (frozen || (myTurn ? gone !== undefined : away(view.turn)));
   if (view.phase === "turn") {
     statusKey = `turn-${view.seq}-${rep.busy}`;
     const mover = people[view.turn].name;
@@ -338,7 +340,7 @@ function Match({ view, byId, isPlayer, act, serverNow, accent }: Props & { view:
       <StatusBanner accent={myTurn && !rep.busy ? SIDE[view.turn] : accent}>
         <div key={statusKey} className="sd-status">
           <div className="truncate">{headline}</div>
-          <div className="mt-0.5 truncate font-sans text-xs font-normal text-muted sm:text-sm">{sub}</div>
+          <div className={`mt-0.5 truncate font-sans ${alert ? "text-sm font-bold text-[#fbbf24]" : "text-xs font-normal text-muted sm:text-sm"}`}>{sub}</div>
         </div>
       </StatusBanner>
 

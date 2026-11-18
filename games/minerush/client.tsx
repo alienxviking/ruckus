@@ -336,14 +336,14 @@ function Game({ view, byId, isPlayer, act, serverNow, onEvent, accent }: Props &
 
   const tools =
     live || (isPlayer && view.phase === "ready") ? (
-      <div className="flex rounded-xl border border-line bg-panel-2 p-0.5" role="group" aria-label="Tap action">
+      <div className="flex gap-0.5 rounded-xl border-2 border-text/30 bg-panel-2 p-0.5" role="group" aria-label="Tap action">
         {(["dig", "flag"] as Mode[]).map((m) => (
           <button
             key={m}
             type="button"
             aria-pressed={mode === m}
-            className={`h-10 rounded-[0.6rem] px-3 text-sm font-bold transition-colors ${
-              mode === m ? "text-ink" : "text-muted hover:text-text"
+            className={`h-10 rounded-[0.6rem] border px-3 text-sm font-bold transition-colors ${
+              mode === m ? "border-transparent text-ink" : "border-text/25 text-text hover:bg-white/5"
             }`}
             style={mode === m ? { background: m === "dig" ? accent : "#fbbf24" } : undefined}
             onClick={() => setMode(m)}

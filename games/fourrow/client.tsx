@@ -179,6 +179,8 @@ function Match({ view, byId, isPlayer, act, serverNow, onEvent, accent }: Props 
         {people[gone].name} is away · <ForfeitIn at={view.forfeitAt[gone]!} serverNow={serverNow} />
       </>
     );
+  // Countdowns (forfeit / auto-drop) get the loud amber sub-line.
+  const alert = view.phase === "turn" && (frozen || (!myTurn && away(view.turn)) || goneNote !== null);
   if (view.phase === "turn") {
     const mover = people[view.turn].name;
     statusKey = `turn-${view.seq}`;
@@ -280,7 +282,7 @@ function Match({ view, byId, isPlayer, act, serverNow, onEvent, accent }: Props 
         {/* Only the words animate on a new turn; the card itself stays put (no flicker). */}
         <div key={statusKey} className="fr-status">
           <div className="truncate">{headline}</div>
-          <div className="mt-0.5 truncate font-sans text-xs font-normal text-muted sm:text-sm">{sub}</div>
+          <div className={`mt-0.5 truncate font-sans ${alert ? "text-sm font-bold text-[#fbbf24]" : "text-xs font-normal text-muted sm:text-sm"}`}>{sub}</div>
         </div>
       </StatusBanner>
 

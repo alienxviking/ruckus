@@ -111,7 +111,7 @@ export function GameStage({
           <HowToPlay gameId={room.gameId} compact onOpenChange={onRulesOpen} note={rulesNote} />
           {isHost && !room.result && (
             <button
-              className="btn px-3 py-1.5 text-sm"
+              className="btn min-h-10 px-3 py-1.5 text-sm"
               onPointerEnter={loadConfirmDialog}
               onFocus={loadConfirmDialog}
               onClick={() => {

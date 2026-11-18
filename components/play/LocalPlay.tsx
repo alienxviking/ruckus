@@ -276,7 +276,7 @@ function Playing({
         label={bots ? `vs ${bots} ${bots === 1 ? "bot" : "bots"}` : "solo"}
         actions={
           !result && (
-            <button className="btn px-3 py-1.5 text-sm" onClick={onQuit}>
+            <button className="btn min-h-10 px-3 py-1.5 text-sm" onClick={onQuit}>
               Quit
             </button>
           )

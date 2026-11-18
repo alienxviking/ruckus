@@ -55,7 +55,7 @@ export function useSecondsLeft(endsAt: number | null | undefined, serverNow: () 
   return Math.max(0, Math.ceil((endsAt - serverNow()) / 1000));
 }
 
-/** A shrinking bar for a phase timer. */
+/** A shrinking bar for a phase timer. Turns red, thicker and pulsing in the last ~20%. */
 export function TimerBar({
   endsAt,
   total,
@@ -67,38 +67,61 @@ export function TimerBar({
   serverNow: () => number;
   color?: string;
 }) {
+  if (endsAt && total > 0) {
+    // Re-keyed per deadline: one compositor animation per phase, no per-tick renders.
+    return <TimerTrack key={endsAt} endsAt={endsAt} total={total} serverNow={serverNow} color={color} />;
+  }
+  return <TrackShell urgent={false} />;
+}
+
+const URGENT = "#ff5d73";
+
+function TrackShell({ urgent, children }: { urgent: boolean; children?: ReactNode }) {
   return (
     <div
-      className="h-2 w-full overflow-hidden rounded-full bg-panel-2 shadow-[inset_0_0_0_1px_var(--color-line)]"
+      className={`w-full overflow-hidden rounded-full bg-panel-2 shadow-[inset_0_0_0_1px_var(--color-line)] transition-[height] duration-300 ${
+        urgent ? "h-3 motion-safe:animate-pulse" : "h-2"
+      }`}
       role="progressbar"
-      aria-label="Time left"
+      aria-label={urgent ? "Time almost up" : "Time left"}
     >
-      {endsAt && total > 0 ? (
-        // Re-keyed per deadline: one compositor animation per phase, no per-tick renders.
-        <TimerFill key={endsAt} endsAt={endsAt} total={total} serverNow={serverNow} color={color} />
-      ) : null}
+      {children}
     </div>
   );
 }
 
-function TimerFill({ endsAt, total, serverNow, color }: { endsAt: number; total: number; serverNow: () => number; color: string }) {
+function TimerTrack({ endsAt, total, serverNow, color }: { endsAt: number; total: number; serverNow: () => number; color: string }) {
   // Measured once when this deadline appears; the browser animates the rest.
   const [start] = useState(() => {
     const left = Math.max(0, endsAt - serverNow());
     return { left, from: Math.min(1, left / total) };
   });
+  const urgentIn = start.left - total * 0.2;
+  const [urgent, setUrgent] = useState(() => start.left > 0 && urgentIn <= 0);
+  useEffect(() => {
+    if (start.left <= 0) return;
+    const on = urgentIn > 0 ? setTimeout(() => setUrgent(true), urgentIn) : null;
+    const off = setTimeout(() => setUrgent(false), start.left);
+    return () => {
+      if (on) clearTimeout(on);
+      clearTimeout(off);
+    };
+  }, [start.left, urgentIn]);
+  const tint = urgent ? URGENT : color;
   return (
-    <div
-      className={`h-full w-full origin-left rounded-full ${start.left > 0 ? "timer-fill" : ""}`}
-      style={
-        {
-          background: `linear-gradient(90deg, color-mix(in oklab, ${color} 55%, transparent), ${color})`,
-          transform: `scaleX(${start.left > 0 ? start.from : 0})`,
-          animationDuration: `${start.left}ms`,
-          "--from": start.from,
-        } as React.CSSProperties
-      }
-    />
+    <TrackShell urgent={urgent}>
+      <div
+        className={`h-full w-full origin-left rounded-full ${start.left > 0 ? "timer-fill" : ""}`}
+        style={
+          {
+            background: `linear-gradient(90deg, color-mix(in oklab, ${tint} 55%, transparent), ${tint})`,
+            transform: `scaleX(${start.left > 0 ? start.from : 0})`,
+            animationDuration: `${start.left}ms`,
+            "--from": start.from,
+          } as React.CSSProperties
+        }
+      />
+    </TrackShell>
   );
 }
 

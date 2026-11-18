@@ -61,8 +61,12 @@ const CSS = `
 .nb-key[data-notes="true"] { font-size: 1.05rem; color: var(--acc); border-style: dashed; }
 .nb-key small { display: block; font-family: var(--font-mono); font-size: .75rem; line-height: 1; font-weight: 600; color: var(--color-muted); }
 .nb-tool { display: flex; flex-direction: column; align-items: center; gap: 2px; flex: 1 1 0; min-width: 0; padding: .45rem .25rem; border-radius: .75rem;
-  font-size: .78rem; font-weight: 700; color: var(--color-muted); border: 2px solid transparent; transition: color .15s, background .15s, border-color .15s; }
-.nb-tool:hover:not(:disabled) { color: var(--color-text); background: var(--color-panel-2); }
+  font-size: .78rem; font-weight: 700; color: var(--color-text); background: var(--color-panel-2); border: 2px solid color-mix(in oklab, var(--color-text) 28%, transparent);
+  transition: color .15s, background .15s, border-color .15s; }
+.nb-tool:hover:not(:disabled) { border-color: color-mix(in oklab, var(--color-text) 55%, transparent); }
+.nb-tool[data-quit] { color: #ff8a9a; background: transparent; border-style: dashed; border-color: color-mix(in oklab, #ff5d73 80%, transparent); }
+.nb-tool[data-quit]:hover:not(:disabled) { background: color-mix(in oklab, #ff5d73 15%, transparent); }
+.nb-tool[data-quit="armed"] { color: ${INK}; background: #ff5d73; border-style: solid; border-color: ${INK}; }
 .nb-tool:disabled { opacity: .35; }
 .nb-tool[aria-pressed="true"] { color: #0a0d02; background: var(--acc); border-color: ${INK}; }
 .nb-tool .ic { font-size: 1.25rem; line-height: 1; }
@@ -520,7 +524,7 @@ function Controls({
         <button
           type="button"
           className="nb-tool"
-          style={quitArm ? { color: BAD, borderColor: BAD } : undefined}
+          data-quit={quitArm ? "armed" : "rest"}
           onClick={() => (quitArm ? onQuit() : setQuitArm(true))}
           onBlur={() => setQuitArm(false)}
         >

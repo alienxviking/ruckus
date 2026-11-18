@@ -293,9 +293,15 @@ export function Stage({
               onClick={() => onRemove(i)}
               aria-label={`Remove ${emojiName(e)}`}
               title="Tap to remove"
-              className="ec-pop ec-removable grid size-14 place-items-center rounded-xl text-[2.6rem] leading-none @md:size-[4.5rem] @md:text-[3.4rem]"
+              className="ec-pop ec-removable relative grid size-14 place-items-center rounded-xl text-[2.6rem] leading-none @md:size-[4.5rem] @md:text-[3.4rem]"
             >
               {e}
+              <span
+                aria-hidden
+                className="absolute -top-0.5 -right-0.5 grid size-5 place-items-center rounded-full border-2 border-ink bg-[#ff5d73] font-sans text-[10px] font-black text-ink"
+              >
+                ✕
+              </span>
             </button>
           ) : (
             <span key={`${i}-${e}`} aria-hidden className="ec-pop grid size-14 place-items-center text-[2.6rem] leading-none @md:size-[4.5rem] @md:text-[3.4rem]">

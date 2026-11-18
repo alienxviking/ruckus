@@ -131,7 +131,7 @@ export function Talk({
       </form>
       <div className="flex flex-wrap gap-1">
         {QUICK_LINES.map((q) => (
-          <button key={q} type="button" onClick={() => send({ t: q })} className="min-h-9 rounded-full border border-line bg-panel-2 px-2.5 text-xs font-semibold hover:border-muted active:scale-95">
+          <button key={q} type="button" onClick={() => send({ t: q })} className="min-h-10 rounded-full border-2 border-text/30 bg-panel-2 px-3 text-sm font-semibold text-text hover:border-text/60 active:scale-95">
             {q}
           </button>
         ))}
@@ -153,7 +153,7 @@ export function Talk({
           type="button"
           onClick={() => setGlyphsOpen((o) => !o)}
           aria-expanded={glyphsOpen}
-          className="ml-auto flex min-h-10 items-center gap-1 rounded-full border border-line bg-panel-2 px-3 text-xs font-semibold hover:border-muted"
+          className="ml-auto flex min-h-10 items-center gap-1 rounded-full border-2 border-text/30 bg-panel-2 px-3 text-sm font-semibold text-text hover:border-text/60"
         >
           <Glyph g={2} className="size-4" /> Glyphs {glyphsOpen ? "▴" : "▾"}
         </button>

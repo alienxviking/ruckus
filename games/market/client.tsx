@@ -947,7 +947,12 @@ function QuotePanel({
         <LiveQuote side="bid" row={d.myBid} cancel={() => cancel("bid")} />
         <LiveQuote side="ask" row={d.myAsk} cancel={() => cancel("ask")} />
         {(d.myBid || d.myAsk) && (
-          <button type="button" className="ml-auto h-10 rounded-lg px-2 text-xs text-muted underline-offset-2 hover:text-text hover:underline" onClick={() => cancel("both")} aria-keyshortcuts="X">
+          <button
+            type="button"
+            className="ml-auto inline-flex min-h-10 items-center rounded-xl border-2 border-[#fbbf24]/80 px-3 text-sm font-bold text-[#fbbf24] transition hover:bg-[#fbbf24]/15 active:scale-95"
+            onClick={() => cancel("both")}
+            aria-keyshortcuts="X"
+          >
             Pull all
           </button>
         )}
@@ -977,7 +982,8 @@ function PriceRow({
       type="button"
       aria-label={`${delta > 0 ? "Raise" : "Lower"} ${side} by ${Math.abs(delta)}`}
       onClick={() => bump(delta)}
-      className="h-10 min-w-0 flex-1 rounded-lg border border-line bg-panel-2 font-mono text-xs font-bold text-muted transition-colors hover:text-text active:scale-95"
+      className="h-10 min-w-0 flex-1 rounded-lg border-2 bg-panel-2 font-mono text-sm font-bold text-text transition-colors hover:bg-white/10 active:scale-95"
+      style={{ borderColor: `${color}99` }}
     >
       {delta > 0 ? `+${delta}` : `−${-delta}`}
     </button>
@@ -1037,7 +1043,13 @@ function LiveQuote({ side, row, cancel }: { side: "bid" | "ask"; row: BookRow | 
       <span className="font-mono font-bold tabular-nums">
         {row[2]} @ {row[1]}
       </span>
-      <button type="button" onClick={cancel} aria-label={`Cancel your ${side}`} className="grid size-9 place-items-center rounded-full text-muted hover:bg-white/10 hover:text-text">
+      <button
+        type="button"
+        onClick={cancel}
+        aria-label={`Cancel your ${side}`}
+        className="grid size-10 place-items-center rounded-full border-2 text-sm font-bold transition active:scale-95"
+        style={{ borderColor: color, color, background: `${color}26` }}
+      >
         ✕
       </button>
     </span>

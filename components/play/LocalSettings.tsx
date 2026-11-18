@@ -39,8 +39,8 @@ export function LocalSettings({
                     type="button"
                     role="radio"
                     aria-checked={on}
-                    className={`min-h-8 rounded-md border px-2.5 py-1 font-mono text-xs transition-colors ${
-                      on ? "border-brand-2/60 bg-brand-2/15 text-text" : "border-line text-muted hover:border-text/30 hover:text-text"
+                    className={`min-h-10 rounded-md border-2 px-3 py-1 font-mono text-sm transition-colors ${
+                      on ? "border-brand-2 bg-brand-2/20 font-bold text-text" : "border-text/30 text-text hover:border-text/60"
                     }`}
                     onClick={() => onChange(d.key, o.value)}
                   >
