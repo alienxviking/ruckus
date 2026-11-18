@@ -357,6 +357,9 @@ function LocalResult({
           ))}
         </div>
       )}
+      <div className="flex justify-center sm:justify-start">
+        <RateGame gameId={gameId} gameKey={`local-${engine.id}`} />
+      </div>
       <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-start">
         <button className="stk-btn col-span-2 px-5 py-2.5 text-lg sm:col-span-1" onClick={onAgain}>
           Play again
@@ -370,9 +373,6 @@ function LocalResult({
         <div className="col-span-2 sm:col-span-1">
           <FriendsButton gameId={gameId} className="w-full" />
         </div>
-      </div>
-      <div className="flex justify-center sm:justify-start">
-        <RateGame gameId={gameId} gameKey={`local-${engine.id}`} />
       </div>
     </div>
   );

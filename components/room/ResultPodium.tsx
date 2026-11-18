@@ -148,12 +148,12 @@ export function ResultPodium({
               })}
             </div>
           )}
-          <div className="mt-4 flex flex-wrap items-center justify-center gap-2 md:justify-start">{children}</div>
           {played && (
-            <div className="mt-3 flex justify-center md:justify-start">
+            <div className="mt-4 flex justify-center md:justify-start">
               <RateGame gameId={room.gameId} gameKey={`${room.code}-${room.gameSeq}`} />
             </div>
           )}
+          <div className="mt-3 flex flex-wrap items-center justify-center gap-2 md:justify-start">{children}</div>
         </div>
       </div>
     </div>
