@@ -89,7 +89,7 @@ export function LocalStage({
       : "The clock keeps running in the daily challenge.";
 
   return (
-    <div data-stage={live ? "" : undefined} className="flex flex-col gap-3">
+    <div data-stage={live ? "" : undefined} data-paused={snap.paused ? "" : undefined} className="flex flex-col gap-3">
       <div className="flex items-center justify-between gap-2">
         <h1 className="flex min-w-0 items-center gap-2.5 font-display text-xl font-bold tracking-tight">
           {meta && <GameBadge id={meta.id} accent={meta.accent} size="sm" sheen />}
@@ -112,7 +112,7 @@ export function LocalStage({
         {snap.paused && (
           <div
             role="status"
-            className="absolute inset-0 z-20 grid place-items-center rounded-xl bg-ink/75 backdrop-blur-md"
+            className="pause-live absolute inset-0 z-20 grid place-items-center rounded-xl bg-ink/75 backdrop-blur-md"
           >
             <div className="card lit-edge animate-pop flex flex-col items-center gap-3 px-6 py-5 text-center">
               <span className="grid size-11 place-items-center rounded-full border border-line bg-ink text-brand-2">

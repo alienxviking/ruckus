@@ -98,7 +98,7 @@ export function GameStage({
   }, [finished, room.gameId]);
 
   return (
-    <div className="flex flex-col gap-3">
+    <div data-paused={room.pause ? "" : undefined} className="flex flex-col gap-3">
       <div className="flex items-center justify-between gap-2">
         <h1 className="flex min-w-0 items-center gap-2.5 font-display text-xl font-bold tracking-tight">
           {meta && <GameBadge id={meta.id} accent={meta.accent} size="sm" sheen />}

@@ -96,17 +96,17 @@ function TimerTrack({ endsAt, total, serverNow, color }: { endsAt: number; total
     const left = Math.max(0, endsAt - serverNow());
     return { left, from: Math.min(1, left / total) };
   });
-  const urgentIn = start.left - total * 0.2;
-  const [urgent, setUrgent] = useState(() => start.left > 0 && urgentIn <= 0);
+  // "Almost up" follows the game clock, so it stands still during a pause too.
+  const [urgent, setUrgent] = useState(() => start.left > 0 && start.left <= total * 0.2);
   useEffect(() => {
     if (start.left <= 0) return;
-    const on = urgentIn > 0 ? setTimeout(() => setUrgent(true), urgentIn) : null;
-    const off = setTimeout(() => setUrgent(false), start.left);
-    return () => {
-      if (on) clearTimeout(on);
-      clearTimeout(off);
-    };
-  }, [start.left, urgentIn]);
+    const id = setInterval(() => {
+      const left = endsAt - serverNow();
+      setUrgent(left > 0 && left <= total * 0.2);
+      if (left <= 0) clearInterval(id);
+    }, 250);
+    return () => clearInterval(id);
+  }, [endsAt, serverNow, total, start.left]);
   const tint = urgent ? URGENT : color;
   return (
     <TrackShell urgent={urgent}>
