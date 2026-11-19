@@ -7,7 +7,6 @@ import { currentStreak, dailyGames, dailyNumber, dailyResultText, type DailyData
 export const CARD_W = 1080;
 export const CARD_H = 1920;
 
-const EMOJI = `"Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif`;
 
 function loadImage(src: string): Promise<HTMLImageElement | null> {
   return new Promise((res) => {
@@ -36,15 +35,76 @@ function spaced(g: CanvasRenderingContext2D, text: string, x: number, y: number,
   } else g.fillText(text, x, y);
 }
 
-/** Draws the card. `ruxSvg` / `logoSvg` are Rux's SVG markup (cheering / the logo face) (taken from the page), `fonts` the page's font stacks. */
-export async function renderDailyCard(
-  day: string,
-  data: DailyData,
-  ruxSvg: string,
-  logoSvg: string,
-  fonts: { hero: string; marker: string; sans: string },
-): Promise<Blob | null> {
+/**
+ * A flame drawn in layers (deep red edge, orange body, yellow heart, white-hot core) with
+ * side licks, so it reads as fire rather than an emoji. `x`,`base` = bottom centre.
+ */
+function drawFlame(g: CanvasRenderingContext2D, x: number, base: number, size: number, hot: boolean) {
+  const tongue = (cx: number, by: number, w: number, h: number, lean: number) => {
+    g.beginPath();
+    g.moveTo(cx, by);
+    g.bezierCurveTo(cx - w * 0.62, by - h * 0.02, cx - w * 0.6, by - h * 0.32, cx - w * 0.34, by - h * 0.52);
+    g.bezierCurveTo(cx - w * 0.12, by - h * 0.7, cx + lean * w * 0.2, by - h * 0.78, cx + lean * w * 0.45, by - h);
+    g.bezierCurveTo(cx + w * 0.22, by - h * 0.74, cx + w * 0.62, by - h * 0.56, cx + w * 0.52, by - h * 0.3);
+    g.bezierCurveTo(cx + w * 0.62, by - h * 0.08, cx + w * 0.3, by, cx, by);
+    g.closePath();
+  };
+  const fill = (top: number, bottom: number, stops: [number, string][]) => {
+    const grad = g.createLinearGradient(0, top, 0, bottom);
+    for (const [o, col] of stops) grad.addColorStop(o, col);
+    g.fillStyle = grad;
+    g.fill();
+  };
+  const h = size;
+  const w = size * 0.72;
+  const palette = hot
+    ? { edge: "#ff2d1a", body: "#ff7a1a", heart: "#ffc93c", core: "#fff6d8" }
+    : { edge: "#7bd12a", body: "#c6f432", heart: "#ecff9a", core: "#fbffe8" };
+  g.save();
+  g.shadowColor = hot ? "rgba(255,90,20,0.85)" : "rgba(198,244,50,0.7)";
+  g.shadowBlur = 70;
+  // Side licks behind the main flame.
+  tongue(x - w * 0.36, base - h * 0.02, w * 0.5, h * 0.6, -0.9);
+  fill(base - h * 0.6, base, [[0, "rgba(0,0,0,0)"], [0.25, palette.edge], [1, palette.body]]);
+  tongue(x + w * 0.38, base - h * 0.02, w * 0.46, h * 0.52, 0.8);
+  fill(base - h * 0.52, base, [[0, "rgba(0,0,0,0)"], [0.25, palette.edge], [1, palette.body]]);
+  // Main body.
+  tongue(x, base, w, h, 0.35);
+  fill(base - h, base, [[0, "rgba(0,0,0,0)"], [0.12, palette.edge], [0.5, palette.body], [1, palette.heart]]);
+  g.shadowBlur = 30;
+  // Heart and core.
+  tongue(x + w * 0.02, base - h * 0.03, w * 0.6, h * 0.66, 0.25);
+  fill(base - h * 0.66, base, [[0, "rgba(0,0,0,0)"], [0.2, palette.body], [0.65, palette.heart], [1, palette.core]]);
+  tongue(x + w * 0.03, base - h * 0.06, w * 0.3, h * 0.36, 0.1);
+  fill(base - h * 0.42, base, [[0, "rgba(255,255,255,0)"], [0.35, palette.core], [1, "#ffffff"]]);
+  // Embers drifting up.
+  g.shadowBlur = 18;
+  for (const [ex, ey, r, a] of [
+    [-0.62, 0.88, 7, 0.9],
+    [0.66, 0.8, 5, 0.8],
+    [-0.3, 1.08, 4, 0.7],
+    [0.4, 1.02, 6, 0.75],
+    [0.9, 0.55, 4, 0.6],
+    [-0.88, 0.6, 5, 0.65],
+  ] as const) {
+    g.fillStyle = hot ? `rgba(255,${170 + Math.round(r * 8)},60,${a})` : `rgba(220,255,120,${a})`;
+    g.beginPath();
+    g.arc(x + ex * w, base - ey * h, r, 0, Math.PI * 2);
+    g.fill();
+  }
+  g.restore();
+}
+
+/** Draws the card; `fonts` are the page's font stacks (Rux and the logo come from /brand). */
+export async function renderDailyCard(day: string, data: DailyData, fonts: { hero: string; marker: string; sans: string }): Promise<Blob | null> {
+  // Make sure every face is loaded before drawing (canvas silently falls back otherwise).
+  await Promise.all(
+    [`800 92px ${fonts.hero}`, `400 54px ${fonts.marker}`, `700 44px ${fonts.sans}`, `600 36px ${fonts.sans}`].map((f) =>
+      document.fonts?.load(f).catch(() => null),
+    ),
+  );
   await document.fonts?.ready;
+  const [logo, rux] = await Promise.all([loadImage("/brand/logo.png"), loadImage("/brand/rux-wink.png")]);
   const W = CARD_W;
   const H = CARD_H;
   const c = document.createElement("canvas");
@@ -70,29 +130,23 @@ export async function renderDailyCard(
 
   g.textAlign = "center";
 
-  // Header: the Ruckus logo (Rux + wordmark, like the site), then which daily this is.
-  const logo = await loadImage("data:image/svg+xml;charset=utf-8," + encodeURIComponent(logoSvg));
-  g.font = `800 92px ${fonts.hero}`;
-  const word = "ruckus";
-  const ww = g.measureText(word).width;
-  const lw = 96;
-  const lx = W / 2 - (lw + 18 + ww) / 2;
-  if (logo) g.drawImage(logo, lx, 236, lw, 104);
-  g.textAlign = "left";
-  g.fillStyle = "#ffffff";
-  const ctx = g as CanvasRenderingContext2D & { letterSpacing?: string };
-  if ("letterSpacing" in ctx) ctx.letterSpacing = "-3px";
-  g.fillText(word, lx + lw + 18, 318);
-  if ("letterSpacing" in ctx) ctx.letterSpacing = "0px";
-  g.textAlign = "center";
+  // Header: the Ruckus logo exactly as on the site (Rux + wordmark), centred.
+  if (logo) {
+    const lh = 118;
+    const lw = (logo.naturalWidth / logo.naturalHeight) * lh;
+    g.drawImage(logo, W / 2 - lw / 2, 240, lw, lh);
+  } else {
+    g.fillStyle = "#ffffff";
+    g.font = `800 92px ${fonts.hero}`;
+    g.fillText("ruckus", W / 2, 330);
+  }
   const date = new Date(`${day}T00:00:00Z`).toLocaleDateString("en-IN", { day: "numeric", month: "short", timeZone: "UTC" });
   g.fillStyle = "#c6f432";
   g.font = `800 38px ${fonts.hero}`;
   spaced(g, `DAILY #${dailyNumber(day)}  ·  ${date.toUpperCase()}`, W / 2, 405, 5);
 
   // The flex: a big flame, a huge number, "DAY STREAK".
-  g.font = `220px ${EMOJI}`;
-  g.fillText("🔥", W / 2, 660);
+  drawFlame(g, W / 2, 690, 250, hot);
   g.fillStyle = "#ffffff";
   g.font = `800 ${streak >= 100 ? 260 : 340}px ${fonts.hero}`;
   g.shadowColor = hot ? "rgba(255,120,40,0.7)" : "rgba(198,244,50,0.5)";
@@ -111,7 +165,6 @@ export async function renderDailyCard(
   );
 
   // Rux, cheering beside the number.
-  const rux = await loadImage("data:image/svg+xml;charset=utf-8," + encodeURIComponent(ruxSvg));
   if (rux) {
     g.save();
     g.translate(870, 850);

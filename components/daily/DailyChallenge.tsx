@@ -256,19 +256,15 @@ function Share({ day, data, all }: { day: string; data: DailyData; all: boolean 
     setTimeout(() => setCopied(false), 2000);
   };
   // The picture version: a story card, previewed first, then shared or saved from there.
-  const ruxRef = useRef<HTMLSpanElement>(null);
   const [making, setMaking] = useState(false);
   const [card, setCard] = useState<File | null>(null);
   const [preview, setPreview] = useState(false);
   const shareImage = async () => {
-    const [svg, logoSvg] = Array.from(ruxRef.current?.querySelectorAll("svg") ?? []);
-    if (!svg || !logoSvg) return;
     setMaking(true);
     try {
       const css = getComputedStyle(document.documentElement);
       const font = (v: string, fallback: string) => css.getPropertyValue(v).trim() || fallback;
-      const markup = (el: Element) => new XMLSerializer().serializeToString(el).replace("<svg", '<svg xmlns="http://www.w3.org/2000/svg"');
-      const blob = await renderDailyCard(day, data, markup(svg), markup(logoSvg), {
+      const blob = await renderDailyCard(day, data, {
         hero: font("--font-hero-face", "sans-serif"),
         marker: font("--font-marker-face", "cursive"),
         sans: font("--font-geist-sans", "sans-serif"),
@@ -340,11 +336,6 @@ function Share({ day, data, all }: { day: string; data: DailyData; all: boolean 
           {copied ? "Copied" : "Copy"}
         </button>
       </div>
-      {/* Source art for the picture (hidden). */}
-      <span ref={ruxRef} aria-hidden className="hidden">
-        <Rux mood="wink" />
-        <Rux />
-      </span>
       {card && <SharePreview open={preview} onOpenChange={setPreview} file={card} text={text} />}
     </section>
   );
