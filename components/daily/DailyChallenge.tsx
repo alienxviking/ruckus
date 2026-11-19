@@ -284,30 +284,70 @@ function Share({ day, data, all }: { day: string; data: DailyData; all: boolean 
       setMaking(false);
     }
   };
+  const today = data.days[day] ?? {};
+  const streak = currentStreak(data, day);
+  const games = dailyGames(day);
   return (
-    <section aria-labelledby="share-heading" className="card animate-rise mt-4 p-4">
-      <div className="mb-3 flex items-center justify-between gap-3">
-        <h2 id="share-heading" className="label">
-          {all ? "All done! Share your day" : "Share so far"}
-        </h2>
-        <span className="flex gap-2">
-          <button className={`btn px-3 py-1.5 text-sm ${all ? "btn-primary" : ""}`} onClick={shareImage} disabled={making}>
-            <ImageIcon aria-hidden className="size-4" strokeWidth={2.2} />
-            {making ? "Making…" : "Share image"}
-          </button>
-          <button className="btn px-3 py-1.5 text-sm" onClick={copy} aria-live="polite">
-            {copied ? <Check aria-hidden className="size-4" strokeWidth={2.25} /> : <Copy aria-hidden className="size-4" strokeWidth={2} />}
-            {copied ? "Copied" : "Copy text"}
-          </button>
+    <section
+      aria-labelledby="share-heading"
+      className="animate-rise relative mt-5 overflow-hidden rounded-2xl border-2 p-4 sm:p-5"
+      style={{
+        borderColor: all ? "color-mix(in srgb, var(--color-brand-2) 60%, transparent)" : "var(--color-line)",
+        background: all
+          ? "radial-gradient(120% 90% at 100% 0%, color-mix(in srgb, var(--color-brand-2) 14%, transparent), transparent 60%), var(--color-panel)"
+          : "var(--color-panel)",
+      }}
+    >
+      <div className="flex items-center gap-3">
+        <span aria-hidden className="bob w-12 shrink-0 sm:w-14" style={{ "--tilt": "-8deg" } as React.CSSProperties}>
+          <Rux mood={all ? "wink" : "grin"} className="w-full" />
         </span>
-        {/* Source art for the picture (hidden). */}
-        <span ref={ruxRef} aria-hidden className="hidden">
-          <Rux mood="grin" />
-        </span>
+        <div className="min-w-0 flex-1">
+          <p className="marker text-lg leading-none text-brand-2">{all ? "aaj ka kaam khatam!" : "aadha ho gaya, chalo"}</p>
+          <h2 id="share-heading" className="mt-1 font-hero text-xl leading-tight font-extrabold tracking-tight sm:text-2xl">
+            Ruckus Daily #{dailyNumber(day)}
+          </h2>
+        </div>
+        {streak > 1 && (
+          <span className="flex shrink-0 items-center gap-1 rounded-full border-2 border-brand/50 bg-brand/10 px-2.5 py-1 text-sm font-bold">
+            <Flame aria-hidden className="size-4 text-brand" strokeWidth={2.25} />
+            {streak}
+            <span className="sr-only">-day streak</span>
+          </span>
+        )}
       </div>
-      <pre className="overflow-x-auto rounded-lg border border-line bg-ink/60 p-3 font-mono text-xs leading-relaxed whitespace-pre-wrap text-text/90">
-        {text}
-      </pre>
+
+      <ul className="mt-3 flex flex-wrap gap-1.5" aria-label="Today's scores">
+        {games.map((id) => {
+          const meta = CATALOG_BY_ID[id];
+          const e = today[id];
+          const value = !e ? "–" : e.pending ? "unfinished" : dailyResultText(id, e.score, e.headline);
+          return (
+            <li key={id} className="flex items-center gap-1.5 rounded-full border border-line bg-ink/50 py-0.5 pr-2.5 pl-0.5 text-xs">
+              {meta && <GameBadge id={id} accent={meta.accent} size="xs" className="!rounded-full" />}
+              <span className="sr-only">{meta?.name ?? id}:</span>
+              <span className="font-mono font-bold tabular-nums" style={{ color: e && !e.pending ? meta?.accent : undefined }}>
+                {value}
+              </span>
+            </li>
+          );
+        })}
+      </ul>
+
+      <div className="mt-4 flex gap-2">
+        <button className={`btn min-h-11 flex-1 justify-center text-base font-bold ${all ? "btn-primary" : ""}`} onClick={shareImage} disabled={making}>
+          <ImageIcon aria-hidden className="size-4" strokeWidth={2.2} />
+          {making ? "Making…" : all ? "Share my day" : "Share so far"}
+        </button>
+        <button className="btn min-h-11 px-3.5 text-sm" onClick={copy} aria-live="polite" title="Copy as text">
+          {copied ? <Check aria-hidden className="size-4" strokeWidth={2.25} /> : <Copy aria-hidden className="size-4" strokeWidth={2} />}
+          {copied ? "Copied" : "Copy"}
+        </button>
+      </div>
+      {/* Source art for the picture (hidden). */}
+      <span ref={ruxRef} aria-hidden className="hidden">
+        <Rux mood="grin" />
+      </span>
     </section>
   );
 }
