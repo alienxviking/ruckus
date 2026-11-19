@@ -219,9 +219,11 @@ function VetoSlot({
   isYou: boolean;
   onVeto?: () => void;
 }) {
+  // Once enough people have vetoed, it's simply out (more vetoes don't make it "2/1").
+  const out = cell.vetoes >= cell.need;
   const count = (
     <span key={cell.vetoes} className="animate-pop tabular-nums">
-      {cell.vetoes}/{cell.need}
+      {out ? "out" : `${cell.vetoes}/${cell.need}`}
     </span>
   );
   if (onVeto && cell.canVeto) {
@@ -230,7 +232,7 @@ function VetoSlot({
       <button
         type="button"
         aria-pressed={cell.mine}
-        aria-label={`${verb} ${player.name}'s “${cell.text}” (${cell.vetoes} of ${cell.need} vetoes)`}
+        aria-label={`${verb} ${player.name}'s “${cell.text}” (${out ? "vetoed out" : `${cell.vetoes} of ${cell.need} vetoes`})`}
         title={cell.mine ? "Take back your veto" : "Veto this answer"}
         onClick={onVeto}
         className={`flex h-10 min-w-11 shrink-0 items-center justify-center gap-1 rounded-xl border px-2 text-sm font-bold transition-colors ${
