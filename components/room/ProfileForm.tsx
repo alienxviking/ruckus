@@ -7,6 +7,7 @@ import { randomLook } from "@/lib/identity";
 import { ACCESSORY_LABEL } from "@/lib/avatar-art";
 import { ACHIEVEMENTS, getProgress, lockReason, subscribeProgress } from "@/lib/progress";
 import { TransferProgress } from "../TransferProgress";
+import { RecoveryTip } from "../RecoveryTip";
 import { Avatar, AVATAR_LABEL } from "../Avatar";
 
 const EMPTY_PROGRESS = { v: 1, wins: 0, gameWins: {}, played: {}, run: 0, bestRun: 0, bigWins: 0 } as const;
@@ -23,12 +24,15 @@ export function ProfileForm({
   submitLabel,
   onSubmit,
   showTransfer = true,
+  recoveryTip = false,
 }: {
   initial?: ProfileValues;
   submitLabel: string;
   onSubmit: (v: ProfileValues) => void;
   /** The "move your unlocks" box (off where the page shows its own). */
   showTransfer?: boolean;
+  /** The "no account, save your code" tip (in the profile, not the first join). */
+  recoveryTip?: boolean;
 }) {
   const [look] = useState(randomLook);
   const [name, setName] = useState(initial?.name ?? "");
@@ -181,6 +185,7 @@ export function ProfileForm({
           })}
         </div>
         {hint && <p className="mt-2 font-mono text-[11px] text-brand-2">{hint}</p>}
+        {showTransfer && recoveryTip && <RecoveryTip className="mt-3" />}
         {showTransfer && <TransferProgress />}
       </fieldset>
 

@@ -13,6 +13,7 @@ import { Avatar } from "../Avatar";
 import { CoverArt } from "../CoverArt";
 import { Rux } from "../Rux";
 import { TransferProgress } from "../TransferProgress";
+import { RecoveryTip } from "../RecoveryTip";
 import { ProfileForm } from "../room/ProfileForm";
 
 const EMPTY: Progress = { v: 1, wins: 0, gameWins: {}, played: {}, run: 0, bestRun: 0, bigWins: 0 };
@@ -43,6 +44,7 @@ export function MePage() {
 
   return (
     <div className="mx-auto w-full max-w-3xl space-y-5">
+      <RecoveryTip />
       {/* ---------- you ---------- */}
       <section className="stk p-5 sm:p-6" style={{ "--stk-bg": "var(--color-panel)" } as React.CSSProperties}>
         {!loaded ? (

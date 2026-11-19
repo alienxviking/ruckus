@@ -1,8 +1,9 @@
 "use client";
 
 import { Check, Copy, Eye, EyeOff } from "lucide-react";
-import { useSyncExternalStore, useState } from "react";
+import { useEffect, useRef, useSyncExternalStore, useState } from "react";
 import { exportCode, importCode, subscribeTransfer } from "@/lib/progress";
+import { markRecoverySeen, SHOW_CODE_EVENT } from "./RecoveryTip";
 
 /**
  * Move unlocks and daily results to another device: show the code here, paste it there.
@@ -15,10 +16,27 @@ export function TransferProgress({ open: startOpen = false }: { open?: boolean }
   const [copied, setCopied] = useState(false);
   const [input, setInput] = useState("");
   const [msg, setMsg] = useState<string | null>(null);
+  const box = useRef<HTMLDetailsElement>(null);
+  const reveal = () => {
+    setShown(true);
+    markRecoverySeen();
+  };
+
+  // "Show my code" from the recovery tip: open this box, show the code and bring it into view.
+  useEffect(() => {
+    const onShow = () => {
+      if (box.current) box.current.open = true;
+      setShown(true);
+      requestAnimationFrame(() => box.current?.scrollIntoView({ behavior: "smooth", block: "center" }));
+    };
+    window.addEventListener(SHOW_CODE_EVENT, onShow);
+    return () => window.removeEventListener(SHOW_CODE_EVENT, onShow);
+  }, []);
 
   const copy = async () => {
     try {
       await navigator.clipboard.writeText(code);
+      markRecoverySeen();
       setCopied(true);
       setTimeout(() => setCopied(false), 1800);
     } catch {
@@ -27,7 +45,7 @@ export function TransferProgress({ open: startOpen = false }: { open?: boolean }
   };
 
   return (
-    <details className="group mt-3 text-xs" open={startOpen}>
+    <details ref={box} className="group mt-3 text-xs" open={startOpen}>
       <summary className="cursor-pointer list-none text-muted hover:text-text">
         <span className="underline decoration-dotted underline-offset-2">Move your progress to another device</span>
       </summary>
@@ -53,7 +71,7 @@ export function TransferProgress({ open: startOpen = false }: { open?: boolean }
             </button>
           </div>
         ) : (
-          <button type="button" className="btn min-h-9 w-full justify-center text-xs font-bold" onClick={() => setShown(true)} disabled={!code}>
+          <button type="button" className="btn min-h-9 w-full justify-center text-xs font-bold" onClick={reveal} disabled={!code}>
             <Eye aria-hidden className="size-3.5" strokeWidth={2.25} />
             Show my code
           </button>

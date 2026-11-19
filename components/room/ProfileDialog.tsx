@@ -43,7 +43,7 @@ export default function ProfileDialog({
               <X aria-hidden className="size-4" strokeWidth={2} />
             </DialogClose>
           </div>
-          <ProfileForm initial={initial} submitLabel="Save" onSubmit={onSave} />
+          <ProfileForm initial={initial} submitLabel="Save" onSubmit={onSave} recoveryTip />
         </DialogContent>
       </DialogPortal>
     </DialogRoot>
