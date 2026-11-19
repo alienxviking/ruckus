@@ -36,11 +36,12 @@ function spaced(g: CanvasRenderingContext2D, text: string, x: number, y: number,
   } else g.fillText(text, x, y);
 }
 
-/** Draws the card. `ruxSvg` is Rux's SVG markup (taken from the page), `fonts` the page's font stacks. */
+/** Draws the card. `ruxSvg` / `logoSvg` are Rux's SVG markup (cheering / the logo face) (taken from the page), `fonts` the page's font stacks. */
 export async function renderDailyCard(
   day: string,
   data: DailyData,
   ruxSvg: string,
+  logoSvg: string,
   fonts: { hero: string; marker: string; sans: string },
 ): Promise<Blob | null> {
   await document.fonts?.ready;
@@ -69,14 +70,25 @@ export async function renderDailyCard(
 
   g.textAlign = "center";
 
-  // Header.
+  // Header: the Ruckus logo (Rux + wordmark, like the site), then which daily this is.
+  const logo = await loadImage("data:image/svg+xml;charset=utf-8," + encodeURIComponent(logoSvg));
+  g.font = `800 92px ${fonts.hero}`;
+  const word = "ruckus";
+  const ww = g.measureText(word).width;
+  const lw = 96;
+  const lx = W / 2 - (lw + 18 + ww) / 2;
+  if (logo) g.drawImage(logo, lx, 236, lw, 104);
+  g.textAlign = "left";
+  g.fillStyle = "#ffffff";
+  const ctx = g as CanvasRenderingContext2D & { letterSpacing?: string };
+  if ("letterSpacing" in ctx) ctx.letterSpacing = "-3px";
+  g.fillText(word, lx + lw + 18, 318);
+  if ("letterSpacing" in ctx) ctx.letterSpacing = "0px";
+  g.textAlign = "center";
+  const date = new Date(`${day}T00:00:00Z`).toLocaleDateString("en-IN", { day: "numeric", month: "short", timeZone: "UTC" });
   g.fillStyle = "#c6f432";
-  g.font = `800 44px ${fonts.hero}`;
-  spaced(g, `RUCKUS DAILY #${dailyNumber(day)}`, W / 2, 330, 6);
-  g.fillStyle = "#8a91a7";
-  g.font = `600 34px ${fonts.sans}`;
-  const date = new Date(`${day}T00:00:00Z`).toLocaleDateString("en-IN", { day: "numeric", month: "long", timeZone: "UTC" });
-  g.fillText(date, W / 2, 385);
+  g.font = `800 38px ${fonts.hero}`;
+  spaced(g, `DAILY #${dailyNumber(day)}  ·  ${date.toUpperCase()}`, W / 2, 405, 5);
 
   // The flex: a big flame, a huge number, "DAY STREAK".
   g.font = `220px ${EMOJI}`;
@@ -149,8 +161,8 @@ export async function renderDailyCard(
   g.fillStyle = "#c6f432";
   g.font = `400 66px ${fonts.marker}`;
   g.fillText(done === games.length ? "beat me if you can 👀" : `${done}/${games.length} done, come play`, W / 2, 1650);
-  g.fillStyle = "#8a91a7";
-  g.font = `600 36px ${fonts.sans}`;
+  g.fillStyle = "#edf0f7";
+  g.font = `700 38px ${fonts.sans}`;
   g.fillText(`${window.location.host}/daily`, W / 2, 1712);
 
   return new Promise((res) => c.toBlob(res, "image/png"));
