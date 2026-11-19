@@ -187,8 +187,30 @@ export function addRating(d: DayStats, game: string, v: number) {
   else r.down++;
 }
 
+/** What went wrong, after a 👎: a few words per note, newest first. */
+export interface RatingNote {
+  game: string;
+  text: string;
+  at: number;
+}
+
+export const MAX_NOTES = 80;
+
+/** Cleans a note: one line, no control characters, at most 140 characters. Empty → null. */
+export function cleanNote(raw: unknown): string | null {
+  if (typeof raw !== "string") return null;
+  const t = raw.replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim().slice(0, 140);
+  return t || null;
+}
+
 export class Stats {
   days: DayStats[] = [];
+  /** Notes left after a 👎, newest first. */
+  notes: RatingNote[] = [];
+
+  addNote(game: string, text: string, now: number) {
+    this.notes = [{ game, text, at: now }, ...this.notes].slice(0, MAX_NOTES);
+  }
   /** Recent distinct crashes, newest first. */
   errors: ErrorEntry[] = [];
 
@@ -243,6 +265,7 @@ export class Stats {
       today: { ...todayLive, ...usageOf(todayLive) },
       days: this.days.map((d) => ({ ...d, ...usageOf(d) })),
       errors: this.errors,
+      notes: this.notes,
     };
   }
 }

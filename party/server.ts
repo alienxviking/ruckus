@@ -21,7 +21,7 @@ import { CATALOG, CATALOG_BY_ID } from "../games/catalog";
 import { GAME_DEFS } from "../games/server-registry";
 import { GAME_CONFIG } from "../games/config";
 import { validSetting, type Settings } from "../shared/settings";
-import { addRating, cleanErrorReport, clientIp, isPublicRoomId, Limiter, LIMITS_ROOM, Stats, type ErrorEntry, type LimitKind, type RoomReport } from "./limits";
+import { addRating, cleanErrorReport, cleanNote, clientIp, isPublicRoomId, Limiter, LIMITS_ROOM, Stats, type ErrorEntry, type LimitKind, type RatingNote, type RoomReport } from "./limits";
 
 const HOST_HANDOFF_MS = 8_000; // host must be gone this long before someone else takes over
 const REMOVE_AFTER_MS = 60_000; // disconnected lobby players disappear after this
@@ -907,13 +907,15 @@ export class RuckusRoom extends Server<Env> {
       if (Array.isArray(saved)) this.stats.days = saved.map((d) => ({ ...d, errors: d.errors ?? 0 }));
       const errs = await this.ctx.storage.get<ErrorEntry[]>("errors").catch(() => undefined);
       if (Array.isArray(errs)) this.stats.errors = errs;
+      const notes = await this.ctx.storage.get<RatingNote[]>("notes").catch(() => undefined);
+      if (Array.isArray(notes)) this.stats.notes = notes;
     }
     const day = this.stats.today(now);
     day.limiterRequests++;
     if (req.method === "GET") return json(this.stats.snapshot(now));
     if (req.method !== "POST") return new Response("Not found", { status: 404 });
     const body = (await req.json().catch(() => null)) as
-      | { kind?: LimitKind; ip?: string | null; room?: string; report?: RoomReport; error?: unknown; rating?: { game?: unknown; v?: unknown } }
+      | { kind?: LimitKind; ip?: string | null; room?: string; report?: RoomReport; error?: unknown; rating?: { game?: unknown; v?: unknown; note?: unknown } }
       | null;
     let verdict: { ok: true } | { ok: false; reason: string } = { ok: true };
     if (body?.report && typeof body.report.room === "string") {
@@ -922,8 +924,13 @@ export class RuckusRoom extends Server<Env> {
       const g = body.rating.game;
       const v = body.rating.v;
       const known = typeof g === "string" && !!CATALOG_BY_ID[g];
-      const ok = known && (v === 1 || v === -1) && (typeof body.ip !== "string" || this.limiter.check("rate", body.ip, now).ok);
-      if (ok) addRating(day, g as string, v as number);
+      const note = cleanNote(body.rating.note);
+      const valid = known && (note ? v === undefined : v === 1 || v === -1);
+      const ok = valid && (typeof body.ip !== "string" || this.limiter.check("rate", body.ip, now).ok);
+      if (ok && note) {
+        this.stats.addNote(g as string, note, now);
+        void this.ctx.storage.put("notes", this.stats.notes).catch(() => {});
+      } else if (ok) addRating(day, g as string, v as number);
     } else if (body?.error) {
       const e = cleanErrorReport(body.error);
       const ok = !e ? false : typeof body.ip === "string" ? this.limiter.check("error", body.ip, now).ok : true;
@@ -1064,20 +1071,21 @@ async function statsRequest(request: Request, env: Env): Promise<Response> {
   return new Response(await res.text(), { headers: { ...cors, "Content-Type": "application/json", "Cache-Control": "no-store" } });
 }
 
-/** A 👍/👎 after a game: POST /rate {game, v: 1 | -1}. Rate limited per IP; anonymous. */
+/** A 👍/👎 after a game: POST /rate {game, v: 1 | -1}, or a note after a 👎: {game, note}. Rate limited per IP; anonymous. */
 async function rateRequest(request: Request, env: Env): Promise<Response> {
   const cors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "Content-Type", "Access-Control-Allow-Methods": "POST, OPTIONS" };
   if (request.method === "OPTIONS") return new Response(null, { headers: cors });
   if (request.method !== "POST") return new Response("Not found", { status: 404, headers: cors });
   const text = await request.text().catch(() => "");
-  if (text.length > 200) return new Response(null, { status: 413, headers: cors });
-  let rating: { game?: unknown; v?: unknown } | null = null;
+  if (text.length > 600) return new Response(null, { status: 413, headers: cors });
+  let rating: { game?: unknown; v?: unknown; note?: unknown } | null = null;
   try {
     rating = JSON.parse(text);
   } catch {
     return new Response(null, { status: 400, headers: cors });
   }
-  if (!rating || typeof rating.game !== "string" || !CATALOG_BY_ID[rating.game] || (rating.v !== 1 && rating.v !== -1)) {
+  const isNote = !!rating && rating.v === undefined && !!cleanNote(rating.note);
+  if (!rating || typeof rating.game !== "string" || !CATALOG_BY_ID[rating.game] || (!isNote && rating.v !== 1 && rating.v !== -1)) {
     return new Response(null, { status: 400, headers: cors });
   }
   try {

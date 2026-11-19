@@ -39,6 +39,7 @@ interface Snapshot {
   today: Day;
   days: Day[];
   errors?: ErrorEntry[];
+  notes?: { game: string; text: string; at: number }[];
 }
 
 const KEY = "ruckus:stats-token";
@@ -230,6 +231,26 @@ export function StatsDashboard() {
         </div>
       </section>
       <Ratings days={data.days} />
+      <section className="card mt-6 p-4">
+        <h2 className="label mb-3">What players said after a 👎 (newest first)</h2>
+        {data.notes?.length ? (
+          <ul className="space-y-1.5">
+            {data.notes.map((n, i) => {
+              const g = CATALOG_BY_ID[n.game];
+              return (
+                <li key={i} className="flex items-center gap-3 text-sm">
+                  {g && <GameBadge id={g.id} accent={g.accent} size="sm" />}
+                  <span className="w-28 shrink-0 truncate font-semibold">{g?.name ?? n.game}</span>
+                  <span className="min-w-0 flex-1 [overflow-wrap:anywhere]">{n.text}</span>
+                  <span className="shrink-0 font-mono text-xs text-muted">{ago(data.now - n.at)}</span>
+                </li>
+              );
+            })}
+          </ul>
+        ) : (
+          <p className="text-sm text-muted">No notes yet.</p>
+        )}
+      </section>
       <section className="card mt-6 p-4">
         <h2 className="label mb-3 flex items-center gap-2">
           <Bug aria-hidden className="size-3.5" strokeWidth={2} /> Crashes in players&apos; browsers
