@@ -6,7 +6,7 @@ import { inviteUrl, shareInvite, whatsappInvite } from "@/lib/invite";
 import { Rux } from "../Rux";
 
 /** Big invite prompt in the lobby while there are fewer than 3 people: the room only gets fun with friends. */
-export function InviteCard({ code, gameId, name, humans, isHost }: { code: string; gameId: string; name?: string; humans: number; isHost: boolean }) {
+export function InviteCard({ code, gameId, name, humans, isHost, botsPlay }: { code: string; gameId: string; name?: string; humans: number; isHost: boolean; botsPlay: boolean }) {
   const [copied, setCopied] = useState(false);
   const url = () => inviteUrl(window.location.origin, code, gameId, name);
   const flash = () => {
@@ -34,7 +34,7 @@ export function InviteCard({ code, gameId, name, humans, isHost }: { code: strin
           <p className="marker text-xl leading-tight">{humans < 2 ? "akele akele? 👀" : "ek aur bulao, maza double"}</p>
           <p className="text-sm text-muted">
             Send the link: friends join in one tap, no app or sign-up.
-            {isHost && humans < 2 ? " Or add a practice bot in the players panel." : ""}
+            {isHost && humans < 2 && botsPlay ? " Or add a practice bot in the players panel." : ""}
           </p>
         </div>
       </div>

@@ -805,6 +805,8 @@ export class RuckusRoom extends Server<Env> {
       return;
     }
     if (this.players.size >= MAX_PLAYERS) return;
+    // Only games with a bot player can take practice bots (no bots in Sketch Storm etc.).
+    if (!GAME_CONFIG[this.gameId]?.bots) return;
     const taken = new Set([...this.players.values()].map((p) => p.name));
     const n = this.botSeq++;
     const name = BOT_NAMES.find((x) => !taken.has(x)) ?? `Bot ${n + 1}`;

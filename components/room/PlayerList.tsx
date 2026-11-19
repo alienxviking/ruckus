@@ -82,7 +82,9 @@ export function PlayerList({
                 ? "playing 🎮"
                 : watching
                   ? "sitting out"
-                  : "practice bot 🤖"
+                  : botsPlay
+                    ? "practice bot 🤖"
+                    : `can't play ${game?.name ?? "this game"}`
             : !p.connected
               ? "reconnecting… 📡"
               : watching
@@ -190,16 +192,14 @@ export function PlayerList({
           );
         })}
       </ul>
-      {isHost && room.phase === "lobby" && (
+      {isHost && room.phase === "lobby" && botsPlay && (
         <div className="mt-2.5 flex items-center gap-2 rounded-xl border-2 border-dashed border-line px-2 py-1.5">
           <span aria-hidden className="text-xl leading-none">
             🤖
           </span>
           <span className="min-w-0 flex-1 text-xs font-bold text-text">
             Practice bots{" "}
-            <span className="marker block text-[14px] font-normal text-muted">
-              {botsPlay ? `they play ${game?.name ?? "this game"}` : `can't play ${game?.name ?? "this game"}`}
-            </span>
+            <span className="marker block text-[14px] font-normal text-muted">they play {game?.name ?? "this game"}</span>
           </span>
           <button
             type="button"
@@ -220,6 +220,21 @@ export function PlayerList({
           >
             <Plus aria-hidden className="size-3.5" strokeWidth={2.4} />
           </button>
+        </div>
+      )}
+      {isHost && room.phase === "lobby" && !botsPlay && (
+        <div className="mt-2.5 flex items-center gap-2 rounded-xl border-2 border-dashed border-line px-2.5 py-2 text-xs text-muted">
+          <span aria-hidden className="text-lg leading-none grayscale">
+            🤖
+          </span>
+          <span className="min-w-0 flex-1">
+            Bots can&apos;t play {game?.name ?? "this game"}: invite friends instead.
+          </span>
+          {bots > 0 && (
+            <button type="button" className="btn min-h-9 shrink-0 px-2.5 text-xs" onClick={() => send({ t: "bot", add: false })}>
+              Remove a bot ({bots})
+            </button>
+          )}
         </div>
       )}
     </div>

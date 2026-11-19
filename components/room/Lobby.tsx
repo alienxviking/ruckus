@@ -168,7 +168,7 @@ export function Lobby({
         </div>
       </div>
 
-      {humans < 3 && <InviteCard code={room.code} gameId={game.id} name={myName} humans={humans} isHost={isHost} />}
+      {humans < 3 && <InviteCard code={room.code} gameId={game.id} name={myName} humans={humans} isHost={isHost} botsPlay={botsPlay} />}
 
       <GameSettings room={room} isHost={isHost} send={send} words={words} />
       <RecapCard room={room} />
