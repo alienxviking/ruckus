@@ -89,7 +89,7 @@ export function LocalStage({
       : "The clock keeps running in the daily challenge.";
 
   return (
-    <div data-stage className="flex flex-col gap-3">
+    <div data-stage={live ? "" : undefined} className="flex flex-col gap-3">
       <div className="flex items-center justify-between gap-2">
         <h1 className="flex min-w-0 items-center gap-2.5 font-display text-xl font-bold tracking-tight">
           {meta && <GameBadge id={meta.id} accent={meta.accent} size="sm" sheen />}

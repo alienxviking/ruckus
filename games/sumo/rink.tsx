@@ -2175,7 +2175,7 @@ function ThumbStick({ enabled, accent, onStick }: { enabled: boolean; accent: st
       ref={padRef}
       role="presentation"
       aria-hidden
-      className={`relative hidden size-28 shrink-0 touch-none place-items-center rounded-full border-2 bg-white/5 select-none pointer-coarse:grid ${
+      className={`relative hidden size-40 shrink-0 touch-none place-items-center rounded-full border-2 bg-white/5 select-none pointer-coarse:grid ${
         enabled ? "" : "opacity-40"
       }`}
       style={{ borderColor: enabled ? accent + "aa" : "var(--color-line)" }}
@@ -2200,7 +2200,7 @@ function ThumbStick({ enabled, accent, onStick }: { enabled: boolean; accent: st
       <span className="pointer-events-none absolute inset-3 rounded-full border border-dashed border-white/20" />
       <span
         ref={knobRef}
-        className="pointer-events-none size-12 rounded-full border-2 border-white/90 shadow-[0_4px_12px_rgb(0_0_0/0.45)] transition-transform duration-75"
+        className="pointer-events-none size-16 rounded-full border-2 border-white/90 shadow-[0_4px_12px_rgb(0_0_0/0.45)] transition-transform duration-75"
         style={{ background: accent }}
       />
     </div>

@@ -1403,8 +1403,8 @@ input[type="search"]::-webkit-search-cancel-button {
   }
 }
 
-/* Phones: everything a notch smaller (all sizes are in rem), and while a solo/daily game is on,
-   the page's logo row steps aside: the game's own header has Quit. */
+/* Phones: everything a notch smaller (all sizes are in rem), and while a solo/daily game is on
+   (not on its result), the page's logo row steps aside: the game's own header has Quit. */
 @media (max-width: 640px) {
   html {
     font-size: 15px;

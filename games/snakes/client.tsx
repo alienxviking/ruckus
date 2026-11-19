@@ -725,20 +725,30 @@ function DPad({
   accent: string;
   avatar?: string;
 }) {
+  // A tap flashes the button for a moment (a lasting highlight looked stuck on phones).
+  const [flash, setFlash] = useState<Dir | null>(null);
+  const flashTimer = useRef<number | undefined>(undefined);
+  const press = (dir: Dir) => {
+    onSteer(dir);
+    setFlash(dir);
+    window.clearTimeout(flashTimer.current);
+    flashTimer.current = window.setTimeout(() => setFlash(null), 160);
+  };
   const pad = (dir: Dir, label: string, glyph: string, area: string) => (
     <button
       type="button"
       aria-label={label}
+      aria-pressed={current === dir}
       disabled={disabled}
-      className="grid size-16 touch-none place-items-center rounded-2xl border border-line bg-panel-2 text-2xl text-text shadow-md shadow-black/30 transition-[transform,opacity] select-none active:scale-90 disabled:opacity-35"
-      style={{ gridArea: area, ...(current === dir ? { borderColor: accent, color: accent } : null) }}
+      className="grid size-16 touch-none place-items-center rounded-2xl border border-line bg-panel-2 text-2xl text-text shadow-md shadow-black/30 transition-[transform,opacity,background-color] duration-100 select-none [-webkit-tap-highlight-color:transparent] active:scale-90 disabled:opacity-35"
+      style={{ gridArea: area, ...(flash === dir ? { borderColor: accent, color: accent, background: accent + "33" } : null) }}
       onPointerDown={(e) => {
         e.preventDefault();
-        onSteer(dir);
+        press(dir);
       }}
       onClick={(e) => {
         // Keyboard activation (pointer presses were handled on pointerdown).
-        if (e.detail === 0) onSteer(dir);
+        if (e.detail === 0) press(dir);
       }}
     >
       {glyph}

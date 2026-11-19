@@ -108,9 +108,11 @@ export function Room({
   return (
     <div className="mx-auto flex w-full max-w-7xl flex-1 flex-col px-3 sm:px-5">
       {room && <RuxCheer room={room} me={r.me} />}
-      <header className="flex items-center justify-between gap-3 py-3">
-        <Logo small />
-        <div className="flex items-center gap-2">
+      <header className="flex items-center justify-between gap-2 py-3">
+        <span className="shrink-0">
+          <Logo small />
+        </span>
+        <div className="flex min-w-0 items-center gap-1.5 sm:gap-2">
           <ConnDot status={r.status} ping={r.ping} />
           <InviteButton code={code} gameId={room?.gameId} name={identity.name} />
           <SoundToggle />

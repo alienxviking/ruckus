@@ -485,21 +485,31 @@ function DPad({
   avatar: string;
   onTurn: (dir: number) => void;
 }) {
+  // A tap flashes the button for a moment (a lasting highlight looked stuck on phones).
+  const [flash, setFlash] = useState<number | null>(null);
+  const flashTimer = useRef<number | undefined>(undefined);
+  const press = (dir: number) => {
+    onTurn(dir);
+    setFlash(dir);
+    window.clearTimeout(flashTimer.current);
+    flashTimer.current = window.setTimeout(() => setFlash(null), 160);
+  };
   const button = (dir: number, area: string) => (
     <button
       type="button"
       aria-label={`Steer ${DIRS[dir]}`}
-      className="btn size-12 touch-none p-0 text-lg"
+      aria-pressed={current === dir}
+      className="btn size-12 touch-none p-0 text-lg [-webkit-tap-highlight-color:transparent]"
       style={{
         gridArea: area,
-        ...(current === dir ? { borderColor: color, background: rgba(color, 0.22), color } : {}),
+        ...(flash === dir ? { borderColor: color, background: rgba(color, 0.22), color } : {}),
       }}
       onPointerDown={(e) => {
         e.preventDefault(); // instant response; no focus ring flash, no double fire
-        onTurn(dir);
+        press(dir);
       }}
       onClick={(e) => {
-        if (e.detail === 0) onTurn(dir); // keyboard activation
+        if (e.detail === 0) press(dir); // keyboard activation
       }}
     >
       <span aria-hidden>{ARROWS[dir]}</span>
