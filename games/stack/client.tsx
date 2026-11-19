@@ -184,7 +184,11 @@ export default function TowerStack({ view, me, byId, isPlayer, act, serverNow, o
   }, [phase]);
 
   // The render loop: everything visual lives in refs, so React only re-renders for the HUD.
+  // The canvas only exists once the first state has arrived (a new game can mount before it), so
+  // start the loop then: otherwise it found no canvas and the tower stayed blank until a refresh.
+  const hasView = !!view;
   useEffect(() => {
+    if (!hasView) return;
     const canvas = canvasRef.current;
     const stage = stageRef.current;
     if (!canvas || !stage) return;
@@ -357,7 +361,7 @@ export default function TowerStack({ view, me, byId, isPlayer, act, serverNow, o
       cancelAnimationFrame(raf);
       ro.disconnect();
     };
-  }, [serverNow]);
+  }, [serverNow, hasView]);
 
   if (!view) return <Note>Clearing the building site…</Note>;
   const L = hud;
