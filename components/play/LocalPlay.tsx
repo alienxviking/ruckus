@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import { Bot, Minus, Plus, User, Users } from "lucide-react";
+import { Bot, Minus, Plus, User } from "lucide-react";
 import { CATALOG_BY_ID } from "@/games/catalog";
 import { GAME_CONFIG } from "@/games/config";
 import { readSettings, type SettingDef, type Settings } from "@/shared/settings";
@@ -10,7 +10,7 @@ import type { GameResult } from "@/shared/types";
 import { BOT_AVATARS, BOT_NAMES, LocalEngine, ME, useLocalGame } from "@/lib/local-engine";
 import { botRange, defaultBots } from "@/lib/local-games";
 import { feedback } from "@/lib/feedback";
-import { useCreateRoom } from "@/lib/useCreateRoom";
+import { FriendsButton } from "./FriendsButton";
 import { Avatar } from "../Avatar";
 import { Confetti } from "../Confetti";
 import { CoverArt } from "../CoverArt";
@@ -374,24 +374,6 @@ function LocalResult({
           <FriendsButton gameId={gameId} className="w-full" />
         </div>
       </div>
-    </div>
-  );
-}
-
-/** "Play this with friends": makes a room with this game picked. */
-export function FriendsButton({ gameId, className = "" }: { gameId: string; className?: string }) {
-  const { create, busy, error } = useCreateRoom();
-  return (
-    <div className="flex flex-col">
-      <button className={`btn ${className}`} onClick={() => create(gameId)} disabled={busy}>
-        <Users aria-hidden className="size-4" strokeWidth={2} />
-        {busy ? "Creating room…" : "Play this with friends"}
-      </button>
-      {error && (
-        <p role="alert" className="mt-1.5 max-w-xs text-xs text-brand">
-          {error}
-        </p>
-      )}
     </div>
   );
 }

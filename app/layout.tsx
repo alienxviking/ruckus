@@ -5,6 +5,7 @@ import { MotionProvider } from "@/components/motion/MotionProvider";
 import { ServiceWorker } from "@/components/ServiceWorker";
 import { BlobBackdrop } from "@/components/BlobBackdrop";
 import { INTRO_SCRIPT } from "@/lib/intro-script";
+import { SITE_URL } from "@/lib/site";
 import "./globals.css";
 
 const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
@@ -16,14 +17,8 @@ const hero = Bricolage_Grotesque({ variable: "--font-hero-face", subsets: ["lati
 // Marker scribbles: side remarks, stickers, Rux's speech. Used sparingly.
 const marker = Caveat_Brush({ variable: "--font-marker-face", subsets: ["latin"], weight: "400" });
 
-// Absolute base for link-preview images: an explicit site URL, Vercel's production
-// domain when deployed there, or localhost in development.
-const siteUrl =
-  process.env.NEXT_PUBLIC_SITE_URL ||
-  (process.env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}` : "http://localhost:3000");
-
 export const metadata: Metadata = {
-  metadataBase: new URL(siteUrl),
+  metadataBase: new URL(SITE_URL),
   title: "Ruckus — games with friends",
   description: "Make a room, share the link, play real-time party games together. No sign-up.",
   applicationName: "Ruckus",

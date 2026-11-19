@@ -123,6 +123,9 @@ export default function Home() {
           <Rux mood="sleepy" className="h-20 w-16" />
           <p className="marker text-2xl text-muted">bas itna hi. ab jao, khelo.</p>
           <p className="text-xs text-muted">Free · no sign-up · made for friends</p>
+          <Link href="/games" className="text-xs font-bold text-muted underline decoration-dotted underline-offset-4 hover:text-text">
+            Browse all games
+          </Link>
         </footer>
       </div>
     </main>
