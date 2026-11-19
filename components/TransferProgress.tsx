@@ -3,7 +3,7 @@
 import { Check, Copy, Eye, EyeOff } from "lucide-react";
 import { useEffect, useRef, useSyncExternalStore, useState } from "react";
 import { exportCode, importCode, subscribeTransfer } from "@/lib/progress";
-import { markRecoverySeen, SHOW_CODE_EVENT } from "./RecoveryTip";
+import { markRecoverySeen, PASTE_CODE_EVENT, SHOW_CODE_EVENT } from "./RecoveryTip";
 
 /**
  * Move unlocks and daily results to another device: show the code here, paste it there.
@@ -17,6 +17,7 @@ export function TransferProgress({ open: startOpen = false }: { open?: boolean }
   const [input, setInput] = useState("");
   const [msg, setMsg] = useState<string | null>(null);
   const box = useRef<HTMLDetailsElement>(null);
+  const pasteRef = useRef<HTMLInputElement>(null);
   const reveal = () => {
     setShown(true);
     markRecoverySeen();
@@ -29,8 +30,20 @@ export function TransferProgress({ open: startOpen = false }: { open?: boolean }
       setShown(true);
       requestAnimationFrame(() => box.current?.scrollIntoView({ behavior: "smooth", block: "center" }));
     };
+    // "I have a code": open the box and put the cursor in the paste field.
+    const onPaste = () => {
+      if (box.current) box.current.open = true;
+      requestAnimationFrame(() => {
+        pasteRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+        pasteRef.current?.focus({ preventScroll: true });
+      });
+    };
     window.addEventListener(SHOW_CODE_EVENT, onShow);
-    return () => window.removeEventListener(SHOW_CODE_EVENT, onShow);
+    window.addEventListener(PASTE_CODE_EVENT, onPaste);
+    return () => {
+      window.removeEventListener(SHOW_CODE_EVENT, onShow);
+      window.removeEventListener(PASTE_CODE_EVENT, onPaste);
+    };
   }, []);
 
   const copy = async () => {
@@ -50,7 +63,8 @@ export function TransferProgress({ open: startOpen = false }: { open?: boolean }
         <span className="underline decoration-dotted underline-offset-2">Move your progress to another device</span>
       </summary>
       <div className="mt-2 space-y-3 rounded-lg border border-line bg-ink/40 p-3">
-        <p className="text-muted">Your unlocks, wins and daily streak travel in one code. Keep it to yourself.</p>
+        <p className="text-muted">Your name, look, wins, unlocks and daily streak travel in one code. Keep it to yourself.</p>
+        <p className="label text-[10px]">This device&apos;s code</p>
 
         {shown ? (
           <div className="flex gap-2">
@@ -77,8 +91,10 @@ export function TransferProgress({ open: startOpen = false }: { open?: boolean }
           </button>
         )}
 
+        <p className="label pt-1 text-[10px]">Have a code from another device?</p>
         <div className="flex gap-2">
           <input
+            ref={pasteRef}
             className="input min-w-0 flex-1 font-mono text-[11px]"
             value={input}
             onChange={(e) => setInput(e.target.value)}
@@ -91,15 +107,22 @@ export function TransferProgress({ open: startOpen = false }: { open?: boolean }
             disabled={!input.trim()}
             onClick={() => {
               const r = importCode(input);
-              setMsg(
-                r.ok
-                  ? `Done! ${r.wins} ${r.wins === 1 ? "win" : "wins"}${r.streak > 0 ? ` and a ${r.streak}-day streak` : ""} on this device now.`
-                  : r.error,
-              );
+              if (!r.ok) setMsg(r.error);
+              else {
+                const parts = [
+                  ...(r.look ? ["your name & look"] : []),
+                  `${r.wins} ${r.wins === 1 ? "win" : "wins"}`,
+                  ...(r.streak > 0 ? [`${r.streak}-day streak`] : []),
+                ];
+                setMsg(
+                  `Done! Brought over: ${parts.join(" · ")}.` +
+                    (r.look ? "" : " Older codes don't carry your name and look: make a fresh code on your old device for those."),
+                );
+              }
               if (r.ok) setInput("");
             }}
           >
-            Add
+            Use code
           </button>
         </div>
         {msg && (

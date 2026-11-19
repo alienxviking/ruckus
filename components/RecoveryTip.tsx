@@ -1,6 +1,6 @@
 "use client";
 
-import { KeyRound, X } from "lucide-react";
+import { ClipboardPaste, KeyRound, X } from "lucide-react";
 import { useSyncExternalStore } from "react";
 import { Rux } from "./Rux";
 
@@ -34,6 +34,8 @@ function subscribe(fn: () => void) {
 
 /** Asks the transfer box on this page to open and show the code. */
 export const SHOW_CODE_EVENT = "ruckus:show-code";
+/** Asks the transfer box to open with the paste field ready (for a code from another device). */
+export const PASTE_CODE_EVENT = "ruckus:paste-code";
 
 export function RecoveryTip({ className = "" }: { className?: string }) {
   // Assume seen on the server and before storage is read, so regulars never see a flash.
@@ -50,20 +52,39 @@ export function RecoveryTip({ className = "" }: { className?: string }) {
       <div className="min-w-0 text-sm">
         <p className="marker text-lg leading-none text-[#ffb020]">suno, ye zaroori hai!</p>
         <p className="mt-1 text-text/90">
-          There&apos;s no account here: your wins, unlocks and streak live only in this browser. Save your code somewhere safe (a note, or
-          WhatsApp it to yourself) to get them back on a new phone.
+          There&apos;s no account here: your name, wins, unlocks and streak live only in this browser.
         </p>
-        <button
-          type="button"
-          className="btn mt-2 min-h-9 px-3 text-xs font-bold"
-          onClick={() => {
-            markRecoverySeen();
-            window.dispatchEvent(new Event(SHOW_CODE_EVENT));
-          }}
-        >
-          <KeyRound aria-hidden className="size-3.5" strokeWidth={2.25} />
-          Show my code
-        </button>
+        <ul className="mt-1.5 space-y-0.5 text-xs text-muted">
+          <li>
+            <b className="text-text">Played before on another device?</b> Paste that code to bring everything here.
+          </li>
+          <li>
+            <b className="text-text">New here?</b> Save your code somewhere safe (a note, or WhatsApp it to yourself).
+          </li>
+        </ul>
+        <div className="mt-2 flex flex-wrap gap-2">
+          <button
+            type="button"
+            className="btn min-h-9 px-3 text-xs font-bold"
+            onClick={() => {
+              markRecoverySeen();
+              window.dispatchEvent(new Event(PASTE_CODE_EVENT));
+            }}
+          >
+            <ClipboardPaste aria-hidden className="size-3.5" strokeWidth={2.25} />I have a code
+          </button>
+          <button
+            type="button"
+            className="btn min-h-9 px-3 text-xs font-bold"
+            onClick={() => {
+              markRecoverySeen();
+              window.dispatchEvent(new Event(SHOW_CODE_EVENT));
+            }}
+          >
+            <KeyRound aria-hidden className="size-3.5" strokeWidth={2.25} />
+            Save my code
+          </button>
+        </div>
       </div>
       <button
         type="button"

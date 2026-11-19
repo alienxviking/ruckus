@@ -5,6 +5,7 @@
 import { CATALOG_BY_ID, type GameCategory } from "@/games/catalog";
 import type { AccessoryId } from "@/shared/types";
 import { currentStreak, dailyDay, exportDaily, mergeDaily, subscribeDaily } from "./daily";
+import { exportLook, importLook } from "./identity";
 
 const KEY = "ruckus:progress";
 const OLD_KEY = "ruckus:wins";
@@ -199,9 +200,9 @@ const toB64 = (s: string) =>
     .replace(/=+$/, "");
 const fromB64 = (s: string) => new TextDecoder().decode(Uint8Array.from(atob(s.replace(/-/g, "+").replace(/_/g, "/")), (c) => c.charCodeAt(0)));
 
-/** A code that carries this browser's unlocks and daily results to another device. */
+/** A code that carries this browser's look, unlocks and daily results to another device. */
 export function exportCode(): string {
-  const body = toB64(JSON.stringify({ p: getProgress(), d: exportDaily() }));
+  const body = toB64(JSON.stringify({ p: getProgress(), d: exportDaily(), l: exportLook() }));
   return `${PREFIX}${body}.${checksum(body)}`;
 }
 
@@ -216,7 +217,7 @@ export function subscribeTransfer(fn: () => void) {
 }
 
 /** Adds a transfer code's progress to this browser (keeps the higher of each number). */
-export function importCode(code: string): { ok: true; wins: number; streak: number } | { ok: false; error: string } {
+export function importCode(code: string): { ok: true; wins: number; streak: number; look: boolean } | { ok: false; error: string } {
   const c = code.trim().replace(/\s+/g, "");
   const v2 = c.startsWith(PREFIX);
   if (!v2 && !c.startsWith(OLD_PREFIX)) return { ok: false, error: "That doesn't look like a Ruckus transfer code." };
@@ -224,10 +225,12 @@ export function importCode(code: string): { ok: true; wins: number; streak: numb
   if (!body || !sum || checksum(body) !== sum) return { ok: false, error: "That code is incomplete. Copy the whole thing." };
   let incoming: Progress | null = null;
   let daily: unknown = null;
+  let look: unknown = null;
   try {
     const raw = JSON.parse(fromB64(body));
     incoming = sanitize(v2 ? raw?.p : raw);
     daily = v2 ? raw?.d : null;
+    look = v2 ? raw?.l : null;
   } catch {
     incoming = null;
   }
@@ -249,6 +252,7 @@ export function importCode(code: string): { ok: true; wins: number; streak: numb
   };
   save(merged);
   if (daily) mergeDaily(daily);
+  const gotLook = importLook(look);
   const d = exportDaily();
-  return { ok: true, wins: merged.wins, streak: currentStreak(d, dailyDay()) };
+  return { ok: true, wins: merged.wins, streak: currentStreak(d, dailyDay()), look: gotLook };
 }

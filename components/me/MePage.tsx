@@ -4,7 +4,7 @@ import Link from "next/link";
 import { Flame, Gamepad2, Heart, Trophy } from "lucide-react";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { CATALOG_BY_ID } from "@/games/catalog";
-import { loadIdentity, saveIdentity, type Identity } from "@/lib/identity";
+import { IDENTITY_EVENT, loadIdentity, saveIdentity, type Identity } from "@/lib/identity";
 import { readMyGames, serverMyGames, subscribeMyGames } from "@/lib/my-games";
 import { ACHIEVEMENTS, getProgress, subscribeProgress, UNLOCK_AT, type Progress } from "@/lib/progress";
 import { ACCESSORY_LABEL } from "@/lib/avatar-art";
@@ -22,14 +22,21 @@ const EMPTY: Progress = { v: 1, wins: 0, gameWins: {}, played: {}, run: 0, bestR
 export function MePage() {
   // Your saved look lives in this browser: read it once the page is here (not on the server).
   const [loaded, setLoaded] = useState<{ me: Identity | null } | null>(null);
+  const [editing, setEditing] = useState(false);
   useEffect(() => {
     queueMicrotask(() => setLoaded({ me: loadIdentity() }));
+    // A transfer code can bring in a name and look.
+    const reread = () => {
+      setLoaded({ me: loadIdentity() });
+      setEditing(false);
+    };
+    window.addEventListener(IDENTITY_EVENT, reread);
+    return () => window.removeEventListener(IDENTITY_EVENT, reread);
   }, []);
   const me = loaded?.me ?? null;
   const setOverride = (v: Identity) => setLoaded({ me: v });
   const p = useSyncExternalStore(subscribeProgress, getProgress, () => EMPTY);
   const mine = useSyncExternalStore(subscribeMyGames, readMyGames, serverMyGames);
-  const [editing, setEditing] = useState(false);
 
   // Older versions only counted wins, so "played" can lag behind: never show fewer games than wins.
   const played = Math.max(p.wins, Object.values(p.played).reduce((a, b) => a + b, 0));
@@ -57,7 +64,7 @@ export function MePage() {
             >
               <Avatar id={me.avatar} size="1em" />
             </span>
-            <div className="min-w-0 flex-1">
+            <div className="min-w-[11rem] flex-1">
               <p className="marker text-xl leading-none text-brand-2">that&apos;s you!</p>
               <h1 className="mt-1 truncate font-hero text-4xl font-extrabold tracking-[-0.03em]" style={{ color: me.color }}>
                 {me.name}

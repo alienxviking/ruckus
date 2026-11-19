@@ -1,9 +1,9 @@
 "use client";
 
 import { Ban, Dices, Lock, Trophy } from "lucide-react";
-import { useState, useSyncExternalStore } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import { ACCESSORIES, AVATARS, MAX_NAME, parseAvatar, PLAYER_COLORS, type AccessoryId } from "@/shared/types";
-import { randomLook } from "@/lib/identity";
+import { IDENTITY_EVENT, loadIdentity, randomLook } from "@/lib/identity";
 import { ACCESSORY_LABEL } from "@/lib/avatar-art";
 import { ACHIEVEMENTS, getProgress, lockReason, subscribeProgress } from "@/lib/progress";
 import { TransferProgress } from "../TransferProgress";
@@ -45,6 +45,21 @@ export function ProfileForm({
   // Locked accessories explain themselves on tap (phones have no hover titles).
   const [hint, setHint] = useState<string | null>(null);
   const avatar = acc ? `${base}+${acc}` : base;
+  useEffect(() => {
+    const take = () => {
+      const me = loadIdentity();
+      if (!me) return;
+      setName(me.name);
+      setColor(me.color);
+      const a = parseAvatar(me.avatar);
+      if (a) {
+        setBase(a.base);
+        setAcc(a.acc ?? null);
+      }
+    };
+    window.addEventListener(IDENTITY_EVENT, take);
+    return () => window.removeEventListener(IDENTITY_EVENT, take);
+  }, []);
   const valid = name.trim().length > 0;
 
   return (

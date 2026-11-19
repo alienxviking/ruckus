@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { loadIdentity, type Identity } from "@/lib/identity";
+import { IDENTITY_EVENT, loadIdentity, type Identity } from "@/lib/identity";
 import { Avatar } from "../Avatar";
 
 
@@ -11,6 +11,9 @@ export function MeLink() {
   const [me, setMe] = useState<Identity | null>(null);
   useEffect(() => {
     queueMicrotask(() => setMe(loadIdentity()));
+    const reread = () => setMe(loadIdentity());
+    window.addEventListener(IDENTITY_EVENT, reread);
+    return () => window.removeEventListener(IDENTITY_EVENT, reread);
   }, []);
   return (
     <Link href="/me" className="btn border-2 px-3 py-1.5" aria-label="Your profile" title="Your profile">

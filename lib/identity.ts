@@ -1,4 +1,4 @@
-import { AVATARS, PLAYER_COLORS, toAvatarId } from "@/shared/types";
+import { AVATARS, MAX_NAME, parseAvatar, PLAYER_COLORS, toAvatarId } from "@/shared/types";
 
 export interface Identity {
   /** Public player id (everyone in a room sees it). */
@@ -60,6 +60,28 @@ export function saveIdentity(look: { name: string; color: string; avatar: string
   const identity: Identity = { ...look, id, key };
   write(identity);
   return identity;
+}
+
+/** Fired on window when a transfer code brings in a name and look (pages re-read it). */
+export const IDENTITY_EVENT = "ruckus:identity";
+
+/** The look to carry in a transfer code (never the id or the secret key). */
+export function exportLook(): { name: string; color: string; avatar: string } | null {
+  const me = loadIdentity();
+  return me ? { name: me.name, color: me.color, avatar: me.avatar } : null;
+}
+
+/** Takes the name and look from a transfer code; this browser keeps its own id and key. */
+export function importLook(raw: unknown): boolean {
+  if (!raw || typeof raw !== "object") return false;
+  const r = raw as Record<string, unknown>;
+  const name = typeof r.name === "string" ? r.name.replace(/[\u0000-\u001f\u007f]/g, "").trim().slice(0, MAX_NAME) : "";
+  const avatar = typeof r.avatar === "string" && parseAvatar(r.avatar) ? r.avatar : null;
+  const color = typeof r.color === "string" && (PLAYER_COLORS as readonly string[]).includes(r.color) ? r.color : null;
+  if (!name || !avatar || !color) return false;
+  saveIdentity({ name, color, avatar });
+  window.dispatchEvent(new Event(IDENTITY_EVENT));
+  return true;
 }
 
 export function randomLook() {
