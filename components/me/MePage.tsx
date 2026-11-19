@@ -164,7 +164,7 @@ export function MePage() {
       <section className="card p-4">
         <h2 className="font-hero text-lg font-extrabold">Save your progress</h2>
         <p className="mt-1 text-sm text-muted">
-          Your wins and unlocks live in this browser. To carry them to your phone or another laptop, copy your code here and paste it
+          Your wins, unlocks and daily streak live in this browser. To carry them to your phone or another laptop, copy your code here and paste it
           there. No account needed.
         </p>
         <TransferProgress open />

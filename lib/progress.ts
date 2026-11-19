@@ -4,6 +4,7 @@
 
 import { CATALOG_BY_ID, type GameCategory } from "@/games/catalog";
 import type { AccessoryId } from "@/shared/types";
+import { currentStreak, dailyDay, exportDaily, mergeDaily, subscribeDaily } from "./daily";
 
 const KEY = "ruckus:progress";
 const OLD_KEY = "ruckus:wins";
@@ -180,8 +181,10 @@ export function recordResult(r: { gameId: string; won: boolean; humans: number }
 }
 
 // ---------- transfer code ----------
+// RK2 carries unlocks and daily challenge results; RK1 (unlocks only) still imports.
 
-const PREFIX = "RK1-";
+const PREFIX = "RK2-";
+const OLD_PREFIX = "RK1-";
 
 function checksum(s: string): string {
   let h = 2166136261;
@@ -189,22 +192,42 @@ function checksum(s: string): string {
   return (h >>> 0).toString(36).slice(0, 4).padStart(4, "0");
 }
 
-/** A code that carries this browser's progress to another device. */
+const toB64 = (s: string) =>
+  btoa(String.fromCharCode(...new TextEncoder().encode(s)))
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "");
+const fromB64 = (s: string) => new TextDecoder().decode(Uint8Array.from(atob(s.replace(/-/g, "+").replace(/_/g, "/")), (c) => c.charCodeAt(0)));
+
+/** A code that carries this browser's unlocks and daily results to another device. */
 export function exportCode(): string {
-  const p = getProgress();
-  const body = btoa(JSON.stringify(p)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  const body = toB64(JSON.stringify({ p: getProgress(), d: exportDaily() }));
   return `${PREFIX}${body}.${checksum(body)}`;
 }
 
+/** Changes whenever the code would: progress or daily results. */
+export function subscribeTransfer(fn: () => void) {
+  const a = subscribeProgress(fn);
+  const b = subscribeDaily(fn);
+  return () => {
+    a();
+    b();
+  };
+}
+
 /** Adds a transfer code's progress to this browser (keeps the higher of each number). */
-export function importCode(code: string): { ok: true; wins: number } | { ok: false; error: string } {
+export function importCode(code: string): { ok: true; wins: number; streak: number } | { ok: false; error: string } {
   const c = code.trim().replace(/\s+/g, "");
-  if (!c.startsWith(PREFIX)) return { ok: false, error: "That doesn't look like a Ruckus transfer code." };
+  const v2 = c.startsWith(PREFIX);
+  if (!v2 && !c.startsWith(OLD_PREFIX)) return { ok: false, error: "That doesn't look like a Ruckus transfer code." };
   const [body, sum] = c.slice(PREFIX.length).split(".");
   if (!body || !sum || checksum(body) !== sum) return { ok: false, error: "That code is incomplete. Copy the whole thing." };
   let incoming: Progress | null = null;
+  let daily: unknown = null;
   try {
-    incoming = sanitize(JSON.parse(atob(body.replace(/-/g, "+").replace(/_/g, "/"))));
+    const raw = JSON.parse(fromB64(body));
+    incoming = sanitize(v2 ? raw?.p : raw);
+    daily = v2 ? raw?.d : null;
   } catch {
     incoming = null;
   }
@@ -225,5 +248,7 @@ export function importCode(code: string): { ok: true; wins: number } | { ok: fal
     bigWins: Math.max(cur.bigWins, incoming.bigWins),
   };
   save(merged);
-  return { ok: true, wins: merged.wins };
+  if (daily) mergeDaily(daily);
+  const d = exportDaily();
+  return { ok: true, wins: merged.wins, streak: currentStreak(d, dailyDay()) };
 }

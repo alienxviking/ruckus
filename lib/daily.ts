@@ -132,6 +132,66 @@ export function subscribeDaily(fn: () => void) {
   };
 }
 
+// ---------- moving results to another device (part of the transfer code) ----------
+
+/** Today's and recent results, best scores and streak, small enough for a transfer code. */
+export function exportDaily(): DailyData {
+  return readDaily();
+}
+
+function cleanEntry(v: unknown): DailyEntry | null {
+  if (!v || typeof v !== "object") return null;
+  const e = v as Record<string, unknown>;
+  const score = typeof e.score === "number" && Number.isFinite(e.score) ? e.score : null;
+  const headline = typeof e.headline === "string" ? e.headline.slice(0, 120) : "";
+  return { score, headline, ...(e.pending === true ? { pending: true } : {}) };
+}
+
+/**
+ * Adds results from another device: a day's game keeps whichever result is finished (this
+ * device's if both are), best scores keep the higher, the streak keeps the more recent / longer.
+ */
+export function mergeDaily(raw: unknown): void {
+  if (!raw || typeof raw !== "object") return;
+  const r = raw as Record<string, unknown>;
+  const cur = readDaily();
+  const days: DailyData["days"] = {};
+  const inDays = r.days && typeof r.days === "object" ? (r.days as Record<string, unknown>) : {};
+  const keys = new Set([...Object.keys(cur.days), ...Object.keys(inDays).filter((k) => /^\d{4}-\d{2}-\d{2}$/.test(k))]);
+  for (const day of [...keys].sort().reverse().slice(0, 14)) {
+    const mine = cur.days[day] ?? {};
+    const theirs = inDays[day] && typeof inDays[day] === "object" ? (inDays[day] as Record<string, unknown>) : {};
+    const out: Record<string, DailyEntry> = { ...mine };
+    for (const [id, v] of Object.entries(theirs)) {
+      if (!CATALOG_BY_ID[id]) continue;
+      const e = cleanEntry(v);
+      if (!e) continue;
+      const m = out[id];
+      if (!m || (m.pending && !e.pending)) out[id] = e;
+    }
+    days[day] = out;
+  }
+  const best = { ...cur.best };
+  if (r.best && typeof r.best === "object")
+    for (const [id, v] of Object.entries(r.best as Record<string, unknown>))
+      if (CATALOG_BY_ID[id] && typeof v === "number" && Number.isFinite(v) && (best[id] === undefined || v > best[id])) best[id] = v;
+  const s = (r.streak && typeof r.streak === "object" ? r.streak : {}) as Record<string, unknown>;
+  const theirs = {
+    day: typeof s.day === "string" && /^\d{4}-\d{2}-\d{2}$/.test(s.day) ? s.day : "",
+    count: Math.max(0, Math.floor(Number(s.count) || 0)),
+    best: Math.max(0, Math.floor(Number(s.best) || 0)),
+  };
+  const a = cur.streak;
+  const later = theirs.day > a.day || (theirs.day === a.day && theirs.count > a.count) ? theirs : a;
+  const streak = { day: later.day, count: later.count, best: Math.max(a.best, theirs.best, later.count) };
+  try {
+    localStorage.setItem(KEY, JSON.stringify({ days, best, streak } satisfies DailyData));
+  } catch {
+    /* not saved */
+  }
+  for (const fn of listeners) fn();
+}
+
 /** The streak as it stands today: it lapses once a whole day goes by unplayed. */
 export function currentStreak(d: DailyData, today: string): number {
   return d.streak.day === today || d.streak.day === prevDay(today) ? d.streak.count : 0;
