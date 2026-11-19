@@ -17,7 +17,7 @@ export const rules: GameRules = {
   ],
   controls: {
     desktop: [
-      "Clue-giver: click emoji on the emoji keyboard, or type in its search box and press Enter to add the top match. Backspace removes the last emoji.",
+      "Clue-giver: click emoji on the emoji keyboard, or type in its search box and press Enter to add the top match. To remove one, tap it in your clue (the ✕); Backspace only edits the search.",
       "Guessers: just start typing anywhere and press Enter to send a guess.",
     ],
     touch: [

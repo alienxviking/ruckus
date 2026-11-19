@@ -66,9 +66,6 @@ export function EmojiPicker({
     if (e.key === "Enter") {
       e.preventDefault();
       if (items[0]) add(items[0].e);
-    } else if (e.key === "Backspace" && !query) {
-      e.preventDefault();
-      backspace();
     } else if (e.key === "Escape") setQuery("");
   };
 
