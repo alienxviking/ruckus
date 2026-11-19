@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { Check, Copy, Flame, Image as ImageIcon, Play, RotateCcw, Trophy } from "lucide-react";
+import dynamic from "next/dynamic";
 import { renderDailyCard } from "@/lib/daily-card";
 import { CATALOG_BY_ID } from "@/games/catalog";
 import { GAME_CONFIG } from "@/games/config";
@@ -28,6 +29,10 @@ import { GameBadge } from "../GameBadge";
 import { Rux } from "../Rux";
 import { Magnetic } from "../Magnetic";
 import { LocalStage, loadLocalGame, localMe, type LoadedGame } from "../play/LocalStage";
+
+// The story-card preview dialog, fetched when someone first asks for the picture.
+const loadSharePreview = () => import("./SharePreview");
+const SharePreview = dynamic(loadSharePreview, { ssr: false });
 
 const SERVER_DATA: DailyData = { days: {}, best: {}, streak: { day: "", count: 0, best: 0 } };
 
@@ -250,9 +255,11 @@ function Share({ day, data, all }: { day: string; data: DailyData; all: boolean 
     feedback("pop");
     setTimeout(() => setCopied(false), 2000);
   };
-  // The picture version: share it on phones, download it elsewhere.
+  // The picture version: a story card, previewed first, then shared or saved from there.
   const ruxRef = useRef<HTMLSpanElement>(null);
   const [making, setMaking] = useState(false);
+  const [card, setCard] = useState<File | null>(null);
+  const [preview, setPreview] = useState(false);
   const shareImage = async () => {
     const svg = ruxRef.current?.querySelector("svg");
     if (!svg) return;
@@ -267,19 +274,8 @@ function Share({ day, data, all }: { day: string; data: DailyData; all: boolean 
         sans: font("--font-geist-sans", "sans-serif"),
       });
       if (!blob) return;
-      const file = new File([blob], `ruckus-daily-${day}.png`, { type: "image/png" });
-      const phone = matchMedia("(pointer: coarse)").matches;
-      if (phone && navigator.canShare?.({ files: [file] })) {
-        await navigator.share({ files: [file], text: text }).catch(() => {});
-      } else {
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = file.name;
-        a.click();
-        setTimeout(() => URL.revokeObjectURL(url), 5000);
-      }
-      feedback("pop");
+      setCard(new File([blob], `ruckus-daily-${day}.png`, { type: "image/png" }));
+      setPreview(true);
     } finally {
       setMaking(false);
     }
@@ -335,7 +331,7 @@ function Share({ day, data, all }: { day: string; data: DailyData; all: boolean 
       </ul>
 
       <div className="mt-4 flex gap-2">
-        <button className={`btn min-h-11 flex-1 justify-center text-base font-bold ${all ? "btn-primary" : ""}`} onClick={shareImage} disabled={making}>
+        <button className={`btn min-h-11 flex-1 justify-center text-base font-bold ${all ? "btn-primary" : ""}`} onClick={shareImage} onPointerEnter={loadSharePreview} disabled={making}>
           <ImageIcon aria-hidden className="size-4" strokeWidth={2.2} />
           {making ? "Making…" : all ? "Share my day" : "Share so far"}
         </button>
@@ -346,8 +342,9 @@ function Share({ day, data, all }: { day: string; data: DailyData; all: boolean 
       </div>
       {/* Source art for the picture (hidden). */}
       <span ref={ruxRef} aria-hidden className="hidden">
-        <Rux mood="grin" />
+        <Rux mood="wink" />
       </span>
+      {card && <SharePreview open={preview} onOpenChange={setPreview} file={card} text={text} />}
     </section>
   );
 }
