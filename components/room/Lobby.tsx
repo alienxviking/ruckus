@@ -10,6 +10,8 @@ import { GameBrowser } from "../GameBrowser";
 import { CoverArt } from "../CoverArt";
 import { Rux } from "../Rux";
 import { HowToPlay } from "./HowToPlay";
+import { FirstTimeTips, markRoomTipsSeen } from "./FirstTimeTips";
+import { InviteCard } from "./InviteCard";
 import { Dices } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
@@ -18,8 +20,10 @@ export function Lobby({
   isHost,
   send,
   words,
+  myName,
 }: {
   room: RoomView;
+  myName?: string;
   isHost: boolean;
   send: (m: ClientMsg) => void;
   words: { gameId: string; words: Record<string, string[]> } | null;
@@ -75,8 +79,15 @@ export function Lobby({
   }, [isHost]);
   const showPill = isHost && heroHidden;
 
+  // Back in the lobby after a game: they've got the hang of it.
+  const played = room.history.length > 0;
+  useEffect(() => {
+    if (played) markRoomTipsSeen();
+  }, [played]);
+
   return (
     <div className="flex flex-col gap-4">
+      <FirstTimeTips isHost={isHost} />
       <div
         ref={heroRef}
         className="stk animate-rise relative grid gap-5 p-5 sm:grid-cols-[1fr_auto] sm:p-6"
@@ -157,21 +168,10 @@ export function Lobby({
         </div>
       </div>
 
+      {humans < 3 && <InviteCard code={room.code} gameId={game.id} name={myName} humans={humans} isHost={isHost} />}
+
       <GameSettings room={room} isHost={isHost} send={send} words={words} />
       <RecapCard room={room} />
-
-      {humans < 2 && (
-        <div className="animate-rise flex items-end gap-2">
-          <span aria-hidden className="bob w-14 shrink-0" style={{ "--tilt": "-8deg" } as React.CSSProperties}>
-            <Rux mood="wow" className="w-full" />
-          </span>
-          <p className="mb-2 rounded-2xl rounded-bl-md border-2 border-ink bg-paper px-3.5 py-2 text-sm text-ink shadow-[3px_4px_0_var(--color-pink)]">
-            <span className="marker text-lg">akele akele? 👀 </span>
-            Hit <b>Invite</b> at the top and send the link to friends
-            {isHost ? <>, or add a <b>practice bot</b> in the players panel</> : null}.
-          </p>
-        </div>
-      )}
 
       <div>
         <div className="mb-3 flex items-center justify-between gap-2">

@@ -3,7 +3,7 @@
 import { Check, Link2, QrCode } from "lucide-react";
 import dynamic from "next/dynamic";
 import { useState } from "react";
-import { inviteUrl } from "@/lib/invite";
+import { inviteUrl, shareInvite } from "@/lib/invite";
 
 // The QR dialog (encoder + animated dialog) is fetched on first hover/focus of its button.
 const loadInviteDialog = () => import("./InviteDialog");
@@ -17,17 +17,9 @@ export function InviteButton({ code, gameId, name }: { code: string; gameId?: st
   async function share() {
     // The invite link previews as the picked game's poster with "<name> invited you".
     const url = inviteUrl(window.location.origin, code, gameId, name);
-    try {
-      if (navigator.share && matchMedia("(pointer: coarse)").matches) {
-        await navigator.share({ title: "Join my Ruckus room", url });
-        return;
-      }
-      await navigator.clipboard.writeText(url);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1800);
-    } catch {
-      /* user cancelled share sheet or clipboard blocked */
-    }
+    if ((await shareInvite(url)) !== "copied") return;
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1800);
   }
 
   return (

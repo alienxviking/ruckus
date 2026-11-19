@@ -179,7 +179,7 @@ export function Room({
         <div className="grid flex-1 gap-4 pb-24 lg:pb-4 lg:grid-cols-[minmax(0,1fr)_300px]">
           <section className="min-w-0">
             {room.phase === "lobby" ? (
-              <Lobby room={room} isHost={isHost} send={r.send} words={r.words} byId={byId} />
+              <Lobby room={room} isHost={isHost} send={r.send} words={r.words} byId={byId} myName={identity.name} />
             ) : (
               <div className="animate-rise">
                 <GameStage

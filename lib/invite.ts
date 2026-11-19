@@ -28,3 +28,22 @@ export function inviteUrl(origin: string, code: string, gameId?: string, name?: 
   const qs = q.toString();
   return `${origin}/i/${code}${qs ? `?${qs}` : ""}`;
 }
+
+/** Opens the phone's share sheet (WhatsApp etc.), or copies the link on computers. */
+export async function shareInvite(url: string): Promise<"shared" | "copied" | "failed"> {
+  try {
+    if (navigator.share && matchMedia("(pointer: coarse)").matches) {
+      await navigator.share({ title: "Join my Ruckus room", url });
+      return "shared";
+    }
+    await navigator.clipboard.writeText(url);
+    return "copied";
+  } catch {
+    return "failed";
+  }
+}
+
+/** A WhatsApp link that opens a chat picker with the invite already typed. */
+export function whatsappInvite(url: string): string {
+  return `https://wa.me/?text=${encodeURIComponent(`Come play with me on Ruckus! ${url}`)}`;
+}
