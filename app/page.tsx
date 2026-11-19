@@ -10,6 +10,7 @@ import { DailySticker } from "@/components/home/DailySticker";
 import { RuxIntro } from "@/components/home/RuxIntro";
 import { HomeLibrary } from "@/components/home/HomeLibrary";
 import { WhenIdle } from "@/components/home/WhenIdle";
+import { InstallHint } from "@/components/home/InstallHint";
 import { LOCAL_GAMES } from "@/lib/local-games";
 
 const LOCAL_IDS = LOCAL_GAMES.map((g) => g.id);
@@ -119,6 +120,7 @@ export default function Home() {
           <HomeLibrary localIds={LOCAL_IDS} />
         </WhenIdle>
 
+        <InstallHint />
         <footer className="mt-20 flex flex-col items-center gap-2 text-center">
           <Rux mood="sleepy" className="h-20 w-16" />
           <p className="marker text-2xl text-muted">bas itna hi. ab jao, khelo.</p>
