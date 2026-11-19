@@ -29,6 +29,8 @@ function start(n: number, seed = 42) {
     end(r);
   };
   const s: DotsState = game.setup(t.ctx);
+  // The game deals a random order; these scenarios are written against lobby order.
+  s.seats = t.ctx.players.map((p) => p.id);
   return { t, s, ends };
 }
 type G = ReturnType<typeof start>;
@@ -731,3 +733,10 @@ for (const [n, bots] of [
 }
 
 console.log("dots: all tests passed");
+
+// ---------- turn order is shuffled per game ----------
+{
+  const orders = new Set<string>();
+  for (let seed = 1; seed <= 12; seed++) orders.add((game.setup(makeTestCtx(4, seed).ctx) as DotsState).seats.join());
+  if (orders.size < 2) throw new Error("turn order varies between games");
+}

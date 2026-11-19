@@ -206,7 +206,8 @@ export const pairs: GameDef<PairsState, unknown> = {
       ctx.random,
     ).slice(0, n / 2);
     const faces = shuffle([...chosen, ...chosen], ctx.random);
-    const seats = ctx.players.map((p) => p.id);
+    // Fresh turn order every game, not lobby join order.
+    const seats = shuffle(ctx.players.map((p) => p.id), ctx.random);
     const solo = seats.length === 1;
     const s: PairsState = {
       faces,

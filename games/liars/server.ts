@@ -1,4 +1,4 @@
-import type { GameCtx, GameDef } from "../../shared/game";
+import { shuffle, type GameCtx, type GameDef } from "../../shared/game";
 import { readSettings } from "../../shared/settings";
 import { config } from "./config";
 import {
@@ -437,7 +437,8 @@ export const liars: GameDef<LiarsState, LiarsAction> = {
   id: "liars",
 
   setup(ctx) {
-    const order = ctx.players.map((p) => p.id);
+    // Fresh turn order every game, not lobby join order.
+    const order = shuffle(ctx.players.map((p) => p.id), ctx.random);
     const set = readSettings(config.settings, ctx.settings);
     const startDice = typeof set.dice === "number" ? set.dice : startingDice(order.length);
     const turnMs = typeof set.turnMs === "number" ? set.turnMs : TURN_MS;

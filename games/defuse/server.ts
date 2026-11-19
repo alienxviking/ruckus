@@ -1,4 +1,4 @@
-import type { GameCtx, GameDef } from "../../shared/game";
+import { shuffle, type GameCtx, type GameDef } from "../../shared/game";
 import { readSettings } from "../../shared/settings";
 import { config } from "./config";
 import {
@@ -407,6 +407,8 @@ export const defuse: GameDef<DefuseState, DefuseAction> = {
       over: false,
       abandoned: false,
     };
+    // Fresh defusing order every game, not lobby join order.
+    s.order = shuffle(order, ctx.random);
     startBrief(s, ctx, 0);
     return s;
   },

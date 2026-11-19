@@ -1,4 +1,4 @@
-import { pick, topScorers, type GameCtx, type GameDef } from "../../shared/game";
+import { pick, shuffle, topScorers, type GameCtx, type GameDef } from "../../shared/game";
 import { readSettings } from "../../shared/settings";
 import { config } from "./config";
 import {
@@ -283,7 +283,8 @@ export const dots: GameDef<DotsState, unknown> = {
   id: "dots",
 
   setup(ctx) {
-    const seats = ctx.players.map((p) => p.id);
+    // Fresh turn order every game, not lobby join order.
+    const seats = shuffle(ctx.players.map((p) => p.id), ctx.random);
     const set = readSettings(config.settings, ctx.settings);
     const moveMs = Number(set.turnSec) * 1000 || TURN_MS;
     const { rows, cols } = boardFor(seats.length, String(set.board));

@@ -30,6 +30,8 @@ function start(players = 3, seed = 42) {
     realEnd(r);
   };
   const s: LiarsState = game.setup(t.ctx);
+  // The game deals a random order; these scenarios are written against lobby order.
+  s.order = t.ctx.players.map((p) => p.id);
   return { t, s, ends: () => endCalls };
 }
 
@@ -677,3 +679,10 @@ for (let n = 2; n <= 8; n++) {
 }
 
 console.log("✓ liars tests passed");
+
+// ---------- turn order is shuffled per game ----------
+{
+  const orders = new Set<string>();
+  for (let seed = 1; seed <= 12; seed++) orders.add((game.setup(makeTestCtx(4, seed).ctx) as LiarsState).order.join());
+  if (orders.size < 2) throw new Error("turn order varies between games");
+}
