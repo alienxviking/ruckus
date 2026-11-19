@@ -17,7 +17,7 @@ export function InviteButton({ code, gameId, name }: { code: string; gameId?: st
   async function share() {
     // The invite link previews as the picked game's poster with "<name> invited you".
     const url = inviteUrl(window.location.origin, code, gameId, name);
-    if ((await shareInvite(url)) !== "copied") return;
+    if ((await shareInvite(url, true)) !== "copied") return;
     setCopied(true);
     setTimeout(() => setCopied(false), 1800);
   }

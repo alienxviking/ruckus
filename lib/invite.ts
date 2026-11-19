@@ -29,13 +29,23 @@ export function inviteUrl(origin: string, code: string, gameId?: string, name?: 
   return `${origin}/i/${code}${qs ? `?${qs}` : ""}`;
 }
 
-/** Opens the phone's share sheet (WhatsApp etc.), or copies the link on computers. */
-export async function shareInvite(url: string): Promise<"shared" | "copied" | "failed"> {
-  try {
-    if (navigator.share && matchMedia("(pointer: coarse)").matches) {
-      await navigator.share({ title: "Join my Ruckus room", url });
+/**
+ * Opens the system share sheet (phones, Windows and Mac all have one in modern browsers), or
+ * copies the link where there isn't one. `sheetOnPhonesOnly` keeps the old quick-copy
+ * behaviour on computers (the small header Invite button).
+ */
+export async function shareInvite(url: string, sheetOnPhonesOnly = false): Promise<"shared" | "copied" | "cancelled" | "failed"> {
+  const sheet = typeof navigator.share === "function" && (!sheetOnPhonesOnly || matchMedia("(pointer: coarse)").matches);
+  if (sheet) {
+    try {
+      await navigator.share({ title: "Join my Ruckus room", text: "Come play with me on Ruckus!", url });
       return "shared";
+    } catch (e) {
+      // Closing the sheet isn't an error; anything else falls back to copying.
+      if ((e as Error)?.name === "AbortError") return "cancelled";
     }
+  }
+  try {
     await navigator.clipboard.writeText(url);
     return "copied";
   } catch {
