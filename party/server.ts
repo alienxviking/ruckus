@@ -26,6 +26,10 @@ import { addRating, cleanErrorReport, cleanNote, clientIp, isPublicRoomId, Limit
 const HOST_HANDOFF_MS = 8_000; // host must be gone this long before someone else takes over
 const REMOVE_AFTER_MS = 60_000; // disconnected lobby players disappear after this
 const EMPTY_ROOM_GRACE_MS = 30_000; // a running game survives everyone refreshing at once
+/** Room snapshot (survives Cloudflare restarting the room, e.g. on a deploy). */
+const SNAPSHOT_KEY = "room";
+const SNAPSHOT_EVERY_MS = 3_000; // at most one write per 3 s of room changes
+const SNAPSHOT_TTL_MS = 6 * 3_600_000; // forgotten 6 h after the last change
 const AUTO_NEXT_MS = 12_000; // quick play: pause between a result and the next game
 const CHAT_LIMIT = 80;
 const CHAT_BURST = 6; // chat messages allowed per window, per player
@@ -86,6 +90,27 @@ type Conn = Connection<ConnState>;
  */
 function pid(conn: { id: string }): string {
   return conn.id.split(".")[0];
+}
+
+/** What a room saves so it survives a restart (see RuckusRoom.onStart). */
+interface RoomSnapshot {
+  savedAt: number;
+  players: Player[];
+  keys: Record<string, string>;
+  hostId: string | null;
+  gameId: string;
+  wins: Record<string, number>;
+  settings: Record<string, Settings>;
+  locked: boolean;
+  banned: string[];
+  autoNext: boolean;
+  recent: string[];
+  history: HistoryEntry[];
+  botSeq: number;
+  gameSeq: number;
+  chatSeq: number;
+  chat: ChatMsg[];
+  playing: boolean;
 }
 
 export class RuckusRoom extends Server<Env> {
@@ -155,6 +180,87 @@ export class RuckusRoom extends Server<Env> {
   memory: Record<string, Record<string, unknown>> = {};
 
 
+  /** A snapshot write is waiting (writes are batched). */
+  saveTimer: ReturnType<typeof setTimeout> | null = null;
+
+  // ---------- surviving restarts ----------
+  // Rooms live in memory, and Cloudflare restarts them now and then (every deploy, runtime
+  // updates). Each room keeps a small snapshot of the lobby (players, host, wins, settings),
+  // so after a restart everyone reconnects into the same room. A game that was running is lost.
+
+  async onStart() {
+    if (this.name === LIMITS_ROOM) return;
+    const snap = await this.ctx.storage.get<RoomSnapshot>(SNAPSHOT_KEY).catch(() => undefined);
+    if (!snap || Date.now() - snap.savedAt > SNAPSHOT_TTL_MS) {
+      if (snap) await this.ctx.storage.deleteAll().catch(() => {});
+      return;
+    }
+    const now = Date.now();
+    this.created = true;
+    for (const p of snap.players) {
+      this.players.set(p.id, { ...p, connected: !!p.bot });
+      if (!p.bot) this.disconnectedAt.set(p.id, now);
+    }
+    this.keys = new Map(Object.entries(snap.keys));
+    this.hostId = snap.hostId;
+    this.gameId = CATALOG_BY_ID[snap.gameId] ? snap.gameId : this.gameId;
+    this.wins = snap.wins;
+    this.settings = snap.settings;
+    this.locked = snap.locked;
+    this.banned = new Set(snap.banned);
+    this.autoNext = snap.autoNext;
+    this.recent = snap.recent;
+    this.history = snap.history;
+    this.botSeq = snap.botSeq;
+    this.gameSeq = snap.gameSeq;
+    this.chatSeq = snap.chatSeq;
+    this.chat = snap.chat;
+    this.emptySince = now;
+    if (snap.playing) this.system("Sorry, the server restarted and the game in progress was lost. Pick it again to carry on!");
+    this.ensureHousekeeping();
+  }
+
+  /** Saves the snapshot soon (batched), and keeps it for 6 h after the last change. */
+  scheduleSave() {
+    if (this.name === LIMITS_ROOM || !this.created || this.saveTimer) return;
+    this.saveTimer = setTimeout(() => {
+      this.saveTimer = null;
+      const snap: RoomSnapshot = {
+        savedAt: Date.now(),
+        players: [...this.players.values()],
+        keys: Object.fromEntries(this.keys),
+        hostId: this.hostId,
+        gameId: this.gameId,
+        wins: this.wins,
+        settings: this.settings,
+        locked: this.locked,
+        banned: [...this.banned],
+        autoNext: this.autoNext,
+        recent: this.recent,
+        history: this.history,
+        botSeq: this.botSeq,
+        gameSeq: this.gameSeq,
+        chatSeq: this.chatSeq,
+        chat: this.chat.slice(-30),
+        playing: !!this.game,
+      };
+      void this.ctx.storage.put(SNAPSHOT_KEY, snap).catch(() => {});
+      void this.ctx.storage.setAlarm(Date.now() + SNAPSHOT_TTL_MS).catch(() => {});
+    }, SNAPSHOT_EVERY_MS);
+  }
+
+  /** Six hours after the last change: forget the room for good. */
+  async onAlarm() {
+    try {
+      if (this.name === LIMITS_ROOM) return;
+    } catch {
+      /* no name (shouldn't happen): just clean up below */
+    }
+    const snap = await this.ctx.storage.get<RoomSnapshot>(SNAPSHOT_KEY).catch(() => undefined);
+    if (snap && Date.now() - snap.savedAt < SNAPSHOT_TTL_MS - 60_000) return; // changed since: a newer alarm is set
+    await this.ctx.storage.deleteAll().catch(() => {});
+  }
+
   // ---------- connection lifecycle ----------
 
   onConnect(conn: Conn) {
@@ -184,6 +290,7 @@ export class RuckusRoom extends Server<Env> {
       this.created = true;
       this.emptySince = Date.now(); // nobody has joined yet: the usual empty-room rules apply
       this.ensureHousekeeping();
+      this.scheduleSave();
       return json({ ok: true });
     }
     return new Response("Method not allowed", { status: 405, headers: CORS });
@@ -610,6 +717,7 @@ export class RuckusRoom extends Server<Env> {
   broadcastRoom() {
     const payload = JSON.stringify({ t: "room", room: this.roomView(false), now: Date.now() } satisfies ServerMsg);
     for (const conn of this.verifiedConnections()) conn.send(payload);
+    this.scheduleSave();
   }
 
   *verifiedConnections(): Generator<Conn> {
