@@ -5,7 +5,7 @@ Real-time party games for 2–12 friends in the browser. Make a room, send the l
 | Game | Players | What it is |
 | --- | --- | --- |
 | Sketch Storm | 2–12 | One draws, everyone races to guess |
-| Trivia Rush | 1–12 | Same question for everyone, speed counts (180 fact-checked questions) |
+| Trivia Rush | 1–12 | Same question for everyone, speed counts (1,080 fact-checked questions) |
 | Letter Rush | 2–12 | One letter, six categories, vote out bad answers |
 | Snake Brawl | 2–8 | Real-time snakes, best of three |
 | Turf War | 2–8 | Real-time painting; close a loop to capture everything inside |
@@ -38,6 +38,22 @@ Real-time party games for 2–12 friends in the browser. Make a room, send the l
 | Poll Position | 3–12 | Vote on silly polls and score by predicting how the room voted |
 | Emoji Charades | 3–12 | Describe a secret phrase using only emoji |
 | Monster Mashup | 3–12 | Draw a head, body or legs seeing only a sliver of the part above, then meet the monsters |
+| Word Smuggler | 4–12 | Talk your team to the word without saying the banned ones (video-call game) |
+| Hot Seat | 3–12 | How well do you really know your friends? (video-call game) |
+| Truth Bombs | 3–10 | Two truths, one lie: read it out, can they tell? (video-call game) |
+| Tug of War | 2–12 | Two teams, one rope: mash, type and solve to pull |
+| Flag Raid | 2–12 | Team capture the flag: steal theirs, guard your own |
+| Puck | 2–4 | Neon air hockey, 1v1 or 2v2 |
+| Salvo | 2 | Hide your fleet, fire three shots a turn |
+| Seeds | 2 | Sow and capture: an ancient counting-board classic |
+| Flip | 2 | Outflank to flip pieces and own the board |
+| Word Ladder | 1–12 | Change one letter at a time to reach the target word |
+| Tower Stack | 1–12 | Drop each block right on top; how high can you go? |
+| Memory Pairs | 1–6 | Flip two cards, remember, match them all |
+| Code Word | 1–12 | Crack the secret five-letter word in six tries |
+| Word Wheel | 1–12 | Seven letters, one in every word: find as many as you can |
+| Nine Box | 1–12 | Number logic: every row, column and box holds each number once |
+| Group Up | 1–12 | Sixteen words, four secret groups, plenty of decoys |
 
 ## Run it
 
