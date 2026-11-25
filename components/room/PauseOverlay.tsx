@@ -11,6 +11,7 @@ export function PauseOverlay({
   byId,
   me,
   isHost,
+  solo = false,
   serverNow,
   send,
 }: {
@@ -18,6 +19,8 @@ export function PauseOverlay({
   byId: Record<string, Player>;
   me: string;
   isHost: boolean;
+  /** Just you vs bots: a pause with no time limit and your own Resume button. */
+  solo?: boolean;
   serverNow: () => number;
   send: (m: ClientMsg) => void;
 }) {
@@ -42,7 +45,9 @@ export function PauseOverlay({
           <Pause aria-hidden className="size-5" strokeWidth={2.2} />
         </span>
         <p className="font-hero text-xl font-extrabold tracking-[-0.03em]">Paused</p>
-        {restart ? (
+        {solo && !restart ? (
+          <p className="text-sm text-muted">Take your time: the bots will wait.</p>
+        ) : restart ? (
           <p className="text-sm text-muted">
             <b className="text-text">Quick server hiccup.</b> Your game is saved: it carries on as soon as everyone&apos;s reconnected.
           </p>
@@ -57,7 +62,12 @@ export function PauseOverlay({
           </span>
         </p>
         )}
-        <p className="font-mono text-xs text-muted">Back on in {left}s at the latest</p>
+        {!solo && <p className="font-mono text-xs text-muted">Back on in {left}s at the latest</p>}
+        {solo && mine && !restart && (
+          <button className="btn btn-primary" onClick={() => send({ t: "pause", on: false })}>
+            <Play aria-hidden className="size-4" strokeWidth={2.2} /> Resume
+          </button>
+        )}
         {isHost && !mine && (
           <button className="btn btn-primary" onClick={() => send({ t: "pause", on: false, all: true })}>
             <Play aria-hidden className="size-4" strokeWidth={2.2} /> Resume now

@@ -1,6 +1,6 @@
 "use client";
 
-import { Component, memo, useRef, type ReactNode } from "react";
+import { Component, memo, useEffect, useRef, type ReactNode } from "react";
 import { Pause } from "lucide-react";
 import { CATALOG_BY_ID } from "@/games/catalog";
 import { SIM_LOADERS } from "@/games/sim-registry";
@@ -74,7 +74,8 @@ export function LocalStage({
   const holding = useRef(false);
   const onRules = (open: boolean) => {
     if (!pausable) return;
-    if (open && live) {
+    // Already paused (the Pause button): closing the rules shouldn't un-pause.
+    if (open && live && !snap.paused) {
       holding.current = true;
       engine.setPaused(true);
     } else if (!open && holding.current) {
@@ -82,6 +83,17 @@ export function LocalStage({
       engine.setPaused(false);
     }
   };
+  // Leaving the tab (or locking the phone) pauses, so the bots don't win while you're away.
+  const autoPause = pausable && live;
+  useEffect(() => {
+    if (!autoPause) return;
+    const onHide = () => {
+      if (document.hidden) engine.setPaused(true);
+    };
+    document.addEventListener("visibilitychange", onHide);
+    return () => document.removeEventListener("visibilitychange", onHide);
+  }, [autoPause, engine]);
+
   const note = !live
     ? undefined
     : pausable
@@ -102,6 +114,12 @@ export function LocalStage({
         </h1>
         <div className="flex shrink-0 items-center gap-2">
           <HowToPlay gameId={gameId} compact onOpenChange={onRules} note={note} />
+          {pausable && live && !snap.paused && (
+            <button className="btn min-h-10 px-3 py-1.5 text-sm" onClick={() => engine.setPaused(true)} aria-label="Pause the game" title="Pause">
+              <Pause aria-hidden className="size-4" strokeWidth={2.4} />
+              <span className="hidden sm:inline">Pause</span>
+            </button>
+          )}
           {actions}
         </div>
       </div>
@@ -119,7 +137,7 @@ export function LocalStage({
                 <Pause aria-hidden className="size-5" strokeWidth={2} />
               </span>
               <div className="font-display text-lg font-bold">Paused</div>
-              <p className="max-w-56 text-sm text-muted">The clock is frozen while you read the rules.</p>
+              <p className="max-w-56 text-sm text-muted">The clock is frozen. Take your time: the bots will wait.</p>
               <button className="btn btn-primary px-4 py-1.5 text-sm" onClick={() => engine.setPaused(false)}>
                 Resume
               </button>

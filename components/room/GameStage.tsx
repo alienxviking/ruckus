@@ -4,6 +4,7 @@ import { CATALOG_BY_ID } from "@/games/catalog";
 import { GAME_CLIENTS } from "@/games/client-registry";
 import { MAX_PAUSES, type Player, type RoomView, type Wish } from "@/shared/types";
 import { Avatar } from "../Avatar";
+import { Pause } from "lucide-react";
 import type { useRoom } from "@/lib/useRoom";
 import { useSecondsLeft } from "../game-ui";
 import { QuickPlaySwitch } from "./Lobby";
@@ -68,9 +69,12 @@ export function GameStage({
   const live = isPlayer && !room.result;
   const pausesLeft = MAX_PAUSES - (room.pauseUses[me] ?? 0);
   const iPaused = !!room.pause?.by.includes(me);
+  // Just you vs practice bots: pause whenever and for as long as you like.
+  const solo = isPlayer && room.participants.every((id) => id === me || byId[id]?.bot);
   const holding = useRef(false);
   const onRulesOpen = (open: boolean) => {
-    if (open && live && pausesLeft > 0) {
+    // Already paused (the Pause button): reading the rules shouldn't un-pause on close.
+    if (open && live && (solo || pausesLeft > 0) && !iPaused) {
       holding.current = true;
       send({ t: "pause", on: true });
     } else if (!open && holding.current) {
@@ -80,11 +84,24 @@ export function GameStage({
   };
   const rulesNote = !live
     ? undefined
-    : iPaused || (pausesLeft > 0 && !room.pause)
+    : solo
+      ? "The game is paused while you read."
+      : iPaused || (pausesLeft > 0 && !room.pause)
       ? "The game is paused for everyone while you read."
       : room.pause
         ? "The game is paused."
         : "You've used your pauses for this game, so it keeps going while you read.";
+
+  // Solo vs bots: leaving the tab (or locking the phone) pauses, so the bots don't win while you're away.
+  const pauseNow = solo && live;
+  useEffect(() => {
+    if (!pauseNow) return;
+    const onHide = () => {
+      if (document.hidden && !pauseRef.current.pause) send({ t: "pause", on: true });
+    };
+    document.addEventListener("visibilitychange", onHide);
+    return () => document.removeEventListener("visibilitychange", onHide);
+  }, [pauseNow, send]);
 
   useEffect(() => {
     setReportGame(room.gameId);
@@ -110,6 +127,12 @@ export function GameStage({
         </h1>
         <div className="flex shrink-0 items-center gap-2">
           <HowToPlay gameId={room.gameId} compact onOpenChange={onRulesOpen} note={rulesNote} />
+          {solo && live && !room.pause && (
+            <button className="btn min-h-10 px-3 py-1.5 text-sm" onClick={() => send({ t: "pause", on: true })} aria-label="Pause the game" title="Pause">
+              <Pause aria-hidden className="size-4" strokeWidth={2.4} />
+              <span className="hidden sm:inline">Pause</span>
+            </button>
+          )}
           {isHost && !room.result && (
             <button
               className="btn min-h-10 px-3 py-1.5 text-sm"
@@ -144,7 +167,7 @@ export function GameStage({
       <div className="relative min-h-[60vh]">
         {!room.result && <GameStart key={`start-${room.gameSeq}`} seq={room.gameSeq} />}
         {room.pause && !room.result && (
-          <PauseOverlay pause={room.pause} byId={byId} me={me} isHost={isHost} serverNow={serverNow} send={send} />
+          <PauseOverlay pause={room.pause} byId={byId} me={me} isHost={isHost} solo={solo} serverNow={serverNow} send={send} />
         )}
         {GameClient ? (
           <GameErrorBoundary key={room.gameSeq} game={room.gameId}>
