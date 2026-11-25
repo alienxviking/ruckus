@@ -2,7 +2,8 @@
 
 import { CATALOG_BY_ID } from "@/games/catalog";
 import { GAME_CLIENTS } from "@/games/client-registry";
-import { MAX_PAUSES, type Player, type RoomView } from "@/shared/types";
+import { MAX_PAUSES, type Player, type RoomView, type Wish } from "@/shared/types";
+import { Avatar } from "../Avatar";
 import type { useRoom } from "@/lib/useRoom";
 import { useSecondsLeft } from "../game-ui";
 import { QuickPlaySwitch } from "./Lobby";
@@ -185,12 +186,21 @@ function ResultBanner({
   accent?: string;
 }) {
   const a = accent ?? "#c6f432";
+  const wishes = room.wishes ?? {};
+  const who = (w: Wish) => Object.keys(wishes).filter((id) => wishes[id] === w && byId[id]).map((id) => byId[id]);
+  const mine = wishes[me] as Wish | undefined;
+  const hostName = room.hostId ? byId[room.hostId]?.name : undefined;
   return (
     <ResultPodium room={room} byId={byId} me={me} accent={a}>
       {isHost ? (
         <>
           <button className="stk-btn px-5 py-2.5 text-lg" onClick={() => r.send({ t: "start" })}>
             Play again
+            <Voters players={who("again")} />
+          </button>
+          <button className="btn font-bold" onClick={() => r.send({ t: "start", surprise: true })} title="A random game that fits everyone here">
+            <span aria-hidden>🎲</span> Surprise us
+            <Voters players={who("new")} />
           </button>
           <button className="btn" onClick={() => r.send({ t: "lobby" })}>
             Pick another
@@ -202,9 +212,49 @@ function ResultBanner({
           )}
         </>
       ) : (
-        <span className="text-sm font-semibold text-muted">Waiting for the host to pick the next one…</span>
+        <div className="flex flex-col items-center gap-1.5 md:items-start">
+          <div className="flex flex-wrap items-center justify-center gap-2" role="group" aria-label="What should we play next?">
+            <WishButton on={mine === "again"} onClick={() => r.send({ t: "wish", w: mine === "again" ? null : "again" })} voters={who("again")}>
+              <span aria-hidden>🔁</span> Again!
+            </WishButton>
+            <WishButton on={mine === "new"} onClick={() => r.send({ t: "wish", w: mine === "new" ? null : "new" })} voters={who("new")}>
+              <span aria-hidden>🎲</span> Something new
+            </WishButton>
+          </div>
+          <span className="text-xs font-semibold text-muted">
+            {mine ? `Voted! ${hostName ?? "The host"} sees it and picks.` : `Vote for what's next: ${hostName ?? "the host"} picks.`}
+          </span>
+        </div>
       )}
     </ResultPodium>
+  );
+}
+
+/** Who voted for this option, as a little stack of avatars. */
+function Voters({ players }: { players: Player[] }) {
+  if (!players.length) return null;
+  const names = players.map((p) => p.name).join(", ");
+  return (
+    <span className="animate-pop ml-1 inline-flex items-center rounded-full bg-ink/40 py-0.5 pr-1.5 pl-0.5 text-xs font-bold" title={`Want this: ${names}`}>
+      <span className="flex -space-x-1.5">
+        {players.slice(0, 3).map((p) => (
+          <span key={p.id} className="grid size-5 place-items-center rounded-full bg-panel-2 ring-2 ring-panel">
+            <Avatar id={p.avatar} size="0.95rem" />
+          </span>
+        ))}
+      </span>
+      <span className="ml-1 tabular-nums">{players.length}</span>
+      <span className="sr-only"> want this: {names}</span>
+    </span>
+  );
+}
+
+function WishButton({ on, onClick, voters, children }: { on: boolean; onClick: () => void; voters: Player[]; children: ReactNode }) {
+  return (
+    <button type="button" aria-pressed={on} onClick={onClick} className={`btn min-h-11 font-bold ${on ? "btn-primary" : ""}`}>
+      {children}
+      <Voters players={voters} />
+    </button>
   );
 }
 

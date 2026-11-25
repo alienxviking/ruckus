@@ -16,6 +16,7 @@ import {
   type Player,
   type RoomWire,
   type ServerMsg,
+  type Wish,
 } from "../shared/types";
 import { CATALOG, CATALOG_BY_ID } from "../games/catalog";
 import { GAME_DEFS } from "../games/server-registry";
@@ -30,6 +31,12 @@ const EMPTY_ROOM_GRACE_MS = 30_000; // a running game survives everyone refreshi
 const SNAPSHOT_KEY = "room";
 const SNAPSHOT_EVERY_MS = 3_000; // at most one write per 3 s of room changes
 const SNAPSHOT_TTL_MS = 6 * 3_600_000; // forgotten 6 h after the last change
+const GAME_KEY = "game";
+const GAME_SAVE_EVERY_MS = 5_000; // a running game is saved at most every 5 s
+const GAME_SAVE_MAX = 120_000; // storage values top out at 128 KiB: bigger games just aren't saved
+/** Pause holder while a restored game waits for everyone to reconnect. */
+const RESTART_HOLD = "~restart";
+const RESTART_WAIT_MS = 25_000;
 const AUTO_NEXT_MS = 12_000; // quick play: pause between a result and the next game
 const CHAT_LIMIT = 80;
 const CHAT_BURST = 6; // chat messages allowed per window, per player
@@ -111,6 +118,18 @@ interface RoomSnapshot {
   chatSeq: number;
   chat: ChatMsg[];
   playing: boolean;
+  /** Per-game memory between games (recent questions etc.), when small. */
+  memory?: Record<string, Record<string, unknown>>;
+}
+
+/** A running game, saved so it carries on after a restart (its state is plain JSON: shared/resume.test.ts). */
+interface GameSnapshot {
+  gameId: string;
+  participants: string[];
+  /** The game clock (ctx.now) when saved: it resumes from here, as if paused meanwhile. */
+  clock: number;
+  state: unknown;
+  pauseUses: Record<string, number>;
 }
 
 export class RuckusRoom extends Server<Env> {
@@ -166,6 +185,8 @@ export class RuckusRoom extends Server<Env> {
   banned = new Set<string>();
   /** Host settings per game id. */
   settings: Record<string, Settings> = {};
+  /** On the result screen: what each player would like next. Cleared when a game starts. */
+  wishes = new Map<string, Wish>();
   /** Rule-reading pause: who holds it (until when), since when, and total paused time. */
   pauseHolders = new Map<string, number>();
   pauseAt: number | null = null;
@@ -182,11 +203,15 @@ export class RuckusRoom extends Server<Env> {
 
   /** A snapshot write is waiting (writes are batched). */
   saveTimer: ReturnType<typeof setTimeout> | null = null;
+  gameSaveTimer: ReturnType<typeof setTimeout> | null = null;
+  /** A game snapshot is in storage (so it gets deleted once there's nothing to resume). */
+  gameSaved = false;
 
   // ---------- surviving restarts ----------
   // Rooms live in memory, and Cloudflare restarts them now and then (every deploy, runtime
   // updates). Each room keeps a small snapshot of the lobby (players, host, wins, settings),
-  // so after a restart everyone reconnects into the same room. A game that was running is lost.
+  // so after a restart everyone reconnects into the same room. A running game is saved too
+  // (every few seconds), and comes back paused until everyone has reconnected.
 
   async onStart() {
     if (this.name === LIMITS_ROOM) return;
@@ -215,9 +240,66 @@ export class RuckusRoom extends Server<Env> {
     this.gameSeq = snap.gameSeq;
     this.chatSeq = snap.chatSeq;
     this.chat = snap.chat;
+    if (snap.memory) this.memory = snap.memory;
     this.emptySince = now;
-    if (snap.playing) this.system("Sorry, the server restarted and the game in progress was lost. Pick it again to carry on!");
+    if (snap.playing) {
+      const raw = await this.ctx.storage.get<string>(GAME_KEY).catch(() => undefined);
+      let restored = false;
+      try {
+        if (raw) restored = this.restoreGame(JSON.parse(raw) as GameSnapshot);
+      } catch (err) {
+        console.error("game restore failed", err);
+      }
+      if (!restored) this.system("Sorry, the server restarted and the game in progress was lost. Pick it again to carry on!");
+    }
     this.ensureHousekeeping();
+  }
+
+  /** Brings a saved game back, paused until its players reconnect (at most RESTART_WAIT_MS). */
+  restoreGame(g: GameSnapshot): boolean {
+    const def = GAME_DEFS[g.gameId];
+    if (!def || g.gameId !== this.gameId) return false;
+    const participants = g.participants.filter((id) => this.players.has(id));
+    if (!participants.length) return false;
+    const now = Date.now();
+    this.participants = participants;
+    this.lastPlayed = participants;
+    this.phase = "playing";
+    this.result = null;
+    this.pauseUses = g.pauseUses ?? {};
+    // Freeze the game clock where it was saved; it runs again when the pause ends.
+    this.pauseAt = now;
+    this.pausedMs = now - g.clock;
+    this.pauseHolders.clear();
+    this.pauseHolders.set(RESTART_HOLD, now + RESTART_WAIT_MS);
+    this.lastView.clear();
+    this.activate(def, g.state, this.makeCtx());
+    this.gameSaved = true;
+    // Everyone's connection dropped with the restart: tell the game, as for any disconnect.
+    // (Nothing times out while paused, and playerReturned runs as each one reconnects.)
+    const game = this.game!;
+    for (const id of participants) {
+      if (this.players.get(id)?.bot) continue;
+      try {
+        def.playerLeft?.(game.state, id, game.ctx);
+      } catch (err) {
+        console.error(`[${def.id}] playerLeft failed`, err);
+      }
+    }
+    this.system("⚡ The server restarted. Your game is saved: it carries on once everyone's back.");
+    return true;
+  }
+
+  /** A restored game's pause ends as soon as every human player is back. */
+  releaseRestartHold() {
+    if (!this.pauseHolders.has(RESTART_HOLD)) return;
+    const waiting = this.participants.some((id) => {
+      const p = this.players.get(id);
+      return p && !p.bot && !p.connected;
+    });
+    if (waiting) return;
+    this.pauseHolders.delete(RESTART_HOLD);
+    if (!this.pauseHolders.size) this.resume();
   }
 
   /** Saves the snapshot soon (batched), and keeps it for 6 h after the last change. */
@@ -242,11 +324,47 @@ export class RuckusRoom extends Server<Env> {
         gameSeq: this.gameSeq,
         chatSeq: this.chatSeq,
         chat: this.chat.slice(-30),
-        playing: !!this.game,
+        playing: !!this.game && !this.result,
       };
+      try {
+        if (JSON.stringify(this.memory).length < 40_000) snap.memory = this.memory;
+      } catch {
+        /* not saved */
+      }
       void this.ctx.storage.put(SNAPSHOT_KEY, snap).catch(() => {});
       void this.ctx.storage.setAlarm(Date.now() + SNAPSHOT_TTL_MS).catch(() => {});
     }, SNAPSHOT_EVERY_MS);
+  }
+
+  /** Saves the running game soon (batched); deletes the saved one once there's nothing to resume. */
+  scheduleGameSave() {
+    if (this.name === LIMITS_ROOM || !this.created || this.gameSaveTimer) return;
+    const live = !!this.game && !this.result;
+    if (!live && !this.gameSaved) return;
+    this.gameSaveTimer = setTimeout(
+      () => {
+        this.gameSaveTimer = null;
+        const g = this.game;
+        let json: string | null = null;
+        if (g && !this.result) {
+          try {
+            const snap: GameSnapshot = { gameId: this.gameId, participants: this.participants, clock: g.ctx.now(), state: g.state, pauseUses: this.pauseUses };
+            json = JSON.stringify(snap);
+          } catch {
+            json = null;
+          }
+          if (json && json.length > GAME_SAVE_MAX) json = null;
+        }
+        if (json) {
+          this.gameSaved = true;
+          void this.ctx.storage.put(GAME_KEY, json).catch(() => {});
+        } else if (this.gameSaved) {
+          this.gameSaved = false;
+          void this.ctx.storage.delete(GAME_KEY).catch(() => {});
+        }
+      },
+      live ? GAME_SAVE_EVERY_MS : 0,
+    );
   }
 
   /** Six hours after the last change: forget the room for good. */
@@ -366,7 +484,9 @@ export class RuckusRoom extends Server<Env> {
       case "pick":
         return this.handlePick(player, msg.gameId);
       case "start":
-        return this.handleStart(player, sender, msg.gameId);
+        return this.handleStart(player, sender, msg.gameId, msg.surprise);
+      case "wish":
+        return this.handleWish(player, msg.w);
       case "lobby":
         return this.handleLobby(player);
       case "auto":
@@ -437,6 +557,7 @@ export class RuckusRoom extends Server<Env> {
         }
         this.broadcastGame();
       }
+      if (wasAway) this.releaseRestartHold();
     } else {
       this.players.set(pid(conn), { id: pid(conn), name, color, avatar, connected: true });
       this.system(this.game ? `${name} joined · playing from the next round` : `${name} joined`, avatar);
@@ -474,10 +595,26 @@ export class RuckusRoom extends Server<Env> {
     this.sendWords();
   }
 
-  handleStart(player: Player, conn: Conn, gameId?: unknown) {
+  handleStart(player: Player, conn: Conn, gameId?: unknown, surprise?: unknown) {
     if (player.id !== this.hostId) return;
-    if (typeof gameId === "string" && CATALOG_BY_ID[gameId] && GAME_DEFS[gameId]) this.gameId = gameId;
+    if (surprise === true) {
+      const pick = this.pickFitting();
+      if (!pick) return this.sendTo(conn, { t: "err", msg: "No game fits this many players right now.", now: Date.now() });
+      this.gameId = pick;
+    } else if (typeof gameId === "string" && CATALOG_BY_ID[gameId] && GAME_DEFS[gameId]) this.gameId = gameId;
     this.startGame(conn);
+  }
+
+  /** A player's vote on the result screen for what comes next (the host still decides). */
+  handleWish(player: Player, w: unknown) {
+    if (!this.result || player.bot) return;
+    if (w === null) {
+      if (!this.wishes.delete(player.id)) return;
+    } else if (w === "again" || w === "new") {
+      if (this.wishes.get(player.id) === w) return;
+      this.wishes.set(player.id, w);
+    } else return;
+    this.broadcastRoom();
   }
 
   /** Starts the picked game. `conn` (the host) hears about problems; quick play passes none. */
@@ -498,6 +635,7 @@ export class RuckusRoom extends Server<Env> {
     ready.sort((a, b) => Number(satOut.has(b.id)) - Number(satOut.has(a.id)));
     this.stopGame();
     this.clearNext();
+    this.wishes.clear();
 
     // Humans before bots when seats are short.
     ready.sort((a, b) => Number(!!a.bot) - Number(!!b.bot));
@@ -526,6 +664,19 @@ export class RuckusRoom extends Server<Env> {
     this.phase = "playing";
     this.gameSeq += 1;
     this.lastView.clear();
+    this.activate(def, state, ctx);
+
+    const extra = ready.length - this.participants.length;
+    this.system(
+      `🎮 ${meta.name} started` + (extra > 0 ? ` (${extra} watching, max ${meta.maxPlayers})` : ""),
+    );
+    this.broadcastRoom();
+    this.broadcastGame();
+    return true;
+  }
+
+  /** Makes a game the running one, with its tick loop (a new game, or one restored after a restart). */
+  activate(def: GameDef, state: unknown, ctx: GameCtx) {
     const active: ActiveGame = { def, state, ctx, timer: null };
     if (def.tick) {
       active.timer = setInterval(() => {
@@ -553,14 +704,6 @@ export class RuckusRoom extends Server<Env> {
       }, def.tickMs ?? 250);
     }
     this.game = active;
-
-    const extra = ready.length - this.participants.length;
-    this.system(
-      `🎮 ${meta.name} started` + (extra > 0 ? ` (${extra} watching, max ${meta.maxPlayers})` : ""),
-    );
-    this.broadcastRoom();
-    this.broadcastGame();
-    return true;
   }
 
   handleLobby(player: Player) {
@@ -570,6 +713,7 @@ export class RuckusRoom extends Server<Env> {
     this.phase = "lobby";
     this.result = null;
     this.participants = [];
+    this.wishes.clear();
     this.pruneDeparted();
     this.broadcastRoom();
   }
@@ -586,13 +730,9 @@ export class RuckusRoom extends Server<Env> {
   /** Quick play: pick a game that fits who's here (avoiding recent ones) and start it soon. */
   scheduleNext() {
     this.clearNext();
-    const online = [...this.players.values()].filter((p) => p.connected).length;
-    const fits = CATALOG.filter((g) => GAME_DEFS[g.id] && online >= g.minPlayers && online <= g.maxPlayers);
-    const fresh = fits.filter((g) => !this.recent.includes(g.id));
-    const others = fits.filter((g) => g.id !== this.gameId);
-    const pool = fresh.length ? fresh : others.length ? others : fits;
-    if (!pool.length) return;
-    const pick = pool[Math.floor(Math.random() * pool.length)];
+    const id = this.pickFitting();
+    if (!id) return;
+    const pick = { id };
     this.next = { gameId: pick.id, at: Date.now() + AUTO_NEXT_MS };
     const seq = this.gameSeq;
     this.nextTimer = setTimeout(() => {
@@ -605,6 +745,25 @@ export class RuckusRoom extends Server<Env> {
         this.broadcastRoom();
       }
     }, AUTO_NEXT_MS);
+  }
+
+  /** A random game that fits who's here, avoiding recent ones (quick play, "Surprise us"). */
+  pickFitting(): string | null {
+    const here = [...this.players.values()].filter((p) => p.connected);
+    const online = here.length;
+    const humans = here.filter((p) => !p.bot).length;
+    // Bots only count for games that can seat them.
+    const fits = CATALOG.filter((g) => {
+      const def = GAME_DEFS[g.id];
+      if (!def) return false;
+      const n = def.bot ? online : humans;
+      return n >= g.minPlayers && n <= g.maxPlayers;
+    });
+    const fresh = fits.filter((g) => !this.recent.includes(g.id));
+    const others = fits.filter((g) => g.id !== this.gameId);
+    const pool = fresh.length ? fresh : others.length ? others : fits;
+    if (!pool.length) return null;
+    return pool[Math.floor(Math.random() * pool.length)].id;
   }
 
   clearNext() {
@@ -680,6 +839,7 @@ export class RuckusRoom extends Server<Env> {
     if (this.game?.timer) clearInterval(this.game.timer);
     this.game = null;
     this.lastView.clear();
+    this.scheduleGameSave();
   }
 
   viewFor(game: ActiveGame, viewerId: string): unknown {
@@ -711,6 +871,7 @@ export class RuckusRoom extends Server<Env> {
       }
       if (payload !== null) conn.send(payload);
     }
+    this.scheduleGameSave();
   }
 
   /** Room state for everyone (without the chat history, which travels as "chat" deltas). */
@@ -718,6 +879,7 @@ export class RuckusRoom extends Server<Env> {
     const payload = JSON.stringify({ t: "room", room: this.roomView(false), now: Date.now() } satisfies ServerMsg);
     for (const conn of this.verifiedConnections()) conn.send(payload);
     this.scheduleSave();
+    this.scheduleGameSave();
   }
 
   *verifiedConnections(): Generator<Conn> {
@@ -749,6 +911,7 @@ export class RuckusRoom extends Server<Env> {
       pausedMs: this.pausedMs,
       pauseUses: this.pauseUses,
       history: this.history,
+      wishes: Object.fromEntries([...this.wishes].filter(([id]) => this.players.get(id)?.connected)),
     };
   }
 

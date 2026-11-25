@@ -32,6 +32,8 @@ export function PauseOverlay({
   const names = readers.map((p) => (p.id === me ? "You" : p.name));
   const who = names.length > 2 ? `${names.length} players` : names.join(" and ");
   const mine = pause.by.includes(me);
+  // The server restarted mid-game: it waits (paused) for everyone's phone to reconnect.
+  const restart = pause.by.includes("~restart");
 
   return (
     <div className="pause-live absolute inset-0 z-30 grid place-items-center rounded-xl bg-ink/75 p-4 backdrop-blur-sm" role="status">
@@ -40,6 +42,11 @@ export function PauseOverlay({
           <Pause aria-hidden className="size-5" strokeWidth={2.2} />
         </span>
         <p className="font-hero text-xl font-extrabold tracking-[-0.03em]">Paused</p>
+        {restart ? (
+          <p className="text-sm text-muted">
+            <b className="text-text">Quick server hiccup.</b> Your game is saved: it carries on as soon as everyone&apos;s reconnected.
+          </p>
+        ) : (
         <p className="flex flex-wrap items-center justify-center gap-1.5 text-sm text-muted">
           {readers.slice(0, 2).map((p) => (
             <Avatar key={p.id} id={p.avatar} />
@@ -49,6 +56,7 @@ export function PauseOverlay({
             reading the rules
           </span>
         </p>
+        )}
         <p className="font-mono text-xs text-muted">Back on in {left}s at the latest</p>
         {isHost && !mine && (
           <button className="btn btn-primary" onClick={() => send({ t: "pause", on: false, all: true })}>

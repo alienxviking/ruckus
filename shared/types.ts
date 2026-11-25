@@ -70,7 +70,12 @@ export interface RoomView {
   pauseUses: Record<string, number>;
   /** Games finished this session, oldest first (for the recap). */
   history: HistoryEntry[];
+  /** On the result screen: what players would like next (the host decides). */
+  wishes: Record<string, Wish>;
 }
+
+/** A player's vote for what comes after a game: the same game again, or something new. */
+export type Wish = "again" | "new";
 
 export interface HistoryEntry {
   gameId: string;
@@ -93,8 +98,11 @@ export type ClientMsg =
   | { t: "hello"; name: string; color: string; avatar: string; key: string }
   | { t: "chat"; text: string }
   | { t: "pick"; gameId: string }
-  /** Start the picked game, or `gameId` (the host skipping quick play's countdown). */
-  | { t: "start"; gameId?: string }
+  /** Start the picked game, or `gameId` (the host skipping quick play's countdown), or
+   * `surprise`: a random game that fits the group and wasn't played recently. */
+  | { t: "start"; gameId?: string; surprise?: boolean }
+  /** On the result screen: vote for the same game again or something new (null takes it back). */
+  | { t: "wish"; w: Wish | null }
   | { t: "lobby" }
   /** Host turns quick play (auto-next) on or off. */
   | { t: "auto"; on: boolean }

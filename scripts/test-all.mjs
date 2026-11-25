@@ -18,5 +18,11 @@ for (const id of ids) {
   console.log(`${ok ? "✓" : "✗"} ${id}`);
   if (!ok) console.log((r.stdout + r.stderr).split("\n").slice(-15).join("\n"));
 }
-console.log(failed.length ? `\n✗ failing: ${failed.join(", ")}` : `\n✓ all ${ids.length} game test suites passed`);
+// Every game must survive a server restart mid-game (its state is saved as JSON).
+{
+  const r = spawnSync(process.execPath, ["--import", "tsx", "shared/resume.test.ts"], { cwd: root, encoding: "utf8" });
+  if (r.status !== 0) failed.push("resume");
+  console.log((r.stdout + r.stderr).trim().split("\n").slice(-15).join("\n"));
+}
+console.log(failed.length ? `\n✗ failing: ${failed.join(", ")}` : `\n✓ all ${ids.length} game test suites passed, plus the restart check`);
 process.exitCode = failed.length ? 1 : 0;
