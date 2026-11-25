@@ -58,7 +58,7 @@ export default function Home() {
             <span aria-hidden className="bob pointer-events-none absolute top-16 right-3 w-[5.5rem] md:hidden" style={{ "--tilt": "8deg" } as React.CSSProperties}>
               <Rux mood="wink" className="w-full" />
             </span>
-            <h1 className="font-hero text-[3.4rem] leading-[0.88] font-extrabold tracking-[-0.045em] sm:text-7xl lg:text-[5.6rem]">
+            <h1 className="font-hero max-md:pr-24 text-[3.4rem] leading-[0.88] font-extrabold tracking-[-0.045em] sm:text-7xl lg:text-[5.6rem]">
               Cause a{" "}
               <span className="relative inline-block text-brand-2">
                 ruckus.
