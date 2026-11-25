@@ -79,7 +79,7 @@ export function InstallHint() {
     <div
       role="dialog"
       aria-label="Install Ruckus"
-      className="animate-rise fixed inset-x-3 bottom-3 z-40 mx-auto flex max-w-md items-center gap-3 rounded-2xl border-2 border-brand-2/60 bg-panel/95 p-3 pr-10 shadow-xl shadow-black/60 backdrop-blur-md [padding-bottom:max(0.75rem,env(safe-area-inset-bottom))]"
+      className="animate-rise fixed inset-x-[calc(0.75rem+env(safe-area-inset-left))] bottom-[calc(0.75rem+env(safe-area-inset-bottom))] z-40 mx-auto flex max-w-md items-center gap-3 rounded-2xl border-2 border-brand-2/60 bg-panel/95 p-3 pr-10 shadow-xl shadow-black/60 backdrop-blur-md"
     >
       <span aria-hidden className="bob w-11 shrink-0" style={{ "--tilt": "-6deg" } as React.CSSProperties}>
         <Rux mood="wink" className="w-full" />

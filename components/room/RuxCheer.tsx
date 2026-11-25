@@ -72,7 +72,7 @@ export function RuxCheer({ room, me }: { room: RoomView; me: string }) {
 
   if (!cheer) return null;
   return (
-    <div aria-live="polite" className="pointer-events-none fixed bottom-24 left-3 z-40 lg:bottom-6 lg:left-6">
+    <div aria-live="polite" className="pointer-events-none fixed bottom-[calc(6rem+env(safe-area-inset-bottom))] left-[calc(0.75rem+env(safe-area-inset-left))] z-40 lg:bottom-[calc(1.5rem+env(safe-area-inset-bottom))] lg:left-[calc(1.5rem+env(safe-area-inset-left))]">
       <div key={cheer.id} className="rux-cheer flex items-end gap-1.5">
         <span className="w-14 shrink-0">
           <Rux mood={cheer.mood} className="w-full" />

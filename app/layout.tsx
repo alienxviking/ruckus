@@ -22,11 +22,15 @@ export const metadata: Metadata = {
   title: "Ruckus — games with friends",
   description: "Make a room, share the link, play real-time party games together. No sign-up.",
   applicationName: "Ruckus",
-  appleWebApp: { capable: true, title: "Ruckus", statusBarStyle: "black" },
+  // Installed on an iPhone: the app runs under the status bar (edge to edge); the body is padded by the safe area.
+  appleWebApp: { capable: true, title: "Ruckus", statusBarStyle: "black-translucent" },
 };
 
 export const viewport: Viewport = {
   themeColor: "#05060a",
+  // Draw edge to edge on phones with a notch / rounded corners; the safe-area padding keeps
+  // content clear of them (globals.css).
+  viewportFit: "cover",
 };
 
 // The deployed game server: start DNS + TLS early so the room's WebSocket opens faster.

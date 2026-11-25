@@ -235,7 +235,7 @@ export function Room({
           {/* In the lobby the chat button floats; during a game it sits in the game header instead. */}
           {!playing && (
             <button
-              className="btn btn-primary fixed right-4 bottom-4 z-30 rounded-full shadow-lg shadow-black/40"
+              className="btn btn-primary fixed right-[calc(1rem+env(safe-area-inset-right))] bottom-[calc(1rem+env(safe-area-inset-bottom))] z-30 rounded-full shadow-lg shadow-black/40"
               onClick={toggleChat}
               aria-expanded={chatOpen}
             >
@@ -295,7 +295,7 @@ function UnlockToast({
   const base = avatar.split("+")[0];
   const first = items[0];
   return (
-    <div className="fixed inset-x-0 bottom-20 z-50 flex justify-center px-3 lg:bottom-6">
+    <div className="fixed inset-x-0 bottom-[calc(5rem+env(safe-area-inset-bottom))] z-50 flex justify-center px-3 lg:bottom-[calc(1.5rem+env(safe-area-inset-bottom))]">
       <div
         role="status"
         className="animate-pop lit-edge flex items-center gap-3 rounded-2xl border border-brand-2/50 bg-panel/95 py-2.5 pr-2.5 pl-3 shadow-[0_20px_50px_-20px_var(--color-brand-2)] backdrop-blur-md"
@@ -336,7 +336,7 @@ function ReconnectBanner({ playing }: { playing: boolean }) {
   return (
     <div
       role="status"
-      className="reconnect-banner pointer-events-none fixed inset-x-0 top-16 z-50 flex justify-center px-3"
+      className="reconnect-banner pointer-events-none fixed inset-x-0 top-[calc(4rem+env(safe-area-inset-top))] z-50 flex justify-center px-3"
     >
       <div className="flex items-center gap-3 rounded-full border border-yellow-400/40 bg-panel/95 backdrop-blur-md py-2 pr-4 pl-3 text-sm shadow-lg shadow-black/50">
         <span
