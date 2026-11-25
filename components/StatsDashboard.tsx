@@ -84,6 +84,21 @@ export function StatsDashboard() {
     }
   }, []);
 
+  // Fresh start: clears past days, games, ratings, notes and crashes (today's server usage stays).
+  const reset = useCallback(async () => {
+    if (!token) return;
+    if (!window.confirm("Reset all stats?\n\nClears past days, games played, ratings, 👎 notes and crash reports. Today's server usage is kept.")) return;
+    const host = partyHost();
+    const local = host.startsWith("localhost") || host.startsWith("127.");
+    try {
+      const res = await fetch(`${local ? "http" : "https"}://${host}/stats`, { method: "DELETE", headers: { Authorization: `Bearer ${token}` } });
+      if (!res.ok) throw new Error();
+      setData((await res.json()) as Snapshot);
+    } catch {
+      setError("Couldn't reset: try again.");
+    }
+  }, [token]);
+
   useEffect(() => {
     if (!token) return;
     const first = window.setTimeout(() => void load(token), 0);
@@ -158,8 +173,13 @@ export function StatsDashboard() {
     <main className="mx-auto w-full max-w-5xl px-4 pb-20 sm:px-6">
       <header className="flex flex-wrap items-center justify-between gap-2 py-5">
         <Logo small />
-        <span className="font-mono text-xs text-muted">
-          refreshes every 30 s · resets in {Math.floor(resetIn / 3600_000)}h {Math.floor((resetIn % 3600_000) / 60_000)}m (00:00 UTC)
+        <span className="flex flex-wrap items-center gap-3">
+          <span className="font-mono text-xs text-muted">
+            refreshes every 30 s · resets in {Math.floor(resetIn / 3600_000)}h {Math.floor((resetIn % 3600_000) / 60_000)}m (00:00 UTC)
+          </span>
+          <button type="button" onClick={reset} className="btn min-h-9 px-3 text-xs font-bold text-[#ff6b6b]" title="Clear all stats for a fresh start">
+            Reset stats
+          </button>
         </span>
       </header>
 

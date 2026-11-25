@@ -1242,6 +1242,14 @@ export class RuckusRoom extends Server<Env> {
     const day = this.stats.today(now);
     day.limiterRequests++;
     if (req.method === "GET") return json(this.stats.snapshot(now));
+    // Reset from the dashboard (only reachable through the token-checked /stats route).
+    if (req.method === "DELETE") {
+      this.stats.reset(now);
+      await this.ctx.storage.put("days", this.stats.days).catch(() => {});
+      await this.ctx.storage.put("errors", this.stats.errors).catch(() => {});
+      await this.ctx.storage.put("notes", this.stats.notes).catch(() => {});
+      return json(this.stats.snapshot(now));
+    }
     if (req.method !== "POST") return new Response("Not found", { status: 404 });
     const body = (await req.json().catch(() => null)) as
       | { kind?: LimitKind; ip?: string | null; room?: string; report?: RoomReport; error?: unknown; rating?: { game?: unknown; v?: unknown; note?: unknown } }
@@ -1389,14 +1397,15 @@ export default {
  * Without the STATS_TOKEN secret set (wrangler secret put STATS_TOKEN) it doesn't exist.
  */
 async function statsRequest(request: Request, env: Env): Promise<Response> {
-  const cors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "Authorization", "Access-Control-Allow-Methods": "GET, OPTIONS" };
+  const cors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "Authorization", "Access-Control-Allow-Methods": "GET, DELETE, OPTIONS" };
   if (request.method === "OPTIONS") return new Response(null, { headers: cors });
   const token = (env as Env & { STATS_TOKEN?: string }).STATS_TOKEN;
   const given = request.headers.get("Authorization")?.replace(/^Bearer\s+/i, "") ?? "";
-  if (!token || request.method !== "GET") return new Response("Not found", { status: 404, headers: cors });
+  // GET reads the dashboard; DELETE resets it (same token).
+  if (!token || (request.method !== "GET" && request.method !== "DELETE")) return new Response("Not found", { status: 404, headers: cors });
   if (!timingSafeEqual(given, token)) return new Response("Unauthorized", { status: 401, headers: cors });
   const stub = await getServerByName(env.Main, LIMITS_ROOM);
-  const res = await stub.fetch(new Request("https://limits.internal/", { method: "GET" }));
+  const res = await stub.fetch(new Request("https://limits.internal/", { method: request.method }));
   return new Response(await res.text(), { headers: { ...cors, "Content-Type": "application/json", "Cache-Control": "no-store" } });
 }
 

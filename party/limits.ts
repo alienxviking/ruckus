@@ -230,6 +230,22 @@ export class Stats {
   /** Rooms currently awake (opened, no idle report yet), with when they opened. */
   open = new Map<string, number>();
 
+  /**
+   * A fresh start (the dashboard's Reset): forgets past days, games, ratings, notes and crashes.
+   * Today's server usage (requests, compute) is kept, so the free-plan meters stay right.
+   */
+  reset(now: number) {
+    const was = this.today(now);
+    const fresh = emptyDay(was.day);
+    fresh.limiterRequests = was.limiterRequests;
+    fresh.roomHttp = was.roomHttp;
+    fresh.wsMessages = was.wsMessages;
+    fresh.activeSeconds = was.activeSeconds;
+    this.days = [fresh];
+    this.notes = [];
+    this.errors = [];
+  }
+
   today(now: number): DayStats {
     const day = new Date(now).toISOString().slice(0, 10);
     let d = this.days[this.days.length - 1];
