@@ -1,3 +1,4 @@
+import { SiteAnalytics } from "@/components/SiteAnalytics";
 import type { Metadata, Viewport } from "next";
 import { Bricolage_Grotesque, Caveat_Brush, Chakra_Petch, Geist, Geist_Mono } from "next/font/google";
 import { preconnect, prefetchDNS } from "react-dom";
@@ -56,6 +57,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         <BlobBackdrop />
         <MotionProvider>{children}</MotionProvider>
         <ServiceWorker />
+        <SiteAnalytics />
       </body>
     </html>
   );
