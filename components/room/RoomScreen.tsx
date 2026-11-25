@@ -6,6 +6,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { loadIdentity, normalizeCode, saveIdentity, type Identity } from "@/lib/identity";
 import { roomExists } from "@/lib/rooms";
+import { forgetRoom } from "@/lib/last-room";
 import { ProfileForm } from "./ProfileForm";
 import { Room } from "./Room";
 import { Logo } from "../Logo";
@@ -41,7 +42,10 @@ export function RoomScreen() {
     if (!code) return;
     let live = true;
     roomExists(code).then((exists) => {
-      if (live && exists === false) setMissing(code);
+      if (live && exists === false) {
+        setMissing(code);
+        forgetRoom(code);
+      }
     });
     return () => {
       live = false;

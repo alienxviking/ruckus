@@ -11,6 +11,7 @@ import { RuxIntro } from "@/components/home/RuxIntro";
 import { HomeLibrary } from "@/components/home/HomeLibrary";
 import { WhenIdle } from "@/components/home/WhenIdle";
 import { InstallHint } from "@/components/home/InstallHint";
+import { RejoinBanner } from "@/components/home/RejoinBanner";
 import { LOCAL_GAMES } from "@/lib/local-games";
 
 const LOCAL_IDS = LOCAL_GAMES.map((g) => g.id);
@@ -43,6 +44,8 @@ export default function Home() {
             <MeLink />
           </nav>
         </header>
+        {/* Back from a locked phone or a closed tab: offer the room they were in. */}
+        <RejoinBanner />
 
         {/* ---------- hero ---------- */}
         <section className="after-intro relative grid items-center gap-8 pt-6 pb-14 md:grid-cols-[1.1fr_1fr] md:pt-10 md:pb-20">

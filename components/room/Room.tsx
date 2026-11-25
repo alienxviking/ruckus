@@ -8,6 +8,7 @@ import { CATALOG_BY_ID } from "@/games/catalog";
 import { preloadGame } from "@/games/client-registry";
 import type { Identity } from "@/lib/identity";
 import { useRoom, type PingStore } from "@/lib/useRoom";
+import { forgetRoom, rememberRoom } from "@/lib/last-room";
 import type { Player } from "@/shared/types";
 import { Logo } from "../Logo";
 import { RuxCheer } from "./RuxCheer";
@@ -69,6 +70,15 @@ export function Room({
   const playing = room?.phase === "playing";
 
   const { unlocked, dismissUnlocked } = useRoomFeedback(room, r.me, r.serverNow);
+
+  // Remembered so the home page can offer "jump back in" (locked phone, closed tab, stray tap).
+  const humans = room?.players.filter((p) => !p.bot && !p.removed).length ?? 0;
+  useEffect(() => {
+    if (gameId) rememberRoom({ code, gameId, playing, players: humans });
+  }, [code, gameId, playing, humans]);
+  useEffect(() => {
+    if (r.rejected) forgetRoom(code);
+  }, [r.rejected, code]);
   const openProfile = () => {
     setDialogMounted(true);
     setEditing(true);
