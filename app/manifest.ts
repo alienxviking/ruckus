@@ -1,6 +1,8 @@
 import type { MetadataRoute } from "next";
 
-// Installable app: "Add to Home Screen" opens Ruckus full-screen, without browser chrome.
+// Installable app: "Add to Home Screen" opens Ruckus full screen like a game (Android hides the
+// status bar too; swipe down to see it). iPhone treats fullscreen as standalone and draws under
+// its status bar instead (statusBarStyle in layout.tsx). The body keeps clear of notches.
 export default function manifest(): MetadataRoute.Manifest {
   return {
     name: "Ruckus",
@@ -9,7 +11,8 @@ export default function manifest(): MetadataRoute.Manifest {
     id: "/",
     start_url: "/",
     scope: "/",
-    display: "standalone",
+    display: "fullscreen",
+    display_override: ["fullscreen", "standalone"],
     orientation: "any",
     background_color: "#05060a",
     theme_color: "#05060a",

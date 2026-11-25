@@ -34,10 +34,10 @@ export function loadLocalGame(id: string): Promise<LoadedGame> {
   return p;
 }
 
-/** You, as saved in this browser (or a friendly default before you've picked a name). */
+/** You, as saved in this browser (or "You" before you've picked a name, so results read "You stacked…"). */
 export function localMe(): Pick<Player, "name" | "color" | "avatar"> {
   const id = loadIdentity();
-  return id ? { name: id.name, color: id.color, avatar: id.avatar } : { name: "Player", color: PLAYER_COLORS[5], avatar: "fox" };
+  return id ? { name: id.name, color: id.color, avatar: id.avatar } : { name: "You", color: PLAYER_COLORS[5], avatar: "fox" };
 }
 
 const noRtt = () => 0;
