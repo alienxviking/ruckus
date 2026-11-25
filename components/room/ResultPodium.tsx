@@ -5,6 +5,7 @@ import { Avatar } from "../Avatar";
 import { Confetti } from "../Confetti";
 import { RateGame } from "../RateGame";
 import { Rux } from "../Rux";
+import { ShareResult } from "./ShareResult";
 
 /** A cheeky one-liner from Rux, picked by how it went for you (stable per game). */
 function quip(seed: number, kind: "won" | "lost" | "draw" | "watch", winner: string): string {
@@ -148,11 +149,16 @@ export function ResultPodium({
               })}
             </div>
           )}
-          {played && (
-            <div className="mt-4 flex justify-center md:justify-start">
-              <RateGame gameId={room.gameId} gameKey={`${room.code}-${room.gameSeq}`} />
-            </div>
-          )}
+          <div className="mt-4 flex flex-wrap items-center justify-center gap-2 md:justify-start">
+            {played && <RateGame gameId={room.gameId} gameKey={`${room.code}-${room.gameSeq}`} />}
+            <ShareResult
+              gameId={room.gameId}
+              me={me}
+              allWon={allWon}
+              gameKey={String(room.gameSeq)}
+              players={ranked.map((id) => ({ id, name: byId[id].name, color: byId[id].color, won: result.winners.includes(id), ...(hasScores ? { score: scores[id] ?? 0 } : {}) }))}
+            />
+          </div>
           <div className="mt-3 flex flex-wrap items-center justify-center gap-2 md:justify-start">{children}</div>
         </div>
       </div>
