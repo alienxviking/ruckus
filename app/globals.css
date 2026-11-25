@@ -542,6 +542,16 @@ body::after {
     border-color 0.2s ease,
     box-shadow 0.2s ease;
 }
+/* 50 poster cards (lobby, home library, /games): the browser skips layout and paint for the ones
+   off screen until they scroll near. The intrinsic size is a placeholder; "auto" remembers the
+   real height once a card has rendered. Phones felt this most on the room page. */
+.game-card {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 15rem;
+}
+.game-card.is-compact {
+  contain-intrinsic-size: auto 12rem;
+}
 .game-card:where(:hover, :focus-visible):not(:disabled) {
   border-color: var(--color-paper);
   box-shadow: 5px 6px 0 color-mix(in oklab, var(--accent) 70%, #000);
@@ -776,17 +786,29 @@ body::after {
 }
 
 /* First time with a game: the How to play button glows to point at itself. */
+/* The ring is drawn once on its own layer and only its opacity pulses: animating box-shadow made
+   phones repaint the whole page every frame while a first-timer's room loaded. */
 @keyframes rules-glow {
   0%,
   100% {
-    box-shadow: 0 0 0 0 color-mix(in oklab, var(--color-brand-2) 0%, transparent);
+    opacity: 0;
   }
   50% {
-    box-shadow: 0 0 0 4px color-mix(in oklab, var(--color-brand-2) 35%, transparent);
+    opacity: 1;
   }
 }
 .rules-glow {
   border-color: var(--color-brand-2);
+}
+.rules-glow::after {
+  content: "";
+  position: absolute;
+  inset: -2px;
+  border-radius: inherit;
+  box-shadow: 0 0 0 4px color-mix(in oklab, var(--color-brand-2) 35%, transparent);
+  opacity: 0;
+  pointer-events: none;
+  will-change: opacity;
   animation: rules-glow 1.6s ease-in-out 3;
 }
 
@@ -794,7 +816,7 @@ body::after {
   .react-float {
     animation-duration: 1.2s;
   }
-  .rules-glow {
+  .rules-glow::after {
     animation: none;
   }
 }

@@ -197,7 +197,7 @@ export function Lobby({
         <div
           aria-hidden={!showPill}
           inert={!showPill}
-          className={`fixed bottom-4 left-4 right-28 z-30 transition-[translate,opacity] duration-300 ease-[var(--ease-out-expo)] sm:right-auto sm:left-1/2 sm:w-[min(26rem,calc(100%-2rem))] sm:-translate-x-1/2 lg:bottom-6 ${
+          className={`fixed bottom-[calc(1rem+env(safe-area-inset-bottom))] left-[calc(1rem+env(safe-area-inset-left))] right-28 z-30 transition-[translate,opacity] duration-300 ease-[var(--ease-out-expo)] sm:right-auto sm:left-1/2 sm:w-[min(26rem,calc(100%-2rem))] sm:-translate-x-1/2 lg:bottom-[calc(1.5rem+env(safe-area-inset-bottom))] ${
             showPill ? "translate-y-0 opacity-100" : "pointer-events-none translate-y-6 opacity-0"
           }`}
         >

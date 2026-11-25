@@ -150,8 +150,10 @@ export function GameBrowser({
                   className="relative"
                 >
                   <div
-                    className={`h-full ${intro ? "animate-rise" : ""}`}
-                    style={intro ? { animationDelay: `${Math.min(i, 12) * 35}ms` } : undefined}
+                    // Only the first dozen (what's on screen) rise in: animating all 50 at once was
+                    // most of a slow phone's work while the room loaded.
+                    className={`h-full ${intro && i < 12 ? "animate-rise" : ""}`}
+                    style={intro && i < 12 ? { animationDelay: `${i * 35}ms` } : undefined}
                   >
                     <GameCard
                       index={i}
