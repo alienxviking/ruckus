@@ -12,6 +12,7 @@ import { HomeLibrary } from "@/components/home/HomeLibrary";
 import { WhenIdle } from "@/components/home/WhenIdle";
 import { InstallHint } from "@/components/home/InstallHint";
 import { RejoinBanner } from "@/components/home/RejoinBanner";
+import { SoloNudge } from "@/components/home/SoloNudge";
 import { LOCAL_GAMES } from "@/lib/local-games";
 
 const LOCAL_IDS = LOCAL_GAMES.map((g) => g.id);
@@ -72,6 +73,7 @@ export default function Home() {
               login, no nonsense.
             </p>
             <div className="mt-6 sm:mt-7">
+              <SoloNudge />
               <HomeActions />
             </div>
             <div className="mt-6 flex flex-wrap gap-3">
